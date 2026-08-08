@@ -1,0 +1,14 @@
+M2 acceptance transcript — 2026-08-08
+Hosted at: https://lordner-visual.github.io/ACBreakz/  (GitHub Pages, repo Lordner-Visual/ACBreakz, branch master /root)
+
+Two ISOLATED Playwright browser contexts (separate storage = separate devices):
+  "laptop": /overlay/?layer=all&debug=1&pc=2   viewport 1080x1920
+  "phone":  /control/                          iPhone UA, 390x844, touch
+
+control presence: "cloud: connected · 1 PC live"
+overlay realtime websocket: wss://jqowngdkgnfhaworyppo.supabase.co/realtime/v1/websocket?apikey=<anon>&vsn=2.0.0
+sea slot empty before pick: true
+PASS  phone pick -> laptop overlay slot filled in 265 ms   (accept: < 1 s)
+board restored to empty after test
+
+Screenshots: m2-overlay-before.png, m2-phone-panel.png, m2-overlay-after-pick.png
