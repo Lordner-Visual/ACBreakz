@@ -29,9 +29,8 @@ window.ACBZ = (() => {
     BOARD_COLS: 16, BOARD_ROWS: 2,
     BOARD_PAD_X: 46, BOARD_PAD_Y: 12, BOARD_GAP: 8,
 
-    /* Team logo source: swap for your own Supabase Storage URLs once
-       the agent migrates C:/ACBreakz OBS/Graphics/NFL Teams/Team Board/*.png */
-    LOGO_URL: (abbr) => `https://a.espncdn.com/i/teamlogos/nfl/500/${abbr}.png`,
+    /* Team logos served from our own Supabase Storage (migrated in M3) */
+    LOGO_URL: (abbr) => `https://jqowngdkgnfhaworyppo.supabase.co/storage/v1/object/public/media/logos/${abbr}.png`,
 
     /* Board order = left→right, top row then bottom row.
        Edit freely to match your physical clipboard order. */
