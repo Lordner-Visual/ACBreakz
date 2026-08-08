@@ -1,0 +1,25 @@
+M3 acceptance transcript — 2026-08-08
+Hosted overlay: https://lordner-visual.github.io/ACBreakz/overlay/?layer=all&debug=1&pc=3
+
+Migration: 74 storage objects, 74 asset rows.
+  32 team stingers  re-encoded VP9 CRF34, audio stripped (default .wav plays instead)
+                    132MB avg -> 3.5MB avg (4.3GB total -> ~112MB)
+  32 team logos     Logos/Teams/*.png -> logos/<abbr>.png (LOGO_URL now storage)
+  1 sfx             Team Animation Sound Effect.wav -> sfx/team-pick.wav (meta.default)
+  2 games           Stash or Pass (1.6MB), Spin 2 Pick 1 (3.8MB), own audio kept
+  3 backgrounds     TV Background loop 516MB -> 1.65MB (1080x480 crop), TV Glow, Stadium Lights
+  4 banners         Band-Navy Steel, NFL Mosaic, Gold Frame, Stadium Strip (all exact 1080x97)
+  dropped           Old Scene football-field still (visible stock watermarks)
+
+Checks (all PASS):
+  panel logos from storage bucket 32/32, all loaded
+  TV background webm playing from storage
+  deck team_pick sea -> ok:true; stinger started 1523ms after deck call
+  real Seahawks webm mid-play full-canvas (t=1.45s)  [m3-stinger-playing.png]
+  event payload animUrl = /media/animations/sea.webm, sfxUrl = /media/sfx/team-pick.wav
+  board slot filled after stinger                     [m3-after-stinger.png]
+  banner rotation in 42s: nfl-mosaic, gold-frame, stadium-strip, band-navy-steel
+    (4 distinct banners x 10s upload rule)            [m3-banner-rotation.png]
+
+Live default state: TV Background loop + 4 banners rotating + clear board.
+Originals in C:/ACBreakz OBS/Graphics untouched (read-only migration).
