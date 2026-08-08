@@ -1,0 +1,25 @@
+M6 acceptance transcript — 2026-08-08
+
+RUNBOOK.md written: per-PC OBS sources (only pc=N differs), panel-key onboarding,
+full Stream Deck button map with <DECK_KEY> placeholder, 30-second rollback to
+legacy scenes, troubleshooting table, system map. Keys intentionally NOT in the
+repo (public); they live in .env and Supabase secrets.
+
+Hardening (stretch goal — DONE) verified on the hosted site, all PASS:
+  anon events insert rejected            HTTP 401
+  anon state update ineffective          HTTP 204 but RLS matched 0 rows; no field persisted
+  anon storage upload rejected           HTTP 400
+  generate-asset without panel key       HTTP 401  (AI spend now gated)
+  deck endpoint unaffected               board_reset -> ok:true
+  keyless panel tap blocked              toast hint; cloud state unchanged
+  keyed panel pick -> overlay            1574 ms cold, then 546/501/68 ms warm
+  composer save via signed upload        asset row landed (keyed sign_upload flow)
+
+Architecture after M6:
+  reads/realtime: anon key (read-only policies)
+  writes:         /deck  (DECK_KEY)   — Stream Deck & automations
+                  /panel (PANEL_KEY)  — control panel state/events/assets/uploads
+  AI spend:       /generate-asset requires PANEL_KEY
+Test artifacts cleaned: M4/M6 test banner rows deleted from assets.
+
+Screenshots: m6-keyless-blocked.png, m6-keyed-pick-works.png

@@ -8,6 +8,9 @@
 | 2026-08-08 | M3: asset migration (~120MB of 1GB free storage used; ffmpeg free) | $0.00 | $0.00 |
 | 2026-08-08 | M4: 1 fal.ai FLUX [dev] banner image (acceptance test) | $0.03 | $0.03 |
 | 2026-08-08 | M5: vision QA (Playwright, free) | $0.00 | $0.03 |
+| 2026-08-08 | M6: handoff + hardening (all free) | $0.00 | $0.03 |
+
+**Final: $0.03 spent of the $50 cap.** Remaining fal.ai credits cover ~300 more images.
 
 Planned spend (not yet incurred): fal.ai starter credits $10.
 Rule: never batch-generate more than 10 images without asking.
