@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ACBreakz Control</title>
 <!--
-  ACBreakz Control Panel v2 — open from ANY device.
-  Pick a PC in the header: changes apply to THAT stream only.
-  Uploads / AI generations always land in the shared library for every PC.
+  ACBreakz Control Panel v3 — open from ANY device.
+  Pick a PC in the header: board/banners/background/styles apply to that stream only.
+  Uploads, AI generations and deletions affect the shared library (all PCs).
 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../overlay/config.js"></script>
@@ -22,8 +22,9 @@
     position:sticky;top:0;z-index:10}
   header h1{font-size:20px;letter-spacing:2px;text-transform:uppercase}
   header h1 b{color:var(--gold)}
-  #pcSel{background:#0E2436;border:1px solid var(--volt);color:#fff;border-radius:10px;
-    padding:8px 12px;font-size:14px;font-weight:700}
+  select{background:#0E2436;border:1px solid #1E3A52;color:#fff;border-radius:10px;
+    padding:10px 12px;font-size:14px}
+  #pcSel{border-color:var(--volt);font-weight:700}
   #presence{margin-left:auto;font-size:13px;color:#9FB6C9}
   #presence b{color:var(--ok)}
   nav{display:flex;gap:6px;padding:10px 18px;flex-wrap:wrap}
@@ -33,16 +34,22 @@
   main{padding:12px 18px 60px;max-width:1150px}
   section{display:none}section.on{display:block}
   h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8FA8BC;margin:18px 0 10px}
+  h2:first-child{margin-top:6px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .btn{background:linear-gradient(180deg,#1A4D74,#123650);border:1px solid var(--volt);
     color:#fff;padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
   .btn.ghost{background:#0E2436;border-color:#1E3A52;color:#B9CBDB}
   .btn.warn{background:linear-gradient(180deg,#7A2C2F,#5A1E20);border-color:var(--danger)}
   .btn.gold{background:linear-gradient(180deg,#8A6522,#6B4C15);border-color:var(--gold)}
+  .btn.danger{background:var(--danger);border-color:#ff8f92;color:#fff}
+  .btn:disabled{opacity:.55;cursor:default}
   input[type=text],textarea,input[type=range]{background:#0A1C2C;border:1px solid #1E3A52;
     color:var(--bone);border-radius:10px;padding:11px 12px;font-size:14px;width:100%}
-  textarea{min-height:70px;resize:vertical}
-  /* board mirror — eliminate style: all teams shown, picked = dimmed OUT */
+  /* AI generator strip at the bottom of every media tab */
+  .aibar{margin-top:22px;padding:12px;border:1px dashed #24455F;border-radius:12px;
+    background:rgba(10,28,44,.6)}
+  .aibar h3{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#8FA8BC;margin-bottom:8px}
+  /* board mirror — eliminate style */
   #ctlBoard{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
   @media(max-width:700px){#ctlBoard{grid-template-columns:repeat(4,1fr)}}
   .team{position:relative;border-radius:12px;border:2px solid var(--copper);cursor:pointer;
@@ -54,25 +61,32 @@
   .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
     background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
   /* asset grids */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:8px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:8px}
   .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
   .asset.active{border-color:var(--gold);box-shadow:0 0 10px rgba(217,164,65,.4)}
-  .asset .thumb{height:80px;background:#04101B;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .asset .thumb{height:80px;background:#04101B;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;font-size:26px}
   .asset .thumb img,.asset .thumb video{width:100%;height:100%;object-fit:cover}
   .asset .meta{padding:8px;font-size:12px}
   .asset .meta .name{font-weight:700;color:#DCE8F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .asset .meta .row{margin-top:6px;gap:6px}
   .asset .btn{padding:6px 10px;font-size:12px}
   .tag{font-size:10px;color:#7E97AB}
+  .link{font-size:10px;color:var(--gold)}
   .banner-thumb{height:34px !important}
-  /* reframe editor */
-  #reframe{position:fixed;inset:0;background:rgba(4,10,18,.8);display:none;z-index:60;
+  /* modals */
+  .modal{position:fixed;inset:0;background:rgba(4,10,18,.82);display:none;z-index:60;
     align-items:center;justify-content:center;padding:16px}
-  #reframe.on{display:flex}
-  #reframe .box{background:#0B1E33;border:1px solid var(--volt);border-radius:14px;
-    padding:16px;max-width:560px;width:100%}
+  .modal.on{display:flex}
+  .modal .box{background:#0B1E33;border:1px solid var(--volt);border-radius:14px;
+    padding:16px;max-width:600px;width:100%;max-height:86vh;overflow:auto}
   #rfPreview{width:100%;border-radius:8px;overflow:hidden;background:#04101B;margin:10px 0}
   #rfPreview img,#rfPreview video{width:100%;height:100%;object-fit:cover;display:block}
+  .sfxrow{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #1E3A52;
+    border-radius:10px;margin-bottom:7px;background:#0A1C2C}
+  .sfxrow .nm{flex:1;font-size:13px;font-weight:600;color:#DCE8F2;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sfxrow.cur{border-color:var(--gold)}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
     border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
   label.up{display:inline-block}
@@ -91,10 +105,10 @@
 <nav>
   <button data-tab="board" class="on">Team Board</button>
   <button data-tab="anims">Animations</button>
+  <button data-tab="sfx">SoundFX</button>
   <button data-tab="banners">Banners</button>
   <button data-tab="bgs">Backgrounds</button>
   <button data-tab="style">Board Style</button>
-  <button data-tab="gen">AI Generate</button>
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
@@ -110,25 +124,49 @@
 <section id="tab-anims">
   <h2>NFL team animations — one style plays for every team (logo added automatically)</h2>
   <div class="grid" id="styleGrid"></div>
-  <div class="row" style="margin-top:8px">
-    <input type="text" id="teamStylePrompt" placeholder="AI generate a new team-animation style — describe the backdrop (≈$0.03)" style="flex:1;min-width:240px">
-    <button class="btn gold" id="teamStyleBtn">Generate style</button>
-  </div>
   <h2>One-shot animations — play inside the animation box</h2>
   <div class="row">
     <label class="up btn gold">Upload animation (.webm)
       <input type="file" accept="video/webm,video/mp4" data-kind="animation" data-group="oneshot"></label>
-    <label class="up btn ghost">Upload sound (.mp3/.wav)
-      <input type="file" accept="audio/*" data-kind="sfx"></label>
-  </div>
-  <div class="row" style="margin-top:8px">
-    <input type="text" id="oneshotPrompt" placeholder="AI generate a one-shot graphic (≈$0.03)" style="flex:1;min-width:240px">
-    <button class="btn" id="oneshotBtn">Generate one-shot</button>
   </div>
   <div class="grid" id="oneshotGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <select id="animGenKind">
+        <option value="team_style">Team animation style</option>
+        <option value="oneshot">One-shot animation</option>
+      </select>
+      <input type="text" id="animGenPrompt" placeholder="Describe it — brand styling is applied automatically" style="flex:1;min-width:220px">
+      <button class="btn gold" id="animGenBtn">Generate</button>
+      <span class="tag">≈$0.03/image</span>
+    </div>
+  </div>
+</section>
+
+<section id="tab-sfx">
+  <h2>Sound effects — link them to any animation from its card</h2>
+  <div class="row">
+    <label class="up btn gold">Upload sound (.mp3/.wav)
+      <input type="file" accept="audio/*" data-kind="sfx"></label>
+  </div>
+  <div class="grid" id="sfxGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <input type="text" id="sfxGenPrompt" placeholder="Describe the sound — e.g. deep impact whoosh with metallic shimmer" style="flex:1;min-width:220px">
+      <button class="btn gold" id="sfxGenBtn">Generate sound</button>
+      <span class="tag">≈$0.05/sound</span>
+    </div>
+  </div>
 </section>
 
 <section id="tab-banners">
+  <h2>Upload banner</h2>
+  <div class="row">
+    <label class="up btn gold">Upload banner (1080×97)
+      <input type="file" accept="image/*,video/webm,video/mp4" data-kind="banner"></label>
+  </div>
   <h2>Banner composer — live 1080×97 preview, brand styling baked in</h2>
   <canvas id="compCanvas" width="1080" height="97"
     style="width:100%;max-width:1080px;border:1px solid #1E3A52;border-radius:8px;background:#06111b"></canvas>
@@ -139,20 +177,16 @@
   </div>
   <h2>Composer background — template, upload, or AI art</h2>
   <div class="row" id="compBGs" style="gap:6px"></div>
-  <div class="row" style="margin-top:6px">
-    <input type="text" id="compAiPrompt" placeholder="AI art background — describe it (≈$0.03/image)" style="flex:1;min-width:220px">
-    <button class="btn" id="compAiBtn">AI art</button>
-  </div>
   <h2>Rotation — checked banners cycle on this PC (7–12s each)</h2>
-  <div class="row">
-    <label class="up btn gold">Upload banner (1080×97)
-      <input type="file" accept="image/*,video/webm,video/mp4" data-kind="banner"></label>
-  </div>
-  <div class="row" style="margin-top:10px">
-    <input type="text" id="txtBanner" placeholder='Quick text banner' style="flex:1;min-width:260px">
-    <button class="btn" id="addTxtBanner">Add text banner</button>
-  </div>
   <div class="grid" id="bannerGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <input type="text" id="banGenPrompt" placeholder="Describe the banner art — becomes a composer background" style="flex:1;min-width:220px">
+      <button class="btn gold" id="banGenBtn">Generate banner art</button>
+      <span class="tag">≈$0.03/image</span>
+    </div>
+  </div>
 </section>
 
 <section id="tab-bgs">
@@ -162,30 +196,40 @@
       <input type="file" accept="image/*,video/webm,video/mp4" data-kind="background"></label>
   </div>
   <div class="grid" id="bgGrid"></div>
-</section>
-
-<section id="tab-style">
-  <h2>Team-board style — buttons + board background follow the style, per PC</h2>
-  <div class="grid" id="boardStyleGrid"></div>
-  <div class="row" style="margin-top:8px">
-    <input type="text" id="boardStylePrompt" placeholder="AI generate a new board style — describe the material/mood (2 images ≈$0.06)" style="flex:1;min-width:240px">
-    <button class="btn gold" id="boardStyleBtn">Generate style</button>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <select id="bgGenKind">
+        <option value="background">Background image</option>
+        <option value="background_anim">Background animation</option>
+      </select>
+      <input type="text" id="bgGenPrompt" placeholder="Describe the background" style="flex:1;min-width:220px">
+      <button class="btn gold" id="bgGenBtn">Generate</button>
+      <span class="tag">image ≈$0.03 · animation ≈$0.20</span>
+    </div>
   </div>
 </section>
 
-<section id="tab-gen">
-  <h2>Generate with AI — saved straight into the shared library</h2>
-  <div class="row" style="align-items:stretch;flex-direction:column;max-width:760px">
+<section id="tab-style">
+  <h2>Button style — mix and match with any background</h2>
+  <div class="grid" id="btnStyleGrid"></div>
+  <h2>Board background</h2>
+  <div class="grid" id="bgStyleGrid"></div>
+  <h2>Button animation — highlights &amp; intense moments</h2>
+  <div class="grid" id="btnAnimGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
     <div class="row">
-      <select id="genKind" style="background:#0A1C2C;color:var(--bone);border:1px solid #1E3A52;border-radius:10px;padding:11px">
-        <option value="background">Background (1080×480)</option>
-        <option value="banner">Banner art (1080×97)</option>
-        <option value="animation_still">Animation still / concept</option>
+      <select id="styleGenKind">
+        <option value="board_bg">Background image</option>
+        <option value="board_bg_anim">Background animation</option>
+        <option value="board_button">Button style</option>
+        <option value="button_anim">Button animation</option>
       </select>
+      <input type="text" id="styleGenPrompt" placeholder="Describe the look — e.g. brushed gunmetal with blue neon edge" style="flex:1;min-width:220px">
+      <button class="btn gold" id="styleGenBtn">Generate</button>
+      <span class="tag">image ≈$0.03 · animation ≈$0.20</span>
     </div>
-    <textarea id="genPrompt" placeholder="Describe it — brand style is applied automatically…"></textarea>
-    <div class="row"><button class="btn gold" id="genBtn">Generate & save to templates</button>
-      <span class="tag">fal.ai FLUX ≈ $0.03/image</span></div>
   </div>
 </section>
 
@@ -195,7 +239,7 @@
     <input type="text" id="setUrl" placeholder="Supabase URL (https://xxxx.supabase.co)">
     <input type="text" id="setKey" placeholder="Supabase anon key">
     <input type="text" id="setPanelKey" placeholder="Panel key (required to make changes — ask Brandon)">
-    <div class="row"><button class="btn" id="saveKeys">Save & reconnect</button>
+    <div class="row"><button class="btn" id="saveKeys">Save &amp; reconnect</button>
       <span class="tag">Stored in this browser only. Leave blank for same-browser preview mode.</span></div>
   </div>
   <h2>Overlays online</h2>
@@ -204,7 +248,7 @@
 
 </main>
 
-<div id="reframe"><div class="box">
+<div class="modal" id="reframe"><div class="box">
   <h2 style="margin-top:0">Reframe — drag the sliders to choose the visible crop</h2>
   <div id="rfPreview"></div>
   <div class="row"><span class="tag" style="width:60px">Left–Right</span>
@@ -216,6 +260,13 @@
     <button class="btn ghost" id="rfCancel">Cancel</button>
   </div>
 </div></div>
+
+<div class="modal" id="sfxPick"><div class="box">
+  <h2 style="margin-top:0">Link SoundFX — <span id="sfxTarget" style="color:var(--gold)"></span></h2>
+  <div id="sfxList"></div>
+  <div class="row" style="margin-top:6px"><button class="btn ghost" id="sfxClose">Close</button></div>
+</div></div>
+
 <div id="toast"></div>
 
 <script>
@@ -223,7 +274,8 @@
   const C = window.ACBZ, $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
   const LS = localStorage;
   const toast = (m) => { const t=$("#toast"); t.textContent=m; t.style.display="block";
-    clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",2600); };
+    clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",3000); };
+  const esc = (s) => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
 
   /* tabs */
   $$("nav button").forEach(b => b.onclick = () => {
@@ -241,7 +293,6 @@
   const bus = cloud ? null : new BroadcastChannel("acbz-bus");
   $("#presence").innerHTML = cloud ? "cloud: connecting…" : "<b>preview mode</b> — open overlay/?layer=all&debug=1 in another tab";
 
-  /* which PC this panel is driving */
   let PC = LS.getItem("acbz-pc") || "1";
   $("#pcSel").value = PC;
   $("#pcSel").onchange = async () => { PC = $("#pcSel").value; LS.setItem("acbz-pc", PC);
@@ -256,7 +307,8 @@
     return { data };
   }
 
-  let state = { background:null, banners:{rotation:[]}, board:{picked:{}}, animStyle:null, boardStyle:null };
+  let state = { background:null, banners:{rotation:[]}, board:{picked:{}},
+                animStyle:null, boardButtons:null, boardBg:null, buttonAnim:null };
   let assets = [];
 
   async function loadState(){
@@ -291,9 +343,25 @@
   }
   async function saveAsset(a){
     if (cloud) { const {data,error} = await panelCall({action:"asset", asset:a});
-      if (error) return toast("Save failed: "+error.message); assets.unshift(data.asset); renderAll(); return data.asset; }
-    else { a.id = crypto.randomUUID(); a.created_at = new Date().toISOString();
-      assets.unshift(a); LS.setItem("acbz-assets", JSON.stringify(assets)); renderAll(); return a; }
+      if (error) { toast("Save failed: "+error.message); return null; }
+      assets.unshift(data.asset); renderAll(); return data.asset; }
+    a.id = crypto.randomUUID(); a.created_at = new Date().toISOString();
+    assets.unshift(a); LS.setItem("acbz-assets", JSON.stringify(assets)); renderAll(); return a;
+  }
+  async function updateAsset(id, meta){
+    if (cloud) { const {data,error} = await panelCall({action:"update_asset", id, meta});
+      if (error) { toast("Update failed: "+error.message); return null; }
+      const i = assets.findIndex(a=>a.id===id); if (i>=0) assets[i] = data.asset;
+      return data.asset; }
+    const a = assets.find(x=>x.id===id); if (a) { a.meta = {...a.meta, ...meta};
+      LS.setItem("acbz-assets", JSON.stringify(assets)); } return a;
+  }
+  async function deleteAsset(id){
+    if (cloud) { const {error} = await panelCall({action:"delete_asset", id});
+      if (error) { toast("Delete failed: "+error.message); return false; } }
+    else { assets = assets.filter(a=>a.id!==id); LS.setItem("acbz-assets", JSON.stringify(assets)); }
+    await loadAssets(); await loadState(); renderAll();
+    toast("Deleted"); return true;
   }
   async function uploadToStorage(path, blob, contentType){
     const {data:signed, error:sErr} = await panelCall({action:"sign_upload", path});
@@ -311,7 +379,7 @@
       await saveAsset({ kind, name:file.name, url, meta:{type:"upload", ...(extraMeta||{})} });
       toast("Uploaded & saved to the shared library");
     } else {
-      if (file.size > 4*1024*1024) return toast("Preview mode caps uploads at 4MB — connect Supabase for full files");
+      if (file.size > 4*1024*1024) return toast("Preview mode caps uploads at 4MB");
       const r = new FileReader();
       r.onload = () => saveAsset({ kind, name:file.name, url:r.result, meta:{type:"upload", ...(extraMeta||{})} });
       r.readAsDataURL(file);
@@ -322,7 +390,62 @@
     [...e.target.files].forEach(f => uploadFile(f, e.target.dataset.kind, extra)); e.target.value="";
   });
 
-  /* ---------- board tab (eliminate-only) ---------- */
+  /* ---------- two-step delete ("Are you sure?") ---------- */
+  function wireDeletes(){
+    $$("[data-del]").forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      if (b.dataset.armed !== "1") {                     // first click arms the button
+        b.dataset.armed = "1"; b._label = b.textContent;
+        b.textContent = "Are you sure?"; b.classList.add("danger");
+        clearTimeout(b._t); b._t = setTimeout(() => {
+          b.dataset.armed = "0"; b.textContent = b._label; b.classList.remove("danger");
+        }, 5000);
+        return;
+      }
+      clearTimeout(b._t); b.disabled = true; b.textContent = "Deleting…";
+      await deleteAsset(b.dataset.del);
+    });
+  }
+
+  /* ---------- SoundFX link popup ---------- */
+  let sfxTargetId = null, previewAudio = null;
+  function openSfxPicker(asset){
+    sfxTargetId = asset.id;
+    $("#sfxTarget").textContent = asset.name;
+    const cur = asset.meta && "sfxUrl" in asset.meta ? asset.meta.sfxUrl : undefined;
+    const sounds = assets.filter(a => a.kind === "sfx");
+    $("#sfxList").innerHTML =
+      `<div class="sfxrow ${cur === null ? "cur" : ""}">
+         <div class="nm">No SoundFX</div>
+         <button class="btn ghost" data-link="none">${cur === null ? "Linked" : "Link"}</button>
+       </div>` +
+      sounds.map(s => `<div class="sfxrow ${cur === s.url ? "cur" : ""}">
+         <div class="nm">${esc(s.name)}</div>
+         <button class="btn ghost" data-prev="${s.url}">▶ Preview</button>
+         <button class="btn ${cur === s.url ? "ghost" : ""}" data-link="${s.id}">
+           ${cur === s.url ? "Linked" : "Link"}</button>
+       </div>`).join("") ||
+      `<div class="tag">No sounds yet — upload or generate one in the SoundFX tab.</div>`;
+    $$("#sfxList [data-prev]").forEach(b => b.onclick = () => {
+      try { previewAudio?.pause(); previewAudio = new Audio(b.dataset.prev); previewAudio.play(); } catch(e){}
+    });
+    $$("#sfxList [data-link]").forEach(b => b.onclick = async () => {
+      const target = assets.find(a => a.id === sfxTargetId);
+      let meta;
+      if (b.dataset.link === "none") meta = { sfxUrl: null, sfxName: "No SoundFX" };
+      else { const s = assets.find(a => a.id === b.dataset.link); meta = { sfxUrl: s.url, sfxName: s.name }; }
+      const updated = await updateAsset(sfxTargetId, meta);
+      if (!updated) return;
+      /* keep a live-selected team style in sync so picks use the new sound immediately */
+      if (state.animStyle?.id === sfxTargetId) { state.animStyle = updated; await pushState(); }
+      renderAll(); openSfxPicker(assets.find(a => a.id === sfxTargetId) ?? target);
+      toast("Sound linked");
+    });
+    $("#sfxPick").classList.add("on");
+  }
+  $("#sfxClose").onclick = () => { previewAudio?.pause(); $("#sfxPick").classList.remove("on"); };
+
+  /* ---------- board tab ---------- */
   const boardEl = $("#ctlBoard");
   C.ORDER.forEach(abbr => {
     const t = C.TEAMS[abbr];
@@ -330,18 +453,19 @@
     d.className="team"; d.dataset.abbr=abbr;
     d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
     d.onclick = () => {
-      const picked = state.board.picked[abbr];
-      if (picked) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
+      if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
       else {
         state.board.picked[abbr] = true;
-        const snd = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
         const st = state.animStyle;
+        /* linked sound wins; explicit null = No SoundFX; otherwise the default sfx */
+        const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
+        const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
         if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url)) {
           fireEvent("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
-            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl:snd?.url||null});
+            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl});
         } else {
           const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
-          fireEvent("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl:snd?.url||null});
+          fireEvent("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl});
         }
       }
       pushState();
@@ -351,14 +475,7 @@
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
     state.board.picked = {}; fireEvent("board_reset",{}); pushState(); };
 
-  /* ---------- text banner ---------- */
-  $("#addTxtBanner").onclick = () => {
-    const text = $("#txtBanner").value.trim(); if (!text) return;
-    saveAsset({ kind:"banner", name:text.slice(0,40), url:null, meta:{type:"text", text} });
-    $("#txtBanner").value = "";
-  };
-
-  /* ---------- banner composer (unchanged core) ---------- */
+  /* ---------- banner composer ---------- */
   const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
   function compImg(url){
     if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin = "anonymous"; i.src = url;
@@ -401,7 +518,7 @@
       arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" data-cbg="${a.url}"
           style="width:120px;cursor:pointer">
         <div class="thumb banner-thumb">${thumb(a)}</div>
-        <div class="meta"><div class="name">${a.name}</div></div></div>`).join("");
+        <div class="meta"><div class="name">${esc(a.name)}</div></div></div>`).join("");
     $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => {
       comp.bgUrl = d.dataset.cbg || null; renderCompBGs(); drawComposer(); });
   }
@@ -422,64 +539,79 @@
       toast(`Saved — ${C.bannerSeconds({meta:{type:"text",text}})}s on stream`);
     }, "image/png");
   };
-  $("#compAiBtn").onclick = async () => {
-    const prompt = $("#compAiPrompt").value.trim(); if (!prompt) return toast("Describe the art first");
-    if (!cloud) return toast("AI art needs the cloud connection (Settings tab)");
-    $("#compAiBtn").disabled = true; $("#compAiBtn").textContent = "Generating…";
-    const {data, error} = await sb.functions.invoke("generate-asset", { body:{ key:PKEY, kind:"banner", prompt } });
-    $("#compAiBtn").disabled = false; $("#compAiBtn").textContent = "AI art";
-    if (error || data?.error) return toast("Generate failed: "+(error?.message || data?.error));
-    await loadAssets();
-    if (data?.asset?.url) { comp.bgUrl = data.asset.url; renderCompBGs(); drawComposer(); }
-    toast("AI art added to backgrounds");
-  };
 
-  /* ---------- AI: one-shots, team styles, board styles ---------- */
+  /* ---------- AI generators (one per media tab) ---------- */
   async function gen(body){
+    if (!cloud) { toast("AI generation needs the cloud connection (Settings tab)"); return null; }
     const {data, error} = await sb.functions.invoke("generate-asset", { body:{ key:PKEY, ...body } });
     if (error || data?.error) { toast("Generate failed: "+(error?.message || data?.error)); return null; }
     return data;
   }
-  const busy = (btn, on, label) => { btn.disabled = on; btn.textContent = on ? "Generating…" : label; };
-  $("#oneshotBtn").onclick = async () => {
-    const prompt = $("#oneshotPrompt").value.trim(); if (!prompt) return toast("Describe it first");
-    if (!cloud) return toast("Needs the cloud connection");
-    busy($("#oneshotBtn"), true, "Generate one-shot");
-    const d = await gen({ kind:"animation_still", prompt,
-      as:{ kind:"animation", name:"AI: "+prompt.slice(0,40), meta:{ group:"oneshot", image:true } } });
-    busy($("#oneshotBtn"), false, "Generate one-shot");
-    if (d) { toast("One-shot saved"); loadAssets(); }
+  function busy(btn, on){ if (on) { btn._l = btn.textContent; btn.textContent = "Generating…"; }
+    else btn.textContent = btn._l; btn.disabled = on; }
+
+  $("#animGenBtn").onclick = async () => {
+    const p = $("#animGenPrompt").value.trim(); if (!p) return toast("Describe it first");
+    const b = $("#animGenBtn"); busy(b, true);
+    if ($("#animGenKind").value === "team_style") {
+      const d = await gen({ kind:"animation_still", prompt:p, no_row:true });
+      if (d) await saveAsset({ kind:"style", name:"Style: "+p.slice(0,36), url:null,
+        meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt:p } });
+      if (d) toast("Team-animation style created — Enable it on its card");
+    } else {
+      const d = await gen({ kind:"animation_still", prompt:p,
+        as:{ kind:"animation", name:"AI: "+p.slice(0,40), meta:{ group:"oneshot", image:true } } });
+      if (d) { toast("One-shot saved"); loadAssets(); }
+    }
+    busy(b, false);
   };
-  $("#teamStyleBtn").onclick = async () => {
-    const prompt = $("#teamStylePrompt").value.trim(); if (!prompt) return toast("Describe the style first");
-    if (!cloud) return toast("Needs the cloud connection");
-    busy($("#teamStyleBtn"), true, "Generate style");
-    const d = await gen({ kind:"animation_still", prompt, no_row:true });
-    if (d) await saveAsset({ kind:"style", name:"Style: "+prompt.slice(0,36), url:null,
-      meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt } });
-    busy($("#teamStyleBtn"), false, "Generate style");
-    if (d) toast("Team-animation style created — enable it on a card");
+  $("#sfxGenBtn").onclick = async () => {
+    const p = $("#sfxGenPrompt").value.trim(); if (!p) return toast("Describe the sound first");
+    const b = $("#sfxGenBtn"); busy(b, true);
+    const d = await gen({ kind:"sfx", prompt:p,
+      as:{ kind:"sfx", name:"AI: "+p.slice(0,40), meta:{} } });
+    busy(b, false);
+    if (d) { toast("Sound generated"); loadAssets(); }
   };
-  $("#boardStyleBtn").onclick = async () => {
-    const prompt = $("#boardStylePrompt").value.trim(); if (!prompt) return toast("Describe the style first");
-    if (!cloud) return toast("Needs the cloud connection");
-    busy($("#boardStyleBtn"), true, "Generate style");
-    const btn = await gen({ kind:"board_button", prompt: prompt +
-      ", single empty square game-show button face, centered, uniform, no logo", no_row:true });
-    const bg = btn && await gen({ kind:"board_bg", prompt: prompt +
-      ", wide horizontal band, subtle, not distracting", no_row:true });
-    if (btn && bg) await saveAsset({ kind:"style", name:"Board: "+prompt.slice(0,36), url:null,
-      meta:{ domain:"board", button_url:btn.url, bg_url:bg.url, prompt } });
-    busy($("#boardStyleBtn"), false, "Generate style");
-    if (btn && bg) toast("Board style created — apply it on a card");
+  $("#banGenBtn").onclick = async () => {
+    const p = $("#banGenPrompt").value.trim(); if (!p) return toast("Describe the art first");
+    const b = $("#banGenBtn"); busy(b, true);
+    const d = await gen({ kind:"banner", prompt:p, as:{ meta:{ template:true } } });
+    busy(b, false);
+    if (d) { await loadAssets();
+      if (d.asset?.url) { comp.bgUrl = d.asset.url; renderCompBGs(); drawComposer(); }
+      toast("Banner art added to the composer picker"); }
   };
-  $("#genBtn").onclick = async () => {
-    const prompt = $("#genPrompt").value.trim(); if (!prompt) return toast("Type a prompt first");
-    if (!cloud) return toast("AI generation needs the cloud connection (Settings tab)");
-    busy($("#genBtn"), true, "Generate & save to templates");
-    const d = await gen({ kind:$("#genKind").value, prompt });
-    busy($("#genBtn"), false, "Generate & save to templates");
-    if (d) { toast("Generated & saved"); loadAssets(); }
+  $("#bgGenBtn").onclick = async () => {
+    const p = $("#bgGenPrompt").value.trim(); if (!p) return toast("Describe the background first");
+    const b = $("#bgGenBtn"); busy(b, true);
+    const anim = $("#bgGenKind").value === "background_anim";
+    const d = anim
+      ? await gen({ kind:"board_bg_anim", prompt:p + ", full-width streamer backdrop",
+          as:{ kind:"background", name:"AI clip: "+p.slice(0,34), meta:{} } })
+      : await gen({ kind:"background", prompt:p });
+    busy(b, false);
+    if (d) { toast("Background saved"); loadAssets(); }
+  };
+  $("#styleGenBtn").onclick = async () => {
+    const p = $("#styleGenPrompt").value.trim(); if (!p) return toast("Describe the look first");
+    const b = $("#styleGenBtn"); busy(b, true);
+    const k = $("#styleGenKind").value;
+    let d = null;
+    if (k === "board_button")
+      d = await gen({ kind:"board_button", prompt:p + ", single empty square game-show button face, centered, uniform, no logo",
+        as:{ kind:"style", name:"Buttons: "+p.slice(0,32), meta:{ domain:"board_button" } } });
+    else if (k === "board_bg")
+      d = await gen({ kind:"board_bg", prompt:p + ", wide horizontal band, subtle, not distracting",
+        as:{ kind:"style", name:"Board: "+p.slice(0,32), meta:{ domain:"board_bg" } } });
+    else if (k === "board_bg_anim")
+      d = await gen({ kind:"board_bg_anim", prompt:p + ", wide horizontal band, subtle looping motion",
+        as:{ kind:"style", name:"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } });
+    else
+      d = await gen({ kind:"button_anim", prompt:p + ", effect over a small square button, black background, glowing energy",
+        as:{ kind:"style", name:"Btn anim: "+p.slice(0,30), meta:{ domain:"button_anim", mode:"trigger" } } });
+    busy(b, false);
+    if (d) { toast("Style created — Apply it on its card"); loadAssets(); }
   };
 
   /* ---------- reframe editor ---------- */
@@ -488,8 +620,7 @@
     rfAsset = a;
     const crop = a.meta?.crop ?? {x:50,y:50};
     $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50;
-    const h = a.kind === "banner" ? Math.round(97/1080*520) : Math.round(480/1080*520);
-    $("#rfPreview").style.height = h + "px";
+    $("#rfPreview").style.height = (a.kind === "banner" ? Math.round(97/1080*520) : Math.round(480/1080*520)) + "px";
     $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(a.url||"")
       ? `<video src="${a.url}" muted autoplay loop playsinline></video>`
       : `<img src="${a.url}">`;
@@ -503,68 +634,86 @@
   $("#rfCancel").onclick = () => { $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML=""; };
   $("#rfSave").onclick = async () => {
     if (!rfAsset) return;
-    const crop = { x:+$("#rfX").value, y:+$("#rfY").value };
-    const {error} = await panelCall({action:"update_asset", id:rfAsset.id, meta:{crop}});
-    if (error) return toast("Crop save failed: "+error.message);
+    const ok = await updateAsset(rfAsset.id, { crop:{ x:+$("#rfX").value, y:+$("#rfY").value } });
+    if (!ok) return;
     $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML="";
-    await loadAssets(); await loadState(); renderAll();
+    await loadState(); renderAll();
     toast("Crop saved — applies everywhere this asset is shown");
   };
 
   /* ---------- renderers ---------- */
   function thumb(a){
+    const u = a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
     if (a.meta?.type==="text" && !a.url)
-      return `<div style="font-size:11px;padding:6px;color:#DCE8F2">${a.meta.text}</div>`;
-    if (/\.(webm|mp4)(\?|$)/i.test(a.url||"") || (a.url||"").startsWith("data:video"))
-      return `<video src="${a.url}" muted playsinline preload="metadata"></video>`; /* no autoplay: phones crash */
-    return `<img src="${a.url}" loading="lazy">`;
+      return `<div style="font-size:11px;padding:6px;color:#DCE8F2">${esc(a.meta.text)}</div>`;
+    if (!u) return "";
+    if (/\.(webm|mp4)(\?|$)/i.test(u) || u.startsWith("data:video"))
+      return `<video src="${u}" muted playsinline preload="metadata"></video>`;
+    return `<img src="${u}" loading="lazy">`;
   }
+  const delBtn = (a) => a.meta?.builtin ? "" : `<button class="btn warn" data-del="${a.id}">Delete</button>`;
+  const sfxLabel = (a) => a.meta && "sfxUrl" in a.meta
+    ? `<span class="link">🔊 ${esc(a.meta.sfxName ?? "linked")}</span>`
+    : `<span class="tag">default sound</span>`;
+
   function renderAll(){
-    /* board mirror */
     $$("#ctlBoard .team").forEach(d => d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]));
 
     /* team-animation styles */
     const styles = assets.filter(a => a.kind==="style" && a.meta?.domain==="team_anim");
-    const curStyle = state.animStyle;
     $("#styleGrid").innerHTML = styles.map(s => {
-      const active = curStyle ? curStyle.id === s.id : s.meta?.builtin;
+      const active = state.animStyle ? state.animStyle.id === s.id : s.meta?.builtin;
       return `<div class="asset ${active?"active":""}">
-        <div class="thumb">${s.meta?.base_url ? `<img src="${s.meta.base_url}" loading="lazy">` : "🏈"}</div>
-        <div class="meta"><div class="name">${s.name}</div>
+        <div class="thumb">${thumb(s) || "🏈"}</div>
+        <div class="meta"><div class="name">${esc(s.name)}</div>
           <div class="row"><button class="btn ${active?"ghost":""}" data-style="${s.id}">
             ${active?"Enabled":"Enable"}</button>
-          <span class="tag">${s.meta?.per_team ? "32 team videos" : "1 base + logo overlay"}</span></div>
+            <button class="btn ghost" data-sfx="${s.id}">Link SoundFX</button>${delBtn(s)}</div>
+          <div class="row">${sfxLabel(s)}</div>
         </div></div>`; }).join("");
     $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
-      state.animStyle = assets.find(x=>x.id===b.dataset.style); pushState();
-    });
+      state.animStyle = assets.find(x=>x.id===b.dataset.style); pushState(); });
 
-    /* one-shots + sfx */
+    /* one-shot animations */
     $("#oneshotGrid").innerHTML = assets
-      .filter(a => (a.kind==="animation" && a.meta?.group!=="team") || a.kind==="sfx").map(a=>`
-      <div class="asset"><div class="thumb">${a.kind==="sfx" ? "🔊" : thumb(a)}</div>
-        <div class="meta"><div class="name">${a.name}</div>
+      .filter(a => a.kind==="animation" && a.meta?.group!=="team").map(a=>`
+      <div class="asset"><div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
           <div class="row"><button class="btn" data-play="${a.id}">Play</button>
-          <span class="tag">${a.kind==="sfx" ? "sfx" : (a.meta?.image ? "still" : "video")}</span></div>
+            <button class="btn ghost" data-sfx="${a.id}">Link SoundFX</button>${delBtn(a)}</div>
+          <div class="row">${sfxLabel(a)}</div>
         </div></div>`).join("");
     $$("#oneshotGrid [data-play]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.play);
-      if (a.kind==="sfx") fireEvent("play_sfx",{url:a.url});
-      else fireEvent("play_animation",{url:a.url, boxed:true, image:a.meta?.image===true});
+      fireEvent("play_animation",{url:a.url, boxed:true, image:a.meta?.image===true,
+        sfxUrl:a.meta?.sfxUrl ?? null});
     });
 
-    /* banners: rotation grid hides pure-art templates */
+    /* sound effects */
+    $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`
+      <div class="asset"><div class="thumb">🔊</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-prevsfx="${a.url}">▶ Preview</button>
+            <button class="btn ghost" data-playsfx="${a.id}">Play on stream</button>${delBtn(a)}</div>
+          ${a.meta?.default ? '<div class="row"><span class="link">default pick sound</span></div>' : ""}
+        </div></div>`).join("");
+    $$("#sfxGrid [data-prevsfx]").forEach(b => b.onclick = () => {
+      try { previewAudio?.pause(); previewAudio = new Audio(b.dataset.prevsfx); previewAudio.play(); } catch(e){} });
+    $$("#sfxGrid [data-playsfx]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.playsfx); fireEvent("play_sfx",{url:a.url}); });
+
+    /* banners (templates stay out of rotation) */
     const rotIds = new Set((state.banners.rotation||[]).map(x=>x.id));
     $("#bannerGrid").innerHTML = assets
       .filter(a=>a.kind==="banner" && !a.meta?.template).map(a=>`
       <div class="asset ${rotIds.has(a.id)?"active":""}">
         <div class="thumb banner-thumb">${thumb(a)}</div>
-        <div class="meta"><div class="name">${a.name}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
           <div class="row">
             <button class="btn ${rotIds.has(a.id)?"warn":""}" data-rot="${a.id}">
               ${rotIds.has(a.id)?"Remove":"Add"}</button>
             ${a.url ? `<button class="btn ghost" data-rf="${a.id}">Reframe</button>` : ""}
-            <span class="tag">${C.bannerSeconds(a)}s</span>
+            ${delBtn(a)}<span class="tag">${C.bannerSeconds(a)}s</span>
           </div></div></div>`).join("");
     $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.rot);
@@ -576,33 +725,45 @@
     /* backgrounds */
     $("#bgGrid").innerHTML = assets.filter(a=>a.kind==="background").map(a=>`
       <div class="asset ${state.background?.url===a.url?"active":""}">
-        <div class="thumb" data-bg="${a.id}" style="cursor:pointer">${thumb(a)}</div>
-        <div class="meta"><div class="name">${a.name}</div>
+        <div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
           <div class="row"><button class="btn" data-bg="${a.id}">Set live</button>
-            <button class="btn ghost" data-rf="${a.id}">Reframe</button></div></div></div>`).join("");
+            <button class="btn ghost" data-rf="${a.id}">Reframe</button>${delBtn(a)}</div>
+        </div></div>`).join("");
     $$("#bgGrid [data-bg]").forEach(d => d.onclick = () => {
       const a = assets.find(x=>x.id===d.dataset.bg);
       state.background = { url:a.url, name:a.name, crop:a.meta?.crop ?? null }; pushState();
     });
+
+    /* board style: three independent pickers */
+    const part = (domain, gridSel, stateKey, extra) => {
+      const list = assets.filter(a => a.kind==="style" && a.meta?.domain===domain);
+      $(gridSel).innerHTML = list.map(s => {
+        const active = state[stateKey] ? state[stateKey].id === s.id : !!s.meta?.builtin;
+        return `<div class="asset ${active?"active":""}">
+          <div class="thumb">${thumb(s) || (extra?.icon ?? "🎛")}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <div class="row"><button class="btn ${active?"ghost":""}" data-part="${stateKey}:${s.id}">
+              ${active?"Applied":"Apply"}</button>${delBtn(s)}</div>
+            ${s.meta?.mode ? `<div class="row"><span class="tag">${s.meta.mode === "ambient" ? "always on" : "on team hit"}</span></div>` : ""}
+          </div></div>`; }).join("");
+    };
+    part("board_button", "#btnStyleGrid", "boardButtons", {icon:"🟨"});
+    part("board_bg",     "#bgStyleGrid",  "boardBg",      {icon:"🎞"});
+    part("button_anim",  "#btnAnimGrid",  "buttonAnim",   {icon:"✨"});
+    $$("[data-part]").forEach(b => b.onclick = () => {
+      const [k, id] = b.dataset.part.split(":");
+      const s = assets.find(x=>x.id===id);
+      state[k] = s?.meta?.builtin ? null : s;   // builtin = the CSS default, stored as null
+      pushState();
+    });
+
+    /* shared wiring */
     $$("[data-rf]").forEach(b => b.onclick = (e) => {
-      e.stopPropagation(); openReframe(assets.find(x=>x.id===b.dataset.rf));
-    });
-
-    /* board styles */
-    const bStyles = assets.filter(a => a.kind==="style" && a.meta?.domain==="board");
-    const curB = state.boardStyle;
-    $("#boardStyleGrid").innerHTML = bStyles.map(s => {
-      const active = curB ? curB.id === s.id : s.meta?.builtin;
-      return `<div class="asset ${active?"active":""}">
-        <div class="thumb">${s.meta?.button_url ? `<img src="${s.meta.button_url}" loading="lazy">` : "🟨"}</div>
-        <div class="meta"><div class="name">${s.name}</div>
-          <div class="row"><button class="btn ${active?"ghost":""}" data-bstyle="${s.id}">
-            ${active?"Applied":"Apply"}</button></div></div></div>`; }).join("");
-    $$("#boardStyleGrid [data-bstyle]").forEach(b => b.onclick = () => {
-      const s = assets.find(x=>x.id===b.dataset.bstyle);
-      state.boardStyle = s.meta?.builtin ? null : s; pushState();
-    });
-
+      e.stopPropagation(); openReframe(assets.find(x=>x.id===b.dataset.rf)); });
+    $$("[data-sfx]").forEach(b => b.onclick = (e) => {
+      e.stopPropagation(); openSfxPicker(assets.find(x=>x.id===b.dataset.sfx)); });
+    wireDeletes();
     renderCompBGs(); drawComposer();
   }
 

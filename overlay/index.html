@@ -75,6 +75,40 @@
   .cell.slam{animation:slam .5s ease-out}
   @keyframes slam{0%{transform:scale(1)}30%{transform:scale(1.12) rotate(-2deg)}55%{transform:scale(.95) rotate(1deg)}100%{transform:scale(1)}}
 
+  /* ---------- v3 button animations ---------- */
+  .cell .vfx{position:absolute;inset:-14%;width:128%;height:128%;object-fit:cover;
+    z-index:5;pointer-events:none;mix-blend-mode:screen;opacity:0}
+  .cell.fx-video .vfx{opacity:1}
+  /* AMBIENT: every button animates on the same clock, so the board pulses together */
+  #board.anim-glow .cell::after{content:"";position:absolute;inset:0;border-radius:8px;
+    z-index:4;pointer-events:none;box-shadow:inset 0 0 0 2px var(--gold), 0 0 14px 2px var(--gold);
+    animation:bglow 2.6s ease-in-out infinite}
+  @keyframes bglow{0%,100%{opacity:.12}50%{opacity:.85}}
+  #board.anim-fire .cell::after{content:"";position:absolute;inset:-2px;border-radius:10px;
+    z-index:4;pointer-events:none;
+    background:linear-gradient(0deg,rgba(255,140,20,.85),rgba(255,60,0,.25) 45%,transparent 70%);
+    filter:blur(3px);animation:bfire 1.5s ease-in-out infinite alternate}
+  @keyframes bfire{0%{opacity:.35;transform:translateY(2px) scaleY(.96)}
+    100%{opacity:.9;transform:translateY(-2px) scaleY(1.04)}}
+  #board.anim-lightning .cell::after{content:"";position:absolute;inset:-1px;border-radius:10px;
+    z-index:4;pointer-events:none;border:2px solid var(--volt);
+    box-shadow:0 0 12px var(--volt),inset 0 0 8px var(--volt);opacity:0;
+    animation:blight 3.4s linear infinite}
+  @keyframes blight{0%,86%{opacity:0}88%{opacity:1}90%{opacity:.15}92%{opacity:1}96%{opacity:0}}
+  #board.anim-glitch .cell{animation:bglitch 3.2s steps(1,end) infinite}
+  @keyframes bglitch{0%,90%{transform:none;filter:none}
+    91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
+    93%{transform:translateX(3px);filter:hue-rotate(-60deg)}
+    95%{transform:translateX(-1px)}97%{transform:none;filter:none}}
+  /* TRIGGER: fires on the team that was just hit */
+  .cell.fx-pop{animation:bpop .85s cubic-bezier(.22,1.4,.3,1);z-index:7}
+  @keyframes bpop{0%{transform:scale(1)}35%{transform:scale(1.55);filter:brightness(1.6)}
+    60%{transform:scale(1.42)}82%{transform:scale(.9)}100%{transform:scale(1)}}
+  .cell .dust{position:absolute;left:50%;top:50%;width:6px;height:6px;border-radius:50%;
+    background:rgba(255,240,210,.9);box-shadow:0 0 6px rgba(255,220,160,.9);z-index:8;
+    animation:dust .8s ease-out forwards}
+  @keyframes dust{to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}
+
   #banners{left:0;top:645px;width:1080px;height:97px;overflow:hidden;background:#06111b}
   #banners .b{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
   #banners .b.live{opacity:1}
@@ -169,14 +203,64 @@
     boardEl.appendChild(d); cells[abbr] = d;
   });
 
-  /* ---------------- board style (button texture + band background) ------------ */
-  let styleKey = null;
-  function applyBoardStyle(st) {
-    const key = st?.meta?.button_url ? st.meta.button_url + (st.meta.bg_url ?? "") : null;
-    if (key === styleKey) return; styleKey = key;
-    boardEl.style.backgroundImage = st?.meta?.bg_url ? `url("${st.meta.bg_url}")` : "";
+  /* ------- board style parts: buttons / background / button animation (v3) ------- */
+  const AMBIENT = ["glow","fire","lightning","glitch"];
+  let partsKey = null, btnAnim = null;
+  function applyBoardParts(s) {
+    const btn = s?.boardButtons, bg = s?.boardBg, anim = s?.buttonAnim;
+    const key = [btn?.url, bg?.url, anim?.id, anim?.meta?.effect, anim?.url].join("|");
+    if (key === partsKey) return; partsKey = key;
+
+    /* background: still image or looping video behind the grid */
+    boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
+    if (bg?.url && /\.(webm|mp4)(\?|$)/i.test(bg.url)) {
+      boardEl.style.backgroundImage = "";
+      const v = Object.assign(document.createElement("video"),
+        {src:bg.url, autoplay:true, muted:true, loop:true, playsInline:true, className:"boardbg"});
+      Object.assign(v.style, {position:"absolute",inset:"0",width:"100%",height:"100%",
+        objectFit:"cover",zIndex:"0",pointerEvents:"none"});
+      boardEl.insertBefore(v, boardEl.firstChild);
+    } else {
+      boardEl.style.backgroundImage = bg?.url ? `url("${bg.url}")` : "";
+    }
+
+    /* buttons: texture on every cell */
     for (const abbr of C.ORDER)
-      cells[abbr].style.backgroundImage = st?.meta?.button_url ? `url("${st.meta.button_url}")` : "";
+      cells[abbr].style.backgroundImage = btn?.url ? `url("${btn.url}")` : "";
+
+    /* button animation: ambient classes apply to all cells on one shared clock */
+    AMBIENT.forEach(e => boardEl.classList.remove("anim-" + e));
+    btnAnim = anim ?? null;
+    const eff = anim?.meta?.effect;
+    if (eff && AMBIENT.includes(eff) && anim?.meta?.mode !== "trigger")
+      boardEl.classList.add("anim-" + eff);
+  }
+  /* trigger-mode effects fire on the single cell that was just hit */
+  function triggerButtonAnim(abbr) {
+    const cell = cells[abbr]; if (!cell || !btnAnim) return;
+    const m = btnAnim.meta ?? {};
+    if (m.effect === "none") return;
+    if (btnAnim.url && /\.(webm|mp4)(\?|$)/i.test(btnAnim.url)) {   // AI-generated clip
+      cell.querySelectorAll("video.vfx").forEach(n => n.remove());
+      const v = Object.assign(document.createElement("video"),
+        {src:btnAnim.url, autoplay:true, muted:true, playsInline:true, className:"vfx"});
+      cell.appendChild(v); cell.classList.add("fx-video");
+      const stop = () => { cell.classList.remove("fx-video"); v.remove(); };
+      v.onended = v.onerror = stop; setTimeout(stop, 4000);
+      return;
+    }
+    if (m.mode === "trigger" || m.effect === "pop") {
+      cell.classList.remove("fx-pop"); void cell.offsetWidth; cell.classList.add("fx-pop");
+      for (let i = 0; i < 10; i++) {                                 // dust puff on the slam
+        const d = document.createElement("span"); d.className = "dust";
+        const a = Math.random()*Math.PI*2, r = 26 + Math.random()*34;
+        d.style.setProperty("--dx", `${Math.cos(a)*r}px`);
+        d.style.setProperty("--dy", `${Math.sin(a)*r}px`);
+        d.style.animationDelay = `${0.34 + Math.random()*0.12}s`;
+        cell.appendChild(d); setTimeout(() => d.remove(), 1400);
+      }
+      setTimeout(() => cell.classList.remove("fx-pop"), 900);
+    }
   }
 
   /* ---------------- banner rotator ---------------- */
@@ -293,7 +377,7 @@
   function applyState(s) {
     if (!s) return;
     setBackground(s.background);
-    applyBoardStyle(s.boardStyle);
+    applyBoardParts(s);
     const picked = s.board?.picked || {};
     for (const abbr of C.ORDER) cells[abbr].classList.toggle("on", !!picked[abbr]);
     rotator.setList(s.banners?.rotation || []);
@@ -309,6 +393,7 @@
         runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl,
                 styleUrl: p.styleUrl, styleImage: p.styleImage, logoOverlay: p.logoOverlay });
         setTimeout(() => { cells[p.team]?.classList.add("on","slam");
+          triggerButtonAnim(p.team);
           setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); },
           (p.animUrl || p.styleUrl) ? 1200 : 900);
         break;

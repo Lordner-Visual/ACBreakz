@@ -58,13 +58,15 @@ Deno.serve(async (req) => {
     case "team_pick": {
       const team = (g("team") ?? "").toLowerCase();
       if (!team) return json({ error: "team required" }, 400);
-      const sfxA = await findAsset("sfx");
+      const defSfx = await findAsset("sfx");
       for (const pc of pcs) {
         const state = await getState(pc);
         state.board ??= { picked: {} }; state.board.picked ??= {};
         state.board.picked[team] = true;
         const style = state.animStyle;
-        const payload: Record<string, unknown> = { team, pc, sfxUrl: sfxA?.url ?? null };
+        /* linked SFX wins (explicit null = "No SoundFX"); fall back to the default sound */
+        const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
+        const payload: Record<string, unknown> = { team, pc, sfxUrl };
         if (style && style.meta?.per_team !== true && (style.url || style.meta?.base_url)) {
           payload.styleUrl = style.url ?? style.meta.base_url;   // one base + logo overlay
           payload.styleImage = style.meta?.image === true;

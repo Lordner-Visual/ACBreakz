@@ -36,6 +36,8 @@ const SIZES: Record<string, { width: number; height: number }> = {
   board_button: { width: 1024, height: 1024 },   // team-board button texture
   board_bg: { width: 1344, height: 384 },        // team-board band background
 };
+const AUDIO_KINDS = new Set(["sfx"]);
+const VIDEO_KINDS = new Set(["board_bg_anim", "button_anim"]);
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), {
@@ -56,29 +58,54 @@ Deno.serve(async (req) => {
   if (!prompt.trim()) return json({ error: "prompt required" }, 400);
   if (!FAL_KEY) return json({ error: "FAL_KEY not configured" }, 500);
 
-  const size = SIZES[kind] ?? SIZES.background;
+  // Route by media type: image (FLUX), audio (Stable Audio), video (LTX-Video)
+  let mediaUrl: string | undefined, ext = "png", contentType = "image/png";
+  if (AUDIO_KINDS.has(kind)) {
+    const gen = await fetch("https://fal.run/fal-ai/stable-audio", {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ prompt: prompt + ", clean punchy sound effect", seconds_total: 5 }),
+    });
+    if (!gen.ok) return json({ error: "audio generation failed: " + (await gen.text()) }, 502);
+    const out = await gen.json();
+    mediaUrl = out?.audio_file?.url ?? out?.audio?.url ?? out?.audio_url;
+    ext = "wav"; contentType = "audio/wav";
+  } else if (VIDEO_KINDS.has(kind)) {
+    const gen = await fetch("https://fal.run/fal-ai/ltx-video", {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ prompt: BRAND + prompt + ", seamless loop, steady camera" }),
+    });
+    if (!gen.ok) return json({ error: "video generation failed: " + (await gen.text()) }, 502);
+    const out = await gen.json();
+    mediaUrl = out?.video?.url ?? out?.video_url;
+    ext = "mp4"; contentType = "video/mp4";
+  } else {
+    const size = SIZES[kind] ?? SIZES.background;
+    const gen = await fetch("https://fal.run/fal-ai/flux/dev", {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: BRAND + prompt,
+        image_size: size,
+        num_inference_steps: 28,
+        num_images: 1,
+      }),
+    });
+    if (!gen.ok) return json({ error: "generation failed: " + (await gen.text()) }, 502);
+    const out = await gen.json();
+    mediaUrl = out?.images?.[0]?.url;
+  }
+  if (!mediaUrl) return json({ error: "no media returned" }, 502);
 
-  // fal.ai FLUX [dev] — simple sync REST call
-  const gen = await fetch("https://fal.run/fal-ai/flux/dev", {
-    method: "POST",
-    headers: { Authorization: `Key ${FAL_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      prompt: BRAND + prompt,
-      image_size: size,
-      num_inference_steps: 28,
-      num_images: 1,
-    }),
-  });
-  if (!gen.ok) return json({ error: "generation failed: " + (await gen.text()) }, 502);
-  const out = await gen.json();
-  const imgUrl = out?.images?.[0]?.url;
-  if (!imgUrl) return json({ error: "no image returned" }, 502);
-
-  // Pull the image and persist it in our own storage (fal URLs expire)
-  const bytes = new Uint8Array(await (await fetch(imgUrl)).arrayBuffer());
-  const path = `${kind}/ai-${Date.now()}.png`;
+  // Pull the media and persist it in our own storage (fal URLs expire)
+  const res = await fetch(mediaUrl);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  contentType = res.headers.get("content-type")?.split(";")[0] || contentType;
+  if (contentType.includes("mpeg")) ext = "mp3";
+  const path = `${kind}/ai-${Date.now()}.${ext}`;
   const { error: upErr } = await sb.storage.from("media")
-    .upload(path, bytes, { contentType: "image/png" });
+    .upload(path, bytes, { contentType, cacheControl: "31536000" });
   if (upErr) return json({ error: "storage failed: " + upErr.message }, 500);
   const { data: pub } = sb.storage.from("media").getPublicUrl(path);
 

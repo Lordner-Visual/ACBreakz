@@ -86,6 +86,36 @@ Deno.serve(async (req) => {
         .select().single();
       return error ? json({ error: error.message }, 500) : json({ ok: true, asset: data });
     }
+    case "delete_asset": {
+      if (!body.id) return json({ error: "id required" }, 400);
+      const { data: a, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
+      if (gErr || !a) return json({ error: gErr?.message ?? "asset not found" }, 404);
+      if (a.meta?.builtin) return json({ error: "built-in styles cannot be deleted" }, 400);
+      /* remove storage objects this asset owns (main url + style part urls) */
+      const paths = [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url]
+        .filter((u: unknown): u is string => typeof u === "string")
+        .map((u: string) => u.split("/storage/v1/object/public/media/")[1])
+        .filter(Boolean).map((p: string) => decodeURIComponent(p));
+      if (paths.length) await sb.storage.from("media").remove(paths);
+      const { error: dErr } = await sb.from("assets").delete().eq("id", body.id);
+      if (dErr) return json({ error: dErr.message }, 500);
+      /* scrub references from every PC's state */
+      const { data: rows } = await sb.from("stream_state").select("id,data");
+      for (const row of rows ?? []) {
+        let touched = false;
+        const d = row.data ?? {};
+        if (Array.isArray(d.banners?.rotation)) {
+          const before = d.banners.rotation.length;
+          d.banners.rotation = d.banners.rotation.filter((b: { id?: string }) => b?.id !== body.id);
+          touched ||= d.banners.rotation.length !== before;
+        }
+        if (d.background?.url && d.background.url === a.url) { d.background = null; touched = true; }
+        for (const k of ["animStyle", "boardButtons", "boardBg", "buttonAnim"])
+          if (d[k]?.id === body.id) { d[k] = null; touched = true; }
+        if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
+      }
+      return json({ ok: true });
+    }
     case "sign_upload": {
       const path = String(body.path ?? "");
       if (!/^[\w\-/][\w\-. /]*$/.test(path) || path.includes("..")) return json({ error: "bad path" }, 400);
