@@ -47,7 +47,9 @@ Deno.serve(async (req) => {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "authorization, content-type, apikey, x-client-info" } });
 
-  const { kind = "background", prompt = "" } = await req.json().catch(() => ({}));
+  const { kind = "background", prompt = "", key = "" } = await req.json().catch(() => ({}));
+  const PANEL_KEY = Deno.env.get("PANEL_KEY") ?? "";
+  if (!PANEL_KEY || key !== PANEL_KEY) return json({ error: "bad panel key" }, 401); // M6: spend gate
   if (!prompt.trim()) return json({ error: "prompt required" }, 400);
   if (!FAL_KEY) return json({ error: "FAL_KEY not configured" }, 500);
 

@@ -37,21 +37,18 @@ create table if not exists public.events (
 alter publication supabase_realtime add table public.stream_state;
 alter publication supabase_realtime add table public.events;
 
--- ---------- MVP access policy ----------
--- Ship-tonight posture: anon key can read everything and write state/assets/events.
--- The anon key + project URL act as the shared secret; keep the control panel URL private.
--- HARDENING (agent task M6): move writes behind edge functions + Supabase Auth,
--- then drop the anon insert/update policies below.
+-- ---------- Access policy (hardened in M6) ----------
+-- Anon key is READ-ONLY: overlays subscribe and read freely.
+-- ALL writes go through keyed edge functions (service role):
+--   /deck  (DECK_KEY)  — Stream Deck / automations
+--   /panel (PANEL_KEY) — control panel state/events/assets/signed uploads
 alter table public.stream_state enable row level security;
 alter table public.assets       enable row level security;
 alter table public.events       enable row level security;
 
 create policy "read state"    on public.stream_state for select using (true);
-create policy "write state"   on public.stream_state for update using (true) with check (id = 1);
 create policy "read assets"   on public.assets for select using (true);
-create policy "insert assets" on public.assets for insert with check (true);
 create policy "read events"   on public.events for select using (true);
-create policy "insert events" on public.events for insert with check (true);
 
 -- Auto-prune events older than 1 day (keeps realtime snappy)
 create or replace function public.prune_events() returns trigger as $$
@@ -67,4 +64,4 @@ create trigger trg_prune_events after insert on public.events
 insert into storage.buckets (id, name, public) values ('media','media', true)
   on conflict (id) do nothing;
 create policy "public read media"  on storage.objects for select using (bucket_id = 'media');
-create policy "anon upload media"  on storage.objects for insert with check (bucket_id = 'media');
+-- uploads: signed URLs issued by the /panel function (no anon insert policy)
