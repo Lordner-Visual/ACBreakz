@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
         const state = await getState(pc);
         state.board ??= { picked: {} }; state.board.picked ??= {};
         state.board.picked[team] = true;
+        if (state.board.highlighted) delete state.board.highlighted[team]; // eliminated => unhighlighted
         const style = state.animStyle;
         /* linked SFX wins (explicit null = "No SoundFX"); fall back to the default sound */
         const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
@@ -121,6 +122,32 @@ Deno.serve(async (req) => {
         await setState(pc, state);
       }
       return json({ ok: true, name: a.name, pcs });
+    }
+    /* ---- highlights: button animations play only on highlighted teams ---- */
+    case "highlight":
+    case "unhighlight":
+    case "highlight_toggle": {
+      const team = (g("team") ?? "").toLowerCase();
+      if (!team) return json({ error: "team required" }, 400);
+      for (const pc of pcs) {
+        const state = await getState(pc);
+        state.board ??= {}; state.board.highlighted ??= {};
+        const on = action === "highlight" ? true
+          : action === "unhighlight" ? false
+          : !state.board.highlighted[team];
+        if (on && !state.board.picked?.[team]) state.board.highlighted[team] = true;
+        else delete state.board.highlighted[team];
+        await setState(pc, state);
+      }
+      return json({ ok: true, team, pcs });
+    }
+    case "highlight_clear": {
+      for (const pc of pcs) {
+        const state = await getState(pc);
+        state.board ??= {}; state.board.highlighted = {};
+        await setState(pc, state);
+      }
+      return json({ ok: true, pcs });
     }
     case "board_mode":
     case "board_visible":

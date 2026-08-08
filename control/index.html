@@ -60,6 +60,9 @@
   .team.on{filter:brightness(.4) saturate(.55)}
   .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
     background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
+  .team.hl{border-color:var(--volt);box-shadow:0 0 12px rgba(53,167,255,.55)}
+  .team.hl::after{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
+  .gridcard .shape{width:34px;height:34px;background:linear-gradient(160deg,#12444F,#0D3540)}
   /* asset grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:8px}
   .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
@@ -115,9 +118,11 @@
 
 <section id="tab-board" class="on">
   <div class="row">
+    <button class="btn ghost" id="hlModeBtn">Tap mode: ELIMINATE</button>
+    <button class="btn ghost" id="hlClearBtn">Clear highlights</button>
     <button class="btn warn" id="resetBtn">Reset board</button>
-    <span class="tag">Tap a team to eliminate it (plays the animation + sound); tap again to bring it back.</span>
   </div>
+  <div class="row" style="margin-top:6px"><span class="tag" id="hlHint"></span></div>
   <div id="ctlBoard"></div>
 </section>
 
@@ -203,14 +208,25 @@
         <option value="background">Background image</option>
         <option value="background_anim">Background animation</option>
       </select>
+      <select id="bgGenQuality" title="Video model quality">
+        <option value="standard">Video: Standard (Kling 1.6)</option>
+        <option value="best">Video: Best (Kling 2 master)</option>
+      </select>
       <input type="text" id="bgGenPrompt" placeholder="Describe the background" style="flex:1;min-width:220px">
       <button class="btn gold" id="bgGenBtn">Generate</button>
-      <span class="tag">image ≈$0.03 (fast) · animation ≈$0.20 (1–4 min)</span>
+      <span class="tag">image ≈$0.03 (fast) · video ≈$0.25 standard / ≈$1.40 best (1–4 min)</span>
     </div>
   </div>
 </section>
 
 <section id="tab-style">
+  <h2>Grid style — the chosen button style applies to whichever grid you pick</h2>
+  <div class="grid" id="gridStyleGrid"></div>
+  <div class="row" style="margin-top:10px;max-width:520px">
+    <span class="tag" style="width:110px">Button spacing</span>
+    <input type="range" id="gapRange" min="0" max="20" step="1" value="0" style="flex:1">
+    <span class="tag" id="gapVal" style="width:44px">0px</span>
+  </div>
   <h2>Button style — mix and match with any background</h2>
   <div class="grid" id="btnStyleGrid"></div>
   <h2>Board background</h2>
@@ -226,9 +242,13 @@
         <option value="board_button">Button style</option>
         <option value="button_anim">Button animation</option>
       </select>
+      <select id="styleGenQuality" title="Video model quality">
+        <option value="standard">Video: Standard (Kling 1.6)</option>
+        <option value="best">Video: Best (Kling 2 master)</option>
+      </select>
       <input type="text" id="styleGenPrompt" placeholder="Describe the look — e.g. brushed gunmetal with blue neon edge" style="flex:1;min-width:220px">
       <button class="btn gold" id="styleGenBtn">Generate</button>
-      <span class="tag">image ≈$0.03 (fast) · animation ≈$0.20 (1–4 min)</span>
+      <span class="tag">image ≈$0.03 (fast) · video ≈$0.25 standard / ≈$1.40 best (1–4 min)</span>
     </div>
   </div>
 </section>
@@ -255,6 +275,9 @@
     <input type="range" id="rfX" min="0" max="100" value="50" style="flex:1"></div>
   <div class="row"><span class="tag" style="width:60px">Up–Down</span>
     <input type="range" id="rfY" min="0" max="100" value="50" style="flex:1"></div>
+  <div class="row"><span class="tag" style="width:60px">Zoom</span>
+    <input type="range" id="rfZ" min="100" max="300" step="5" value="100" style="flex:1">
+    <span class="tag" id="rfZVal" style="width:44px">100%</span></div>
   <div class="row" style="margin-top:10px">
     <button class="btn gold" id="rfSave">Save crop</button>
     <button class="btn ghost" id="rfCancel">Cancel</button>
@@ -307,8 +330,9 @@
     return { data };
   }
 
-  let state = { background:null, banners:{rotation:[]}, board:{picked:{}},
-                animStyle:null, boardButtons:null, boardBg:null, buttonAnim:null };
+  let state = { background:null, banners:{rotation:[]}, board:{picked:{},highlighted:{}},
+                animStyle:null, boardButtons:null, boardBg:null, buttonAnim:null,
+                boardGrid:"buttons", boardGap:0 };
   let assets = [];
 
   async function loadState(){
@@ -318,7 +342,9 @@
     } else {
       try { const s = JSON.parse(LS.getItem("acbz-state")); if (s) state = s; } catch(e){}
     }
-    state.board ??= {picked:{}}; state.board.picked ??= {}; state.banners ??= {rotation:[]};
+    state.board ??= {picked:{}}; state.board.picked ??= {}; state.board.highlighted ??= {};
+    state.banners ??= {rotation:[]};
+    state.boardGrid ??= "buttons"; state.boardGap ??= 0;
   }
   async function pushState(){
     state.updatedAt = Date.now();
@@ -447,15 +473,27 @@
 
   /* ---------- board tab ---------- */
   const boardEl = $("#ctlBoard");
+  let hlMode = false;
+  $("#hlModeBtn").onclick = () => { hlMode = !hlMode;
+    $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
+    $("#hlModeBtn").classList.toggle("gold", hlMode); renderAll(); };
+  $("#hlClearBtn").onclick = () => { state.board.highlighted = {}; pushState(); };
   C.ORDER.forEach(abbr => {
     const t = C.TEAMS[abbr];
     const d = document.createElement("div");
     d.className="team"; d.dataset.abbr=abbr;
     d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
     d.onclick = () => {
+      if (hlMode) {                                   // highlight mode: scope button animations
+        state.board.highlighted ??= {};
+        if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
+        else if (!state.board.picked[abbr]) state.board.highlighted[abbr] = true;
+        return pushState();
+      }
       if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
       else {
         state.board.picked[abbr] = true;
+        if (state.board.highlighted) delete state.board.highlighted[abbr];  // eliminated => unhighlighted
         const st = state.animStyle;
         /* linked sound wins; explicit null = No SoundFX; otherwise the default sfx */
         const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
@@ -474,6 +512,28 @@
   });
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
     state.board.picked = {}; fireEvent("board_reset",{}); pushState(); };
+
+  /* ---------- grid styles + button spacing ---------- */
+  const GRIDS = [
+    { id:"buttons",     name:"Buttons",              hint:"rounded, bordered (classic)" },
+    { id:"checker",     name:"Checker board",        hint:"square, connected" },
+    { id:"checkerbare", name:"Checker · no edge",    hint:"square, no button edge" },
+    { id:"honeycomb",   name:"Honeycomb",            hint:"hex, edges touching" },
+    { id:"logos",       name:"NFL logos only",       hint:"no containers" },
+    { id:"rect84",      name:"8 × 4 rectangles",     hint:"wide buttons, 4 rows" },
+    { id:"slant",       name:"Slanted rectangles",   hint:"angled edges" },
+  ];
+  const GRID_PREVIEW = {
+    buttons:"border-radius:5px;border:2px solid var(--copper)",
+    checker:"border:1px solid var(--copper)",
+    checkerbare:"border:1px solid rgba(255,255,255,.12)",
+    honeycomb:"clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);background:var(--copper)",
+    logos:"border:none;background:transparent",
+    rect84:"border-radius:3px;border:2px solid var(--copper)",
+    slant:"clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%);background:var(--copper)",
+  };
+  $("#gapRange").oninput = () => $("#gapVal").textContent = $("#gapRange").value + "px";
+  $("#gapRange").onchange = () => { state.boardGap = +$("#gapRange").value; pushState(); };
 
   /* ---------- banner composer ---------- */
   const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
@@ -541,11 +601,30 @@
   };
 
   /* ---------- AI generators (one per media tab) ---------- */
-  async function gen(body){
-    if (!cloud) { toast("AI generation needs the cloud connection (Settings tab)"); return null; }
+  /* sound + video run on fal's queue: submit, then poll (they take 1-4 min) */
+  const SLOW = new Set(["sfx","board_bg_anim","button_anim","background_anim"]);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  async function call(body){
     const {data, error} = await sb.functions.invoke("generate-asset", { body:{ key:PKEY, ...body } });
     if (error || data?.error) { toast("Generate failed: "+(error?.message || data?.error)); return null; }
     return data;
+  }
+  async function gen(body, btn){
+    if (!cloud) { toast("AI generation needs the cloud connection (Settings tab)"); return null; }
+    if (!SLOW.has(body.kind)) return call(body);
+    const sub = await call({ ...body, mode:"submit" });
+    if (!sub?.request_id) return null;
+    const t0 = Date.now();
+    for (let i = 0; i < 120; i++) {                       // up to ~10 minutes
+      await sleep(5000);
+      if (btn) btn.textContent = `Generating… ${Math.round((Date.now()-t0)/1000)}s`;
+      const p = await call({ ...body, mode:"poll", request_id:sub.request_id, model:sub.model });
+      if (!p) return null;
+      if (p.asset || p.url) return p;
+      if (/FAIL|ERROR/i.test(p.status ?? "")) { toast("Generation failed on the provider"); return null; }
+    }
+    toast("Still generating — check back in a minute and refresh");
+    return null;
   }
   function busy(btn, on){ if (on) { btn._l = btn.textContent; btn.textContent = "Generating…"; }
     else btn.textContent = btn._l; btn.disabled = on; }
@@ -554,13 +633,13 @@
     const p = $("#animGenPrompt").value.trim(); if (!p) return toast("Describe it first");
     const b = $("#animGenBtn"); busy(b, true);
     if ($("#animGenKind").value === "team_style") {
-      const d = await gen({ kind:"animation_still", prompt:p, no_row:true });
+      const d = await gen({ kind:"animation_still", prompt:p, no_row:true }, b);
       if (d) await saveAsset({ kind:"style", name:"Style: "+p.slice(0,36), url:null,
         meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt:p } });
       if (d) toast("Team-animation style created — Enable it on its card");
     } else {
       const d = await gen({ kind:"animation_still", prompt:p,
-        as:{ kind:"animation", name:"AI: "+p.slice(0,40), meta:{ group:"oneshot", image:true } } });
+        as:{ kind:"animation", name:"AI: "+p.slice(0,40), meta:{ group:"oneshot", image:true } } }, b);
       if (d) { toast("One-shot saved"); loadAssets(); }
     }
     busy(b, false);
@@ -569,14 +648,14 @@
     const p = $("#sfxGenPrompt").value.trim(); if (!p) return toast("Describe the sound first");
     const b = $("#sfxGenBtn"); busy(b, true);
     const d = await gen({ kind:"sfx", prompt:p,
-      as:{ kind:"sfx", name:"AI: "+p.slice(0,40), meta:{} } });
+      as:{ kind:"sfx", name:"AI: "+p.slice(0,40), meta:{} } }, b);
     busy(b, false);
     if (d) { toast("Sound generated"); loadAssets(); }
   };
   $("#banGenBtn").onclick = async () => {
     const p = $("#banGenPrompt").value.trim(); if (!p) return toast("Describe the art first");
     const b = $("#banGenBtn"); busy(b, true);
-    const d = await gen({ kind:"banner", prompt:p, as:{ meta:{ template:true } } });
+    const d = await gen({ kind:"banner", prompt:p, as:{ meta:{ template:true } } }, b);
     busy(b, false);
     if (d) { await loadAssets();
       if (d.asset?.url) { comp.bgUrl = d.asset.url; renderCompBGs(); drawComposer(); }
@@ -587,9 +666,10 @@
     const b = $("#bgGenBtn"); busy(b, true);
     const anim = $("#bgGenKind").value === "background_anim";
     const d = anim
-      ? await gen({ kind:"board_bg_anim", prompt:p + ", full-width streamer backdrop",
-          as:{ kind:"background", name:"AI clip: "+p.slice(0,34), meta:{} } })
-      : await gen({ kind:"background", prompt:p });
+      ? await gen({ kind:"background_anim", prompt:p + ", full-width streamer backdrop",
+          quality:$("#bgGenQuality").value,
+          as:{ kind:"background", name:"AI clip: "+p.slice(0,34), meta:{} } }, b)
+      : await gen({ kind:"background", prompt:p }, b);
     busy(b, false);
     if (d) { toast("Background saved"); loadAssets(); }
   };
@@ -599,42 +679,63 @@
     const k = $("#styleGenKind").value;
     let d = null;
     if (k === "board_button")
-      d = await gen({ kind:"board_button", prompt:p + ", single empty square game-show button face, centered, uniform, no logo",
-        as:{ kind:"style", name:"Buttons: "+p.slice(0,32), meta:{ domain:"board_button" } } });
+      /* this image BECOMES the whole button — it must carry its own edge/bezel */
+      d = await gen({ kind:"board_button", prompt:
+        "ONE single empty square button with its own decorative bezel and edge, made of " + p +
+        ", the button fills the frame edge to edge, hollow flat centre with nothing in it, " +
+        "no logo, no text, no icon, no hand, front-on product shot, plain black background",
+        as:{ kind:"style", name:"Buttons: "+p.slice(0,32), meta:{ domain:"board_button" } } }, b);
     else if (k === "board_bg")
       d = await gen({ kind:"board_bg", prompt:p + ", wide horizontal band, subtle, not distracting",
-        as:{ kind:"style", name:"Board: "+p.slice(0,32), meta:{ domain:"board_bg" } } });
+        as:{ kind:"style", name:"Board: "+p.slice(0,32), meta:{ domain:"board_bg" } } }, b);
     else if (k === "board_bg_anim")
       d = await gen({ kind:"board_bg_anim", prompt:p + ", wide horizontal band, subtle looping motion",
-        as:{ kind:"style", name:"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } });
+        quality:$("#styleGenQuality").value,
+        as:{ kind:"style", name:"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } }, b);
     else
-      d = await gen({ kind:"button_anim", prompt:p + ", effect over a small square button, black background, glowing energy",
-        as:{ kind:"style", name:"Btn anim: "+p.slice(0,30), meta:{ domain:"button_anim", mode:"trigger" } } });
+      d = await gen({ kind:"button_anim", prompt:p + ", effect over a small square button, glowing energy",
+        quality:$("#styleGenQuality").value,
+        as:{ kind:"style", name:"Btn anim: "+p.slice(0,30), meta:{ domain:"button_anim", mode:"trigger" } } }, b);
     busy(b, false);
     if (d) { toast("Style created — Apply it on its card"); loadAssets(); }
   };
 
   /* ---------- reframe editor ---------- */
   let rfAsset = null;
+  /* preview box matches the shape the asset is actually shown in */
+  const RF_RATIO = { banner: 97/1080, background: 480/1080, board_bg: 165/1080,
+                     board_button: 1, button_anim: 1, team_anim: 413/667, animation: 413/667 };
+  function rfShape(a){
+    if (a.kind === "banner") return RF_RATIO.banner;
+    if (a.kind === "background") return RF_RATIO.background;
+    if (a.kind === "style") return RF_RATIO[a.meta?.domain] ?? 1;
+    return RF_RATIO.animation;
+  }
+  function rfUrl(a){ return a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url ?? ""; }
   function openReframe(a){
     rfAsset = a;
-    const crop = a.meta?.crop ?? {x:50,y:50};
-    $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50;
-    $("#rfPreview").style.height = (a.kind === "banner" ? Math.round(97/1080*520) : Math.round(480/1080*520)) + "px";
-    $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(a.url||"")
-      ? `<video src="${a.url}" muted autoplay loop playsinline></video>`
-      : `<img src="${a.url}">`;
+    const crop = a.meta?.crop ?? {x:50,y:50,z:100};
+    $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50; $("#rfZ").value = crop.z ?? 100;
+    $("#rfZVal").textContent = ($("#rfZ").value) + "%";
+    $("#rfPreview").style.height = Math.round(rfShape(a) * 520) + "px";
+    const u = rfUrl(a);
+    $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(u)
+      ? `<video src="${u}" muted autoplay loop playsinline></video>`
+      : `<img src="${u}">`;
     rfApply(); $("#reframe").classList.add("on");
   }
   function rfApply(){
     const n = $("#rfPreview").firstChild;
-    if (n) n.style.objectPosition = `${$("#rfX").value}% ${$("#rfY").value}%`;
+    $("#rfZVal").textContent = $("#rfZ").value + "%";
+    if (n) { n.style.objectPosition = `${$("#rfX").value}% ${$("#rfY").value}%`;
+      n.style.transform = `scale(${$("#rfZ").value / 100})`; }
   }
-  $("#rfX").oninput = rfApply; $("#rfY").oninput = rfApply;
+  $("#rfX").oninput = rfApply; $("#rfY").oninput = rfApply; $("#rfZ").oninput = rfApply;
   $("#rfCancel").onclick = () => { $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML=""; };
   $("#rfSave").onclick = async () => {
     if (!rfAsset) return;
-    const ok = await updateAsset(rfAsset.id, { crop:{ x:+$("#rfX").value, y:+$("#rfY").value } });
+    const ok = await updateAsset(rfAsset.id,
+      { crop:{ x:+$("#rfX").value, y:+$("#rfY").value, z:+$("#rfZ").value } });
     if (!ok) return;
     $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML="";
     await loadState(); renderAll();
@@ -657,7 +758,32 @@
     : `<span class="tag">default sound</span>`;
 
   function renderAll(){
-    $$("#ctlBoard .team").forEach(d => d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]));
+    const hlMap = state.board.highlighted || {};
+    $$("#ctlBoard .team").forEach(d => {
+      d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]);
+      d.classList.toggle("hl", !!hlMap[d.dataset.abbr] && !state.board.picked[d.dataset.abbr]);
+    });
+    const hlCount = Object.keys(hlMap).filter(a => !state.board.picked[a]).length;
+    $("#hlHint").textContent = hlMode
+      ? "Highlight mode — tap teams to star them. Button animations play ONLY on starred teams."
+      : (hlCount
+          ? `Tap a team to eliminate it. ${hlCount} team${hlCount===1?"":"s"} highlighted — button animations play only on those.`
+          : "Tap a team to eliminate it (plays the animation + sound); tap again to bring it back.");
+
+    /* grid styles */
+    $("#gridStyleGrid").innerHTML = GRIDS.map(g => {
+      const active = (state.boardGrid ?? "buttons") === g.id;
+      return `<div class="asset gridcard ${active?"active":""}">
+        <div class="thumb"><div class="shape" style="${GRID_PREVIEW[g.id]}"></div></div>
+        <div class="meta"><div class="name">${g.name}</div>
+          <div class="row"><button class="btn ${active?"ghost":""}" data-grid="${g.id}">
+            ${active?"Applied":"Apply"}</button></div>
+          <div class="row"><span class="tag">${g.hint}</span></div>
+        </div></div>`; }).join("");
+    $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => {
+      state.boardGrid = b.dataset.grid; pushState(); });
+    $("#gapRange").value = state.boardGap ?? 0;
+    $("#gapVal").textContent = (state.boardGap ?? 0) + "px";
 
     /* team-animation styles */
     const styles = assets.filter(a => a.kind==="style" && a.meta?.domain==="team_anim");
@@ -668,7 +794,9 @@
         <div class="meta"><div class="name">${esc(s.name)}</div>
           <div class="row"><button class="btn ${active?"ghost":""}" data-style="${s.id}">
             ${active?"Enabled":"Enable"}</button>
-            <button class="btn ghost" data-sfx="${s.id}">Link SoundFX</button>${delBtn(s)}</div>
+            <button class="btn ghost" data-sfx="${s.id}">Link SoundFX</button>
+            ${(s.url || s.meta?.base_url) ? `<button class="btn ghost" data-rf="${s.id}">Reframe</button>` : ""}
+            ${delBtn(s)}</div>
           <div class="row">${sfxLabel(s)}</div>
         </div></div>`; }).join("");
     $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
@@ -680,7 +808,9 @@
       <div class="asset"><div class="thumb">${thumb(a)}</div>
         <div class="meta"><div class="name">${esc(a.name)}</div>
           <div class="row"><button class="btn" data-play="${a.id}">Play</button>
-            <button class="btn ghost" data-sfx="${a.id}">Link SoundFX</button>${delBtn(a)}</div>
+            <button class="btn ghost" data-sfx="${a.id}">Link SoundFX</button>
+            ${a.url ? `<button class="btn ghost" data-rf="${a.id}">Reframe</button>` : ""}
+            ${delBtn(a)}</div>
           <div class="row">${sfxLabel(a)}</div>
         </div></div>`).join("");
     $$("#oneshotGrid [data-play]").forEach(b => b.onclick = () => {
@@ -745,7 +875,9 @@
           <div class="thumb">${thumb(s) || (extra?.icon ?? "🎛")}</div>
           <div class="meta"><div class="name">${esc(s.name)}</div>
             <div class="row"><button class="btn ${active?"ghost":""}" data-part="${stateKey}:${s.id}">
-              ${active?"Applied":"Apply"}</button>${delBtn(s)}</div>
+              ${active?"Applied":"Apply"}</button>
+              ${s.url ? `<button class="btn ghost" data-rf="${s.id}">Reframe</button>` : ""}
+              ${delBtn(s)}</div>
             ${s.meta?.mode && s.meta.mode !== "none"
               ? `<div class="row"><span class="tag">${s.meta.mode === "ambient" ? "always on" : "on team hit"}</span></div>` : ""}
           </div></div>`; }).join("");

@@ -36,14 +36,15 @@
 
   /* ---------- HUD LAYER (board 1080x165 @y480, banners 1080x97 @y645) ---------- */
   #layer-hud{inset:0;display:none}
-  #board{left:0;top:480px;width:1080px;height:165px;overflow:hidden;
+  #board{--gap:0px;--radius:10px;--logopad:6px;
+    left:0;top:480px;width:1080px;height:165px;overflow:hidden;
     background:
       radial-gradient(140% 220% at 50% -60%, rgba(53,167,255,.18), transparent 55%),
       linear-gradient(180deg,#0E2A38 0%, #0A1F2C 55%, #081824 100%);
     background-size:cover;background-position:center;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -14px 26px rgba(0,0,0,.55);
     display:grid;grid-template-columns:repeat(16,1fr);grid-template-rows:1fr 1fr;
-    gap:8px;padding:12px 46px}
+    gap:var(--gap);padding:12px 46px}
   /* one wide, feathered light bar sweeping BOTH rows at once (v2) */
   #board::after{content:"";position:absolute;top:-10px;bottom:-10px;left:0;width:430px;
     background:linear-gradient(100deg,
@@ -55,20 +56,45 @@
   @keyframes sweep{
     0%{left:-470px;opacity:0} 6%{opacity:1}
     58%{left:1120px;opacity:1} 62%{left:1120px;opacity:0} 100%{left:-470px;opacity:0}}
-  .cell{position:relative;border-radius:10px;overflow:hidden;
+  .cell{position:relative;border-radius:var(--radius);overflow:hidden;
     background:linear-gradient(160deg,#12444F 0%, var(--teal-glass) 40%, var(--teal-dim) 100%);
-    background-size:cover;background-position:center;
+    background-size:100% 100%;background-position:center;
     border:2px solid var(--copper);
     box-shadow:inset 0 2px 5px rgba(255,255,255,.14), inset 0 -6px 10px rgba(0,0,0,.6),
                0 2px 4px rgba(0,0,0,.5);
     transition:filter .45s ease, border-color .45s ease}
   .cell::before{ /* glass gloss */
-    content:"";position:absolute;inset:0;border-radius:8px;
+    content:"";position:absolute;inset:0;border-radius:calc(var(--radius) - 2px);
     background:linear-gradient(178deg,rgba(255,255,255,.28) 0%,rgba(255,255,255,.06) 26%,transparent 48%);
     pointer-events:none;z-index:3}
-  .cell img{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);
+  .cell img{position:absolute;inset:var(--logopad);
+    width:calc(100% - 2*var(--logopad));height:calc(100% - 2*var(--logopad));
     object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
     transition:filter .45s ease, opacity .45s ease}
+
+  /* ---- v4: a custom button style REPLACES the stock gold button entirely ---- */
+  #board.has-btnstyle{--logopad:17%}
+  #board.has-btnstyle .cell{border:none;box-shadow:none;background-color:transparent}
+  #board.has-btnstyle .cell::before{display:none}
+
+  /* ---- v4: grid styles (each still wears the chosen button style) ---- */
+  #board.grid-checker{--radius:0px}
+  #board.grid-checker .cell{border-width:1px}
+  #board.grid-checkerbare{--radius:0px}
+  #board.grid-checkerbare .cell{border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+  #board.grid-honeycomb{--radius:0px;--logopad:19%}
+  #board.grid-honeycomb .cell{border:none;box-shadow:none;
+    clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
+  #board.grid-honeycomb .cell:nth-child(n+17){left:50%}   /* offset row 2, no transform clash */
+  #board.grid-honeycomb .cell::before{clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
+  #board.grid-logos{--logopad:2px}
+  #board.grid-logos .cell{border:none;box-shadow:none;background:none !important}
+  #board.grid-logos .cell::before{display:none}
+  #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);--logopad:4px}
+  #board.grid-slant{--radius:0px}
+  #board.grid-slant .cell{border:none;
+    clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%)}
+  #board.grid-slant .cell::before{clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%)}
   /* v2: eliminate-only — picked teams simply dim (no X, no color change) */
   .cell.on{filter:brightness(.38) saturate(.55)}
   .cell.on img{opacity:.55}
@@ -100,6 +126,9 @@
     91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
     93%{transform:translateX(3px);filter:hue-rotate(-60deg)}
     95%{transform:translateX(-1px)}97%{transform:none;filter:none}}
+  /* v4: once any team is highlighted, ambient effects play ONLY on those teams */
+  #board.hl-mode .cell:not(.hl)::after{display:none !important}
+  #board.hl-mode.anim-glitch .cell:not(.hl){animation:none}
   /* TRIGGER: fires on the team that was just hit */
   .cell.fx-pop{animation:bpop .85s cubic-bezier(.22,1.4,.3,1);z-index:7}
   @keyframes bpop{0%{transform:scale(1)}35%{transform:scale(1.55);filter:brightness(1.6)}
@@ -205,11 +234,20 @@
 
   /* ------- board style parts: buttons / background / button animation (v3) ------- */
   const AMBIENT = ["glow","fire","lightning","glitch"];
+  const GRIDS = ["buttons","checker","checkerbare","honeycomb","logos","rect84","slant"];
   let partsKey = null, btnAnim = null;
   function applyBoardParts(s) {
     const btn = s?.boardButtons, bg = s?.boardBg, anim = s?.buttonAnim;
-    const key = [btn?.url, bg?.url, anim?.id, anim?.meta?.effect, anim?.url].join("|");
+    const grid = GRIDS.includes(s?.boardGrid) ? s.boardGrid : "buttons";
+    const gap = Math.max(0, Math.min(20, Number(s?.boardGap ?? 0)));
+    const key = [btn?.url, bg?.url, anim?.id, anim?.meta?.effect, anim?.url, grid, gap].join("|");
     if (key === partsKey) return; partsKey = key;
+
+    /* grid shape + spacing (buttons touch at gap 0) */
+    GRIDS.forEach(g => boardEl.classList.remove("grid-" + g));
+    boardEl.classList.add("grid-" + grid);
+    boardEl.style.setProperty("--gap", gap + "px");
+    boardEl.classList.toggle("has-btnstyle", !!btn?.url);
 
     /* background: still image or looping video behind the grid */
     boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
@@ -235,9 +273,11 @@
     if (eff && AMBIENT.includes(eff) && anim?.meta?.mode !== "trigger")
       boardEl.classList.add("anim-" + eff);
   }
-  /* trigger-mode effects fire on the single cell that was just hit */
+  /* trigger-mode effects fire on the single cell that was just hit
+     (suppressed when highlight mode is on and this team isn't highlighted) */
   function triggerButtonAnim(abbr) {
     const cell = cells[abbr]; if (!cell || !btnAnim) return;
+    if (boardEl.classList.contains("hl-mode") && !cell.classList.contains("hl")) return;
     const m = btnAnim.meta ?? {};
     if (m.effect === "none") return;
     if (btnAnim.url && /\.(webm|mp4)(\?|$)/i.test(btnAnim.url)) {   // AI-generated clip
@@ -265,7 +305,17 @@
 
   /* ---------------- banner rotator ---------------- */
   const banEl = $("#banners");
-  const pos = (m) => m?.crop ? `${m.crop.x ?? 50}% ${m.crop.y ?? 50}%` : "50% 50%";
+  /* reframe: pan (x/y %) + zoom (z %, 100 = fit) — used by banners and backgrounds */
+  const cropCss = (m) => {
+    const c = m?.crop; if (!c) return "";
+    const z = Math.max(1, Math.min(4, (c.z ?? 100) / 100));
+    return `object-position:${c.x ?? 50}% ${c.y ?? 50}%;transform:scale(${z});`;
+  };
+  const applyCrop = (node, m) => {
+    const c = m?.crop; if (!node) return;
+    node.style.objectPosition = c ? `${c.x ?? 50}% ${c.y ?? 50}%` : "";
+    node.style.transform = c?.z ? `scale(${Math.max(1, Math.min(4, c.z / 100))})` : "";
+  };
   const rotator = {
     list: [], i: -1, timer: null,
     setList(list) {
@@ -284,9 +334,9 @@
       if (a.meta?.type === "text" && !a.url) {
         b.innerHTML = `<div class="txt">${(a.meta.text||"").replace(/</g,"&lt;")}</div>`;
       } else if (/\.(webm|mp4)(\?|$)/i.test(a.url||"")) {
-        b.innerHTML = `<video src="${a.url}" autoplay muted loop playsinline style="object-position:${pos(a.meta)}"></video>`;
+        b.innerHTML = `<video src="${a.url}" autoplay muted loop playsinline style="${cropCss(a.meta)}"></video>`;
       } else {
-        b.innerHTML = `<img src="${a.url}" style="object-position:${pos(a.meta)}">`;
+        b.innerHTML = `<img src="${a.url}" style="${cropCss(a.meta)}">`;
       }
       banEl.appendChild(b);
       requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add("live")));
@@ -307,7 +357,7 @@
     const n = /\.(webm|mp4)(\?|$)/i.test(bg.url)
       ? Object.assign(document.createElement("video"), {src:bg.url, autoplay:true, muted:true, loop:true, playsInline:true})
       : Object.assign(document.createElement("img"), {src:bg.url});
-    if (bg.crop) n.style.objectPosition = `${bg.crop.x ?? 50}% ${bg.crop.y ?? 50}%`;
+    applyCrop(n, bg);
     f.insertBefore(n, f.firstChild);
   }
 
@@ -378,8 +428,13 @@
     if (!s) return;
     setBackground(s.background);
     applyBoardParts(s);
-    const picked = s.board?.picked || {};
-    for (const abbr of C.ORDER) cells[abbr].classList.toggle("on", !!picked[abbr]);
+    const picked = s.board?.picked || {}, hl = s.board?.highlighted || {};
+    for (const abbr of C.ORDER) {
+      cells[abbr].classList.toggle("on", !!picked[abbr]);
+      cells[abbr].classList.toggle("hl", !!hl[abbr] && !picked[abbr]);
+    }
+    boardEl.classList.toggle("hl-mode",
+      C.ORDER.some(a => hl[a] && !picked[a]));
     rotator.setList(s.banners?.rotation || []);
   }
   const seen = new Set();
