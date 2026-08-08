@@ -39,27 +39,33 @@ const deckRes = await (await fetch(
   `${env.SUPABASE_URL}/functions/v1/deck?key=${env.DECK_KEY}&action=board_reset`)).json();
 ok("deck endpoint still works (board_reset ok)", deckRes.ok === true);
 
-/* 4 — panel without key: watch-only */
+/* 4 — panel signed out: locked behind the password gate, board not even reachable */
 const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] });
 const noKey = await (await browser.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
 await noKey.goto(`${HOSTED}/control/`, { waitUntil: "networkidle" });
-await noKey.click('#ctlBoard .team[data-abbr="kc"]');
-await noKey.waitForTimeout(1500);
-const toast = await noKey.evaluate(() => document.querySelector("#toast").textContent);
-ok(`keyless tap blocked with hint ("${toast.trim()}")`, /panel key/i.test(toast));
+ok("signed-out panel is locked", await noKey.isVisible("#lock.on"));
+ok("board not clickable while locked", !(await noKey.isVisible('#ctlBoard .team[data-abbr="kc"]')));
+
+/* wrong password is rejected server-side */
+await noKey.fill("#lockPw", "not-the-password");
+await noKey.click("#lockGo");
+await noKey.waitForTimeout(2000);
+const lockMsg = await noKey.evaluate(() => document.querySelector("#lockMsg").textContent);
+ok(`wrong password rejected ("${lockMsg.trim()}")`, /wrong password/i.test(lockMsg));
+ok("still locked after wrong password", await noKey.isVisible("#lock.on"));
+
 const pickedAfter = await (await fetch(`${env.SUPABASE_URL}/rest/v1/stream_state?select=data&id=eq.1`,
   { headers: REST })).json();
-ok("cloud state unchanged by keyless tap", !pickedAfter[0]?.data?.board?.picked?.kc);
+ok("cloud state unchanged while signed out", !pickedAfter[0]?.data?.board?.picked?.kc);
 await noKey.screenshot({ path: `${QA}/m6-keyless-blocked.png`, clip: { x: 0, y: 0, width: 1280, height: 780 } });
 
-/* 5 — panel with key: full flow via the Settings UI */
+/* 5 — panel signed in: full flow (M7 — password login, no key field in the UI) */
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
 const panel = await ctx.newPage();
 await panel.goto(`${HOSTED}/control/`, { waitUntil: "networkidle" });
-await panel.click('nav button[data-tab="settings"]');
-await panel.fill("#setPanelKey", env.PANEL_KEY);
-await panel.click("#saveKeys");
-await panel.waitForLoadState("networkidle");
+await panel.fill("#lockPw", env.PANEL_PASSWORD);
+await panel.click("#lockGo");
+await panel.waitForSelector("#lock:not(.on)", { timeout: 15000 });
 await panel.waitForTimeout(1500);
 
 const overlay = await ctx.newPage();

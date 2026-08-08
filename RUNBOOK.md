@@ -1,8 +1,8 @@
 # ACBreakz Cloud Overlay — Operator Runbook
 
-One page to run the whole system. Keys are NOT in this file: get `<DECK_KEY>` and
-`<PANEL_KEY>` from Brandon (they live in `C:\ACBreakz-Cloud\.env` on the main PC and in
-Supabase → Edge Functions → Secrets).
+One page to run the whole system. Keys are NOT in this file: get `<DECK_KEY>`,
+`<PANEL_KEY>` and the panel password from Brandon (they live in `C:\ACBreakz-Cloud\.env`
+on the main PC and in Supabase → Edge Functions → Secrets).
 
 **Live URLs**
 - Overlay (OBS): `https://lordner-visual.github.io/ACBreakz/overlay/`
@@ -38,8 +38,9 @@ in the control panel → pick animation + sound + board slot on every PC at once
 ## Control panel (phone / tablet / laptop)
 
 1. Open `https://lordner-visual.github.io/ACBreakz/control/`.
-2. First time on a device: **Settings tab → "Panel key" → paste `<PANEL_KEY>` → Save &
-   reconnect.** Without it the panel can watch but not change anything.
+2. The panel opens locked. **Type the panel password → Unlock.** That device stays signed
+   in for 30 days; nothing else has to be entered, ever. Sign out early via
+   **Settings tab → "Sign out of this device"**.
 3. **Pick the PC in the header dropdown first** — board taps, banner rotation,
    backgrounds, and styles apply to that PC's stream only ("ALL PCs" broadcasts).
    Uploads and AI generations always land in the shared library for every PC.
@@ -99,13 +100,14 @@ modified. The cloud system keeps running in the background; switch back any time
 
 | Symptom | Fix |
 |---|---|
-| Panel says "Enter the panel key in Settings" | Settings tab → paste `<PANEL_KEY>` → Save |
+| Panel is locked / "Session expired" | Type the panel password → Unlock (sessions last 30 days) |
+| "Wrong password" on a device you trust | The password was rotated — get the new one and re-enter it |
 | Overlay frozen / no picks arriving | Right-click the browser source → "Refresh cache of current page"; check PC internet |
 | Deck button does nothing | Test the URL in a phone browser — `{"ok":true}` means the button/plugin is misconfigured, an error names the problem |
 | "bad key" from deck endpoint | The `<DECK_KEY>` in the button URL is wrong |
 | Team pick shows CSS burst instead of team video | That team's stinger asset is missing — check Games & FX library |
 | WebM plays with black background | Re-encode with alpha: `ffmpeg -i in.webm -pix_fmt yuva420p out.webm` |
-| Storage 403 on upload | Panel key missing/wrong (uploads are signed through the panel function) |
+| Storage 403 on upload | Signed out (uploads are signed through the panel function) — unlock again |
 | Nothing works, show must go on | Rollback (above) and stream on legacy scenes |
 
 ## System map (for whoever maintains this)
@@ -114,8 +116,18 @@ modified. The cloud system keeps running in the background; switch back any time
 - **Backend:** Supabase project `jqowngdkgnfhaworyppo` — `stream_state` (one row),
   `assets`, `events` (auto-pruned daily), storage bucket `media`, realtime on
   state+events.
-- **Security:** anon key (in `overlay/config.js`) is READ-ONLY. Writes only via edge
-  functions: `deck` (`DECK_KEY`), `panel` (`PANEL_KEY`, also gates AI spend).
+- **Security:** anon key (in `overlay/config.js`) is READ-ONLY — safe to ship in a public
+  page. Writes only via edge functions: `deck` (`DECK_KEY`), `panel` + `generate-asset`
+  (which also gates AI spend).
+  The control panel is a **public static page**, so it can never hold a secret: anything
+  in its HTML/JS is readable by anyone with the URL. Instead it signs in with
+  `PANEL_PASSWORD` and gets a 30-day HMAC session token (`supabase/functions/_shared/auth.ts`);
+  `PANEL_KEY` stays server-side and is used only by scripts and the QA harness.
+  Tokens are signed with `PANEL_KEY + PANEL_PASSWORD`, so **rotating either secret signs
+  every device out instantly**:
+  `supabase secrets set PANEL_PASSWORD=<new>` (then redeploy is not needed).
+  The overlay is deliberately NOT password-gated — it is read-only and must load
+  unattended in OBS.
 - **Budget ledger:** `BUDGET.md`. AI images ≈$0.03 each (fal.ai FLUX).
 - **QA:** `node qa/shoot.mjs` re-runs the 6-screenshot vision check against
   `docs/LAYOUT_KEY.md`.

@@ -12,10 +12,13 @@
 //   {key, kind, prompt, mode:"submit"}     -> {ok, request_id, model}
 //   {key, mode:"poll", request_id, model, kind, as} -> {ok, status} | {ok, asset}
 //
+// Callers pass either a panel session token (browsers) or PANEL_KEY (scripts).
+//
 // Deploy:  supabase functions deploy generate-asset
-// Secrets: FAL_KEY, PANEL_KEY
+// Secrets: FAL_KEY, PANEL_KEY, PANEL_PASSWORD
 // ============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { authorized } from "../_shared/auth.ts";
 
 const sb = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -121,8 +124,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const { kind = "background", prompt = "", key = "", no_row = false, as = null,
           mode = "inline", quality = "standard", request_id = "", model: modelIn = "" } = body;
-  const PANEL_KEY = Deno.env.get("PANEL_KEY") ?? "";
-  if (!PANEL_KEY || key !== PANEL_KEY) return json({ error: "bad panel key" }, 401);
+  if (!await authorized({ key, token: body.token })) return json({ error: "signed out" }, 401);
   if (!FAL_KEY) return json({ error: "FAL_KEY not configured" }, 500);
 
   /* ---- poll an already-submitted queue job ----

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="locked">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -94,6 +94,18 @@
     border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
   label.up{display:inline-block}
   label.up input{display:none}
+  /* login gate — covers everything until a session token is in hand */
+  #lock{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;
+    padding:20px;background:radial-gradient(140% 100% at 50% 0%,#0F2A44,var(--navy-deep) 70%)}
+  #lock.on{display:flex}
+  #lock form{display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;text-align:center}
+  #lock h1{font-size:26px;letter-spacing:3px;text-transform:uppercase}
+  #lock h1 b{color:var(--gold)}
+  #lock p{font-size:13px;color:#9FB6C9}
+  #lock input{background:#0A1C2C;border:1px solid #1E3A52;color:var(--bone);border-radius:10px;
+    padding:13px 12px;font-size:16px;width:100%;text-align:center;letter-spacing:3px}
+  #lockMsg{min-height:18px;color:var(--danger)}
+  html.locked body{overflow:hidden}
 </style>
 </head>
 <body>
@@ -254,13 +266,11 @@
 </section>
 
 <section id="tab-settings">
-  <h2>Cloud connection</h2>
-  <div class="row" style="flex-direction:column;max-width:640px">
-    <input type="text" id="setUrl" placeholder="Supabase URL (https://xxxx.supabase.co)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
-    <input type="text" id="setKey" placeholder="Supabase anon key" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
-    <input type="text" id="setPanelKey" placeholder="Panel key (required to make changes — ask Brandon)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
-    <div class="row"><button class="btn" id="saveKeys">Save &amp; reconnect</button>
-      <span class="tag">Stored in this browser only. Leave blank for same-browser preview mode.</span></div>
+  <h2>This device</h2>
+  <div class="row" style="flex-direction:column;max-width:640px;align-items:flex-start">
+    <div class="tag" id="signedInAs">Signed in — this device stays signed in for 30 days.</div>
+    <div class="row"><button class="btn warn" id="signOut">Sign out of this device</button>
+      <span class="tag">Use this if you lend the device out or the password changes.</span></div>
   </div>
   <h2>Overlays online</h2>
   <div id="onlineList" class="tag">—</div>
@@ -292,6 +302,17 @@
 
 <div id="toast"></div>
 
+<div id="lock" class="on">
+  <form id="lockForm">
+    <h1>AC<b>Breakz</b></h1>
+    <p>Enter the panel password to use this control.</p>
+    <input type="password" id="lockPw" placeholder="Password" autocapitalize="off" autocorrect="off"
+           spellcheck="false" autocomplete="current-password" inputmode="numeric">
+    <button class="btn" id="lockGo" type="submit">Unlock</button>
+    <span class="tag" id="lockMsg"></span>
+  </form>
+</div>
+
 <script>
 (() => {
   const C = window.ACBZ, $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -308,9 +329,14 @@
   });
 
   /* ---------- transport ---------- */
-  const url = LS.getItem("acbz-url") || C.SUPABASE_URL;
-  const key = LS.getItem("acbz-key") || C.SUPABASE_ANON_KEY;
-  const PKEY = LS.getItem("acbz-panel-key") || "";
+  /* URL + anon key ship in overlay/config.js — the anon key is read-only, so it is
+     safe in a public page. Writes need a session token, minted by /panel from the
+     password. PANEL_KEY itself never reaches the browser. */
+  const url = C.SUPABASE_URL;
+  const key = C.SUPABASE_ANON_KEY;
+  /* server-side scripts and the QA harness still seed a raw key in localStorage */
+  const LEGACY_KEY = LS.getItem("acbz-panel-key") || "";
+  let TOKEN = LS.getItem("acbz-token") || "";
   const cloud = !!(url && key);
   const sb = cloud ? window.supabase.createClient(url, key) : null;
   const bus = cloud ? null : new BroadcastChannel("acbz-bus");
@@ -322,17 +348,66 @@
     await loadState(); renderAll(); toast(PC === "all" ? "Driving ALL PCs" : "Driving PC " + PC); };
   const pcRow = () => PC === "all" ? 1 : parseInt(PC, 10);
 
+  const auth = () => LEGACY_KEY ? { key: LEGACY_KEY } : { token: TOKEN };
+
   async function panelCall(body){
-    if (!PKEY) { toast("Enter the panel key in Settings to make changes"); return { error: { message: "no panel key" } }; }
-    const { data, error } = await sb.functions.invoke("panel", { body: { key: PKEY, ...body } });
+    if (!TOKEN && !LEGACY_KEY) { lock("Signed out — enter the password again."); return { error:{ message:"signed out" } }; }
+    const { data, error } = await sb.functions.invoke("panel", { body: { ...auth(), ...body } });
     if (error) {
       let message = error.message;
       try { const errBody = await error.context?.json(); if (errBody?.error) message = errBody.error; } catch(e){}
+      if (message === "signed out") { signOut("Session expired — enter the password again."); }
       return { error: { message } };
     }
     if (data?.error) return { error: { message: data.error } };
     return { data };
   }
+
+  /* ---------- login gate ---------- */
+  /* The page ships locked (see class="locked"/class="on" in the markup) so a JS
+     failure fails closed rather than exposing the panel. */
+  let booted = false, unlockResolve;
+  const unlocked = new Promise(r => unlockResolve = r);
+
+  function lock(msg){
+    document.documentElement.classList.add("locked");
+    $("#lock").classList.add("on");
+    $("#lockMsg").textContent = msg || "";
+    $("#lockPw").value = "";
+    setTimeout(() => $("#lockPw").focus(), 50);
+  }
+  function unlock(){
+    document.documentElement.classList.remove("locked");
+    $("#lock").classList.remove("on");
+    $("#lockMsg").textContent = "";
+    unlockResolve();
+  }
+  function signOut(msg){
+    TOKEN = ""; LS.removeItem("acbz-token");
+    lock(msg || "Signed out.");
+  }
+
+  $("#lockForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const pw = $("#lockPw").value;
+    if (!pw) return;
+    const btn = $("#lockGo");
+    btn.disabled = true; btn.textContent = "Checking…"; $("#lockMsg").textContent = "";
+    const { data, error } = await sb.functions.invoke("panel", { body: { action:"login", password: pw } });
+    btn.disabled = false; btn.textContent = "Unlock";
+    if (data?.token) {
+      TOKEN = data.token; LS.setItem("acbz-token", TOKEN);
+      if (booted) return location.reload();   // re-signed in mid-session — resync
+      return unlock();
+    }
+    let message = error?.message;
+    try { const b = await error?.context?.json(); if (b?.error) message = b.error; } catch(e){}
+    $("#lockMsg").textContent = message === "wrong password" ? "Wrong password." : (message || "Could not sign in.");
+    $("#lockPw").value = ""; $("#lockPw").focus();
+  };
+
+  /* preview mode and already-signed-in devices go straight in */
+  if (!cloud || TOKEN || LEGACY_KEY) unlock(); else lock();
 
   let state = { background:null, banners:{rotation:[]}, board:{picked:{},highlighted:{}},
                 animStyle:null, boardButtons:null, boardBg:null, buttonAnim:null,
@@ -612,8 +687,13 @@
   const SLOW = new Set(["sfx","board_bg_anim","button_anim","background_anim"]);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   async function call(body){
-    const {data, error} = await sb.functions.invoke("generate-asset", { body:{ key:PKEY, ...body } });
-    if (error || data?.error) { toast("Generate failed: "+(error?.message || data?.error)); return null; }
+    const {data, error} = await sb.functions.invoke("generate-asset", { body:{ ...auth(), ...body } });
+    if (error || data?.error) {
+      let message = error?.message || data?.error;
+      try { const errBody = await error?.context?.json(); if (errBody?.error) message = errBody.error; } catch(e){}
+      if (message === "signed out") signOut("Session expired — enter the password again.");
+      toast("Generate failed: "+message); return null;
+    }
     return data;
   }
   async function gen(body, btn){
@@ -915,14 +995,11 @@
   }
 
   /* ---------- settings ---------- */
-  $("#setUrl").value = LS.getItem("acbz-url")||""; $("#setKey").value = LS.getItem("acbz-key")||"";
-  $("#setPanelKey").value = LS.getItem("acbz-panel-key")||"";
-  $("#saveKeys").onclick = () => { LS.setItem("acbz-url",$("#setUrl").value.trim());
-    LS.setItem("acbz-key",$("#setKey").value.trim());
-    LS.setItem("acbz-panel-key",$("#setPanelKey").value.trim()); location.reload(); };
+  $("#signOut").onclick = () => signOut("Signed out.");
 
   /* ---------- boot ---------- */
   (async () => {
+    await unlocked;                      // resolves immediately once signed in
     await loadState();
     if (cloud) {
       $("#presence").innerHTML = "cloud: <b>connected</b>";
@@ -939,6 +1016,7 @@
       }).subscribe();
     }
     await loadAssets();
+    booted = true;
   })();
 })();
 </script>

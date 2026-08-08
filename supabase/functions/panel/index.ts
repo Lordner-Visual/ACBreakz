@@ -1,25 +1,29 @@
 // ============================================================
 // /panel — keyed write gateway for the control panel (M6 hardening).
 // The anon key is read-only after M6; every write the panel makes goes
-// through here, authorized by PANEL_KEY (entered once per trusted device
-// in the panel's Settings tab, stored in that browser only).
+// through here.
 //
-//   { key, action:"state",  data }                -> replace stream_state doc
-//   { key, action:"event",  type, payload }       -> insert events row
-//   { key, action:"asset",  asset:{kind,name,url,meta} } -> insert assets row
-//   { key, action:"sign_upload", path }           -> signed upload token for media/<path>
+// M7: the panel signs in with a password and gets a session token, so no
+// device ever holds PANEL_KEY. See _shared/auth.ts for why.
+//
+//   { action:"login", password }                    -> { token } (30 days)
+//   { token, action:"state",  data }                -> replace stream_state doc
+//   { token, action:"event",  type, payload }       -> insert events row
+//   { token, action:"asset",  asset:{kind,name,url,meta} } -> insert assets row
+//   { token, action:"sign_upload", path }           -> signed upload token for media/<path>
+//
+// Server-side scripts may still pass { key: PANEL_KEY } instead of a token.
 //
 // Deploy:  supabase functions deploy panel
-// Secrets: supabase secrets set PANEL_KEY=<random32>
+// Secrets: supabase secrets set PANEL_KEY=<random32> PANEL_PASSWORD=<password>
 // ============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { authorized, configured, issueToken, passwordOk } from "../_shared/auth.ts";
 
 const sb = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
-const PANEL_KEY = Deno.env.get("PANEL_KEY") ?? "";
-
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, content-type, apikey, x-client-info",
@@ -30,7 +34,15 @@ const json = (b: unknown, s = 200) =>
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const body = await req.json().catch(() => ({}));
-  if (!PANEL_KEY || body.key !== PANEL_KEY) return json({ error: "bad panel key" }, 401);
+
+  if (!configured()) return json({ error: "panel auth not configured on the server" }, 500);
+
+  /* login is the one unauthenticated action — it is what mints the token */
+  if (body.action === "login") {
+    if (!passwordOk(body.password)) return json({ error: "wrong password" }, 401);
+    return json({ ok: true, token: await issueToken() });
+  }
+  if (!await authorized(body)) return json({ error: "signed out" }, 401);
 
   const pcList = (v: unknown) => {
     const n = parseInt(String(v), 10);
