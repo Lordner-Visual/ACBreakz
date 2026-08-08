@@ -256,9 +256,9 @@
 <section id="tab-settings">
   <h2>Cloud connection</h2>
   <div class="row" style="flex-direction:column;max-width:640px">
-    <input type="text" id="setUrl" placeholder="Supabase URL (https://xxxx.supabase.co)">
-    <input type="text" id="setKey" placeholder="Supabase anon key">
-    <input type="text" id="setPanelKey" placeholder="Panel key (required to make changes — ask Brandon)">
+    <input type="text" id="setUrl" placeholder="Supabase URL (https://xxxx.supabase.co)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+    <input type="text" id="setKey" placeholder="Supabase anon key" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+    <input type="text" id="setPanelKey" placeholder="Panel key (required to make changes — ask Brandon)" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
     <div class="row"><button class="btn" id="saveKeys">Save &amp; reconnect</button>
       <span class="tag">Stored in this browser only. Leave blank for same-browser preview mode.</span></div>
   </div>
@@ -325,7 +325,11 @@
   async function panelCall(body){
     if (!PKEY) { toast("Enter the panel key in Settings to make changes"); return { error: { message: "no panel key" } }; }
     const { data, error } = await sb.functions.invoke("panel", { body: { key: PKEY, ...body } });
-    if (error) return { error };
+    if (error) {
+      let message = error.message;
+      try { const errBody = await error.context?.json(); if (errBody?.error) message = errBody.error; } catch(e){}
+      return { error: { message } };
+    }
     if (data?.error) return { error: { message: data.error } };
     return { data };
   }
