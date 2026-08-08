@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ACBreakz Overlay</title>
+<!--
+  ACBreakz Cloud Overlay — one URL, five PCs, zero manual updates.
+  OBS Browser Source: width 1080, height 1920, FPS 60.
+  Layers (add as 3 separate browser sources, same URL, different ?layer=):
+    ?layer=bg   -> streamer background (BOTTOM of scene, under Camera 1)
+    ?layer=hud  -> team board + banners (ABOVE both cameras)
+    ?layer=fx   -> animations + sfx     (TOP of scene)
+  ?layer=all for testing in a normal browser. Add &debug=1 to see section guides.
+  ?pc=1..5 identifies the machine (presence shows in the control panel).
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{
+    /* AC Breakz brand tokens — pulled from the logo badge + board bronze */
+    --navy-deep:#071527; --navy:#0B1E33; --steel:#274A66;
+    --teal-glass:#0D3540; --teal-dim:#082228;
+    --copper:#B87333; --copper-dk:#7A4A1E; --gold:#D9A441;
+    --bone:#EFE9DC; --volt:#35A7FF; --danger:#E5484D;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1080px;height:1920px;background:transparent;overflow:hidden;
+    font-family:"Arial Black","Segoe UI",system-ui,sans-serif}
+  .abs{position:absolute}
+
+  /* ---------- BG LAYER (streamer background, 1080x480) ---------- */
+  #layer-bg{inset:0;display:none}
+  #bgFrame{left:0;top:0;width:1080px;height:480px;overflow:hidden;background:
+    radial-gradient(120% 160% at 50% -20%, #123a5c 0%, var(--navy) 45%, var(--navy-deep) 100%)}
+  #bgFrame video,#bgFrame img{width:100%;height:100%;object-fit:cover}
+  #bgFrame .fade{position:absolute;left:0;right:0;bottom:0;height:70px;
+    background:linear-gradient(180deg,transparent,rgba(4,10,18,.85))}
+
+  /* ---------- HUD LAYER (board 1080x165 @y480, banners 1080x97 @y645) ---------- */
+  #layer-hud{inset:0;display:none}
+  #board{left:0;top:480px;width:1080px;height:165px;
+    background:
+      radial-gradient(140% 220% at 50% -60%, rgba(53,167,255,.18), transparent 55%),
+      linear-gradient(180deg,#0E2A38 0%, #0A1F2C 55%, #081824 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -14px 26px rgba(0,0,0,.55);
+    display:grid;grid-template-columns:repeat(16,1fr);grid-template-rows:1fr 1fr;
+    gap:8px;padding:12px 46px}
+  .cell{position:relative;border-radius:10px;overflow:hidden;
+    background:linear-gradient(160deg,#12444F 0%, var(--teal-glass) 40%, var(--teal-dim) 100%);
+    border:2px solid var(--copper);
+    box-shadow:inset 0 2px 5px rgba(255,255,255,.14), inset 0 -6px 10px rgba(0,0,0,.6),
+               0 2px 4px rgba(0,0,0,.5)}
+  .cell::before{ /* glass gloss */
+    content:"";position:absolute;inset:0;border-radius:8px;
+    background:linear-gradient(178deg,rgba(255,255,255,.28) 0%,rgba(255,255,255,.06) 26%,transparent 48%);
+    pointer-events:none;z-index:3}
+  .cell::after{ /* travelling shimmer — staggered per cell via --i */
+    content:"";position:absolute;top:-40%;bottom:-40%;left:-70%;width:45%;
+    background:linear-gradient(105deg,transparent,rgba(255,255,255,.5),transparent);
+    transform:skewX(-18deg);opacity:0;z-index:4;
+    animation:shimmer 9s linear infinite;animation-delay:calc(var(--i) * .28s)}
+  @keyframes shimmer{0%,88%{left:-70%;opacity:0}90%{opacity:.9}100%{left:130%;opacity:0}}
+  .cell img{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);
+    object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
+    opacity:0;transform:scale(.4);transition:opacity .25s,transform .25s}
+  /* FILL mode: logo pops in when a team is picked */
+  .cell.on img{opacity:1;transform:scale(1);animation:pop .55s cubic-bezier(.2,1.6,.4,1)}
+  .cell.on{border-color:var(--gold);
+    box-shadow:inset 0 2px 5px rgba(255,255,255,.2), inset 0 -6px 10px rgba(0,0,0,.6),
+               0 0 14px rgba(217,164,65,.55)}
+  @keyframes pop{0%{transform:scale(.2);filter:brightness(3)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+  /* ELIMINATE mode: all logos shown; picked = dead */
+  #board.mode-eliminate .cell img{opacity:1;transform:scale(1)}
+  #board.mode-eliminate .cell.on{border-color:#3a3f45;
+    background:linear-gradient(160deg,#20262b,#14181c);box-shadow:inset 0 -6px 10px rgba(0,0,0,.7)}
+  #board.mode-eliminate .cell.on img{filter:grayscale(1) brightness(.4);animation:none}
+  #board.mode-eliminate .cell.on .x{opacity:1}
+  .x{position:absolute;inset:0;opacity:0;z-index:5;transition:opacity .2s}
+  .x i{position:absolute;left:8%;right:8%;top:50%;height:5px;border-radius:3px;
+    background:linear-gradient(90deg,#ff6b6e,var(--danger));box-shadow:0 0 8px rgba(229,72,77,.9)}
+  .x i:first-child{transform:rotate(28deg)} .x i:last-child{transform:rotate(-28deg)}
+  .cell.slam{animation:slam .5s ease-out}
+  @keyframes slam{0%{transform:scale(1)}30%{transform:scale(1.15) rotate(-2deg)}55%{transform:scale(.94) rotate(1deg)}100%{transform:scale(1)}}
+
+  #banners{left:0;top:645px;width:1080px;height:97px;overflow:hidden;background:#06111b}
+  #banners .b{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
+  #banners .b.live{opacity:1}
+  #banners .b img,#banners .b video{width:100%;height:100%;object-fit:cover}
+  #banners .b .txt{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    color:var(--bone);font-size:44px;letter-spacing:1px;text-transform:uppercase;
+    text-shadow:0 3px 0 #000,0 0 18px rgba(53,167,255,.6);padding:0 40px;text-align:center;
+    background:linear-gradient(90deg,var(--navy-deep),var(--steel),var(--navy-deep))}
+
+  /* ---------- FX LAYER (full canvas; focus box 667x413 @207,800) ---------- */
+  #layer-fx{inset:0;display:none;pointer-events:none}
+  #fxVideo{position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover;
+    display:none;z-index:20}
+  #burst{position:absolute;left:207px;top:800px;width:667px;height:413px;display:none;z-index:21}
+  #burst .ring{position:absolute;left:50%;top:50%;width:80px;height:80px;border-radius:50%;
+    border:6px solid var(--volt);transform:translate(-50%,-50%);
+    animation:ring 1.5s cubic-bezier(.1,.8,.2,1) forwards;box-shadow:0 0 30px var(--volt)}
+  @keyframes ring{to{width:1400px;height:1400px;opacity:0;border-width:1px}}
+  #burst .core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0);
+    width:340px;height:340px;border-radius:36px;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 30%, rgba(255,255,255,.25), rgba(7,21,39,.92) 70%);
+    border:4px solid var(--gold);box-shadow:0 0 60px 10px var(--team,#35A7FF),inset 0 0 40px rgba(0,0,0,.6);
+    animation:core 2.4s cubic-bezier(.2,1.5,.3,1) forwards}
+  #burst .core img{width:78%;height:78%;object-fit:contain;filter:drop-shadow(0 6px 14px rgba(0,0,0,.8))}
+  @keyframes core{0%{transform:translate(-50%,-50%) scale(0) rotate(-14deg)}
+    55%{transform:translate(-50%,-50%) scale(1.12) rotate(2deg)}
+    75%{transform:translate(-50%,-50%) scale(1)}
+    100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+  #burst .p{position:absolute;left:50%;top:50%;width:12px;height:12px;border-radius:3px;
+    background:var(--team,#35A7FF);box-shadow:0 0 10px var(--team,#35A7FF);
+    animation:p 1.6s ease-out forwards}
+  @keyframes p{to{transform:translate(var(--dx),var(--dy)) rotate(560deg) scale(.2);opacity:0}}
+  #flash{position:absolute;inset:0;background:radial-gradient(circle at 50% 52%,rgba(255,255,255,.85),transparent 60%);
+    opacity:0;z-index:19}
+  #flash.go{animation:flash .5s ease-out}
+  @keyframes flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+
+  /* ---------- debug guides ---------- */
+  #debug{inset:0;display:none;pointer-events:none;z-index:99}
+  #debug div{position:absolute;border:2px dashed;font:700 18px monospace;color:#fff;padding:4px}
+</style>
+</head>
+<body>
+
+<div id="layer-bg" class="abs">
+  <div id="bgFrame" class="abs"><div class="fade"></div></div>
+</div>
+
+<div id="layer-hud" class="abs">
+  <div id="board" class="abs"></div>
+  <div id="banners" class="abs"></div>
+</div>
+
+<div id="layer-fx" class="abs">
+  <div id="flash"></div>
+  <video id="fxVideo" playsinline></video>
+  <div id="burst"></div>
+</div>
+
+<div id="debug" class="abs"></div>
+
+<script>
+(() => {
+  const C = window.ACBZ, G = C.GEOM;
+  const $ = (s) => document.querySelector(s);
+  const layer = C.LAYER;
+  const show = (id) => { $(id).style.display = "block"; };
+  if (layer === "bg"  || layer === "all") show("#layer-bg");
+  if (layer === "hud" || layer === "all") show("#layer-hud");
+  if (layer === "fx"  || layer === "all") show("#layer-fx");
+
+  /* ---------------- board cells ---------------- */
+  const boardEl = $("#board");
+  const cells = {};
+  C.ORDER.forEach((abbr, i) => {
+    const t = C.TEAMS[abbr];
+    const d = document.createElement("div");
+    d.className = "cell"; d.style.setProperty("--i", i);
+    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}" alt="${t.name}">
+                   <div class="x"><i></i><i></i></div>`;
+    boardEl.appendChild(d); cells[abbr] = d;
+  });
+
+  /* ---------------- banner rotator ---------------- */
+  const banEl = $("#banners");
+  const rotator = {
+    list: [], i: -1, timer: null, nodes: [],
+    setList(list) {
+      const same = JSON.stringify(list.map(a=>a.id)) === JSON.stringify(this.list.map(a=>a.id));
+      this.list = list || [];
+      if (!same) { this.i = -1; this.next(); }
+      if (!this.list.length) { clearTimeout(this.timer); banEl.innerHTML=""; this.nodes=[]; }
+    },
+    next() {
+      clearTimeout(this.timer);
+      if (!this.list.length) return;
+      this.i = (this.i + 1) % this.list.length;
+      const a = this.list[this.i];
+      const b = document.createElement("div"); b.className = "b";
+      if (a.meta?.type === "text" && !a.url) {
+        b.innerHTML = `<div class="txt">${(a.meta.text||"").replace(/</g,"&lt;")}</div>`;
+      } else if (/\.(webm|mp4)(\?|$)/i.test(a.url||"")) {
+        b.innerHTML = `<video src="${a.url}" autoplay muted loop playsinline></video>`;
+      } else {
+        b.innerHTML = `<img src="${a.url}">`;
+      }
+      banEl.appendChild(b);
+      requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add("live")));
+      while (banEl.children.length > 2) banEl.firstChild.remove();
+      [...banEl.children].slice(0,-1).forEach(n => n.classList.remove("live"));
+      this.timer = setTimeout(() => this.next(), C.bannerSeconds(a) * 1000);
+    },
+  };
+
+  /* ---------------- background ---------------- */
+  let bgUrl = null;
+  function setBackground(bg) {
+    if (!bg || bg.url === bgUrl) return; bgUrl = bg?.url || null;
+    const f = $("#bgFrame");
+    f.querySelectorAll("video,img").forEach(n => n.remove());
+    if (!bg?.url) return;
+    const n = /\.(webm|mp4)(\?|$)/i.test(bg.url)
+      ? Object.assign(document.createElement("video"), {src:bg.url, autoplay:true, muted:true, loop:true, playsInline:true})
+      : Object.assign(document.createElement("img"), {src:bg.url});
+    f.insertBefore(n, f.firstChild);
+  }
+
+  /* ---------------- FX ---------------- */
+  const fxQ = []; let fxBusy = false;
+  function sfx(url, vol=1){ if(!url) return; try{ const a=new Audio(url); a.volume=vol; a.play(); }catch(e){} }
+  function runFx(job){ fxQ.push(job); pump(); }
+  function pump(){
+    if (fxBusy || !fxQ.length) return; fxBusy = true;
+    const job = fxQ.shift();
+    const done = () => { fxBusy = false; pump(); };
+    sfx(job.sfxUrl);
+    if (job.url) {                       // webm/mp4 with alpha, full-canvas
+      const v = $("#fxVideo"); v.src = job.url; v.style.display = "block";
+      v.onended = v.onerror = () => { v.style.display = "none"; v.removeAttribute("src"); done(); };
+      v.play().catch(done);
+    } else if (job.team) {               // CSS fallback burst
+      const t = C.TEAMS[job.team]; const b = $("#burst");
+      $("#flash").classList.remove("go"); void $("#flash").offsetWidth; $("#flash").classList.add("go");
+      b.style.setProperty("--team", t.color); b.style.display = "block";
+      let parts = "";
+      for (let i=0;i<26;i++){
+        const ang = Math.random()*Math.PI*2, dist = 320+Math.random()*560;
+        parts += `<span class="p" style="--dx:${Math.cos(ang)*dist}px;--dy:${Math.sin(ang)*dist}px;
+                   animation-delay:${Math.random()*.15}s"></span>`;
+      }
+      b.innerHTML = `<div class="ring"></div><div class="ring" style="animation-delay:.15s"></div>
+        <div class="core"><img src="${C.LOGO_URL(job.team)}"></div>${parts}`;
+      setTimeout(() => { b.style.display="none"; b.innerHTML=""; done(); }, 2600);
+    } else done();
+  }
+
+  /* ---------------- state application ---------------- */
+  const seen = new Set();
+  function applyState(s) {
+    if (!s) return;
+    setBackground(s.background);
+    boardEl.classList.toggle("mode-eliminate", s.board?.mode === "eliminate");
+    boardEl.style.opacity = s.board?.visible === false ? 0 : 1;
+    const picked = s.board?.picked || {};
+    for (const abbr of C.ORDER) cells[abbr].classList.toggle("on", !!picked[abbr]);
+    rotator.setList(s.banners?.rotation || []);
+  }
+  function handleEvent(ev) {
+    if (!ev || seen.has(ev.id)) return; seen.add(ev.id);
+    if (ev.created_at && Date.now() - new Date(ev.created_at).getTime() > 20000) return; // stale on reconnect
+    const p = ev.payload || {};
+    switch (ev.type) {
+      case "team_pick":
+        runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl });
+        setTimeout(() => { cells[p.team]?.classList.add("on","slam");
+          setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); }, p.animUrl ? 1200 : 900);
+        break;
+      case "team_restore": cells[p.team]?.classList.remove("on"); break;
+      case "board_reset": C.ORDER.forEach(a => cells[a].classList.remove("on")); break;
+      case "play_animation": runFx({ url: p.url, sfxUrl: p.sfxUrl }); break;
+      case "play_sfx": sfx(p.url); break;
+      case "banner_skip": rotator.next(); break;
+    }
+  }
+
+  /* ---------------- transport: Supabase or same-browser preview ---------------- */
+  if (C.SUPABASE_URL && C.SUPABASE_ANON_KEY) {
+    const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+    sb.from("stream_state").select("data").eq("id",1).single()
+      .then(({data}) => applyState(data?.data));
+    sb.channel("db")
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
+          (p)=>applyState(p.new.data))
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
+          (p)=>handleEvent(p.new))
+      .subscribe();
+    sb.channel("presence:overlays",{config:{presence:{key:`pc-${C.DEVICE}-${layer}`}}})
+      .subscribe((st)=>{ if(st==="SUBSCRIBED")
+        sb.channel("presence:overlays").track({pc:C.DEVICE, layer, at:Date.now()}); });
+  } else {
+    /* PREVIEW MODE — control panel + overlay tabs in the SAME browser */
+    try { applyState(JSON.parse(localStorage.getItem("acbz-state"))); } catch(e){}
+    const bus = new BroadcastChannel("acbz-bus");
+    bus.onmessage = (m) => {
+      if (m.data.kind === "state") applyState(m.data.data);
+      if (m.data.kind === "event") handleEvent(m.data.data);
+    };
+  }
+
+  /* ---------------- debug guides ---------------- */
+  if (new URLSearchParams(location.search).get("debug")) {
+    const dbg = $("#debug"); dbg.style.display = "block";
+    const mk = (r, c, l) => dbg.insertAdjacentHTML("beforeend",
+      `<div style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;border-color:${c};color:${c}">${l}</div>`);
+    mk(G.BG,"#f5c542","BG 1080x480"); mk(G.CAM1,"#ff4d4d","CAM1 667x413");
+    mk(G.BOARD,"#8f6bff","BOARD 1080x165"); mk(G.BANNERS,"#a3e635","BANNERS 1080x97");
+    mk(G.ANIM,"#22d3ee","ANIM 667x413"); mk(G.CAM2,"#f5c542","CAM2 1080x1275");
+  }
+})();
+</script>
+</body>
+</html>

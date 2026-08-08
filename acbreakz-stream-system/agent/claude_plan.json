@@ -1,0 +1,40 @@
+{
+  "project": "acbreakz-stream-system",
+  "mission": "Deploy cloud-synced OBS overlay system for 5 stream PCs per AGENT_BLUEPRINT.md",
+  "constraints": {
+    "budget_usd_hard_cap": 50,
+    "secrets_policy": "env/supabase secrets only; never commit; service-role key never in frontend",
+    "live_rig": "never modify existing OBS collection or Stream Deck profile files",
+    "gates": "milestone acceptance must pass (screenshot proof in /qa/) before advancing"
+  },
+  "milestones": [
+    { "id": "M0", "name": "local-preview", "cmd": "python -m http.server 8080",
+      "accept": "panel team tap fires FX + board slot in overlay tab; debug guides at y480/645/742; ANIM 667x413@(207,800)" },
+    { "id": "M1", "name": "supabase-backend",
+      "steps": ["supabase init+link", "apply supabase/schema.sql", "secrets set DECK_KEY, FAL_KEY",
+                "deploy functions deck (--no-verify-jwt) and generate-asset", "fill overlay/config.js keys"],
+      "accept": "curl deck?action=team_pick&team=kc returns ok and inserts events row" },
+    { "id": "M2", "name": "hosting", "steps": ["wrangler pages deploy . (fallback GitHub Pages)"],
+      "accept": "hosted panel shows cloud connected; phone pick updates laptop overlay <1s" },
+    { "id": "M3", "name": "asset-migration",
+      "steps": ["write scripts/migrate.mjs walking C:/ACBreakz OBS/Graphics/",
+                "32 team webms -> kind animation meta.team (Seahawks->sea, 49ers->sf, Commanders->wsh)",
+                "wav -> sfx meta.default", "TV background + stills -> background", "4 banner PNGs -> banner",
+                "board PNGs -> storage; point LOGO_URL at storage"],
+      "accept": "team pick plays real webm + real sound everywhere; banners rotate on 7-12s rules" },
+    { "id": "M4", "name": "banner-composer",
+      "steps": ["canvas composer 1080x97: template/AI background + text + export/upload",
+                "duration = clamp(ceil(words/3),7,12) via meta.text"],
+      "accept": "9-word text banner displays exactly 7s, brand styled" },
+    { "id": "M5", "name": "vision-qa",
+      "steps": ["playwright shoots 1080x1920 before/after team_pick, board_reset, banner rotate, bg swap",
+                "visually compare each shot to layout_key_with_redesign_notes.png; fix; re-shoot"],
+      "accept": "6 clean screenshots in /qa/ matching layout key geometry" },
+    { "id": "M6", "name": "handoff",
+      "steps": ["write RUNBOOK.md (OBS URLs, deck button list, rollback=legacy scenes)",
+                "stretch: writes behind keyed edge function; drop anon write policies"],
+      "accept": "operator can configure PC #2 in 10 min from RUNBOOK.md alone" }
+  ],
+  "spend_rules": { "fal_ai_batch_max_images_without_asking": 10, "log_every_purchase_to": "BUDGET.md" },
+  "on_error": "stop before destructive/ambiguous actions and ask the human"
+}

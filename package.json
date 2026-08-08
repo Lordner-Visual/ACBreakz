@@ -1,0 +1,17 @@
+{
+  "name": "acbreakz-cloud",
+  "version": "1.0.0",
+  "description": "Cloud-synced OBS overlay for 5 stream PCs. One control panel, one Stream Deck endpoint, zero manual per-machine updates. Overlay geometry matches the layout key exactly: BG 1080×480 · Board 1080×165 @ y480 · Banners 1080×97 @ y645 · ANIM focus 667×413 @ (207,800) on a 1080×1920 canvas.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "playwright": "^1.62.1"
+  }
+}

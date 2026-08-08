@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(python --version)",
+      "PowerShell(npm init -y)",
+      "PowerShell(npm i -D http-server playwright)",
+      "PowerShell(npx playwright install chromium)",
+      "PowerShell(npx http-server C:\\\\ACBreakz-Cloud -p 8080 -c-1 --silent)",
+      "PowerShell(node C:\\\\ACBreakz-Cloud\\\\qa\\\\shoot-m0.mjs)",
+      "PowerShell(git init)",
+      "PowerShell(git add -A)"
+    ]
+  }
+}
