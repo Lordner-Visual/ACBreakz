@@ -1,0 +1,29 @@
+M5 vision-QA transcript — 2026-08-08
+Hosted overlay ?layer=all @ 1080x1920, verified against docs/LAYOUT_KEY.md
+(transcribed from layout_key_with_redesign_notes provided by Brandon).
+
+Round 1 finding (FAILED, then fixed):
+  During the burst pop-in, the core briefly tilted (-14deg) while the springy
+  cubic-bezier(.2,1.5,.3,1) overshot scale — its bounding box left the ANIM
+  667x413 box by ~25px. Layout key: solid objects stay inside the focus box.
+  Fix: core 340->300px + gentler cubic-bezier(.2,1.2,.3,1) in overlay/index.html.
+
+Round 2 (all PASS, whole-animation sampling every 60ms):
+  bg band 1080x480 @ y0
+  board band 1080x165 @ y480
+  banner band 1080x97 @ y645, bottom edge 742
+  FX core inside ANIM for the FULL pop (worst excursion -30.0px = 30px margin)
+  FX accents (26 particles + rings + flash) overscan the box, per key
+  sea slot filled; logo centered in cell (0.00, 0.00 px offset)
+  board reset cleared every slot
+  banner rotated nfl-mosaic -> gold-frame
+  background swapped to Stadium Lights via deck, restored to TV loop after
+
+Six finals (visually inspected one by one):
+  m5-1-baseline.png        TV loop + empty glossy board + banner band
+  m5-2-team-pick-fx.png    burst core centered in ANIM box, accents overscanning,
+                           board shimmer streaks visible
+  m5-3-pick-settled.png    Seahawks slot lit gold, logo dead-center
+  m5-4-board-reset.png     all 32 slots cleared, gloss/shimmer intact
+  m5-5-banner-rotation.png gold-frame banner live (rotated from mosaic)
+  m5-6-background-swap.png Stadium Lights background band

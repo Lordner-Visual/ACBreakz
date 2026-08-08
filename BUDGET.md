@@ -7,6 +7,7 @@
 | 2026-08-08 | M2: hosting on GitHub Pages (free) | $0.00 | $0.00 |
 | 2026-08-08 | M3: asset migration (~120MB of 1GB free storage used; ffmpeg free) | $0.00 | $0.00 |
 | 2026-08-08 | M4: 1 fal.ai FLUX [dev] banner image (acceptance test) | $0.03 | $0.03 |
+| 2026-08-08 | M5: vision QA (Playwright, free) | $0.00 | $0.03 |
 
 Planned spend (not yet incurred): fal.ai starter credits $10.
 Rule: never batch-generate more than 10 images without asking.
