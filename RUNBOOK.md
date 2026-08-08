@@ -46,8 +46,12 @@ in the control panel → pick animation + sound + board slot on every PC at once
 4. Tabs: **Team Board** (tap to eliminate / tap again to restore) · **Animations**
    (team-animation styles + one-shots, each with "Link SoundFX") · **SoundFX**
    (upload/generate/preview sounds) · **Banners** (upload, composer, rotation,
-   Reframe) · **Backgrounds** (set live, Reframe) · **Board Style** (button style +
-   board background + button animation, mixed freely).
+   Reframe) · **Backgrounds** (set live, Reframe) · **Board Style** (grid shape +
+   button spacing + button style + board background + button animation, mixed freely).
+   Every media card also has **Reframe** (pan + zoom).
+   On Team Board, **Tap mode** switches between eliminating teams and highlighting
+   them — button animations play on every button until you highlight some, then only
+   on those. Eliminating a team clears its highlight.
 5. Every media tab has an **AI generate** strip at the bottom; tabs with more than one
    media type have a dropdown next to it. Costs: image ≈$0.03 (seconds), sound ≈$0.05
    and animation ≈$0.20 (both take 1–4 minutes — leave the tab open).
@@ -72,6 +76,9 @@ Add `&pc=2` to target one PC's stream; leave it off to hit ALL PCs.
 | Eliminate a team (32 buttons) | `&action=team_pick&team=sea` (abbr list below) |
 | Bring a team back | `&action=team_restore&team=sea` |
 | Reset board | `&action=board_reset` |
+| Highlight a team (scopes button animations) | `&action=highlight&team=sea` |
+| Un-highlight / toggle | `&action=unhighlight&team=sea` · `&action=highlight_toggle&team=sea` |
+| Clear all highlights | `&action=highlight_clear` |
 | Stash or Pass | `&action=play&name=Stash` |
 | Spin 2 Pick 1 | `&action=play&name=Spin` |
 | Skip banner | `&action=banner_skip` |

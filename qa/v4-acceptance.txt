@@ -1,0 +1,79 @@
+V4 acceptance transcript — 2026-08-08  (18/18 + 7/7 follow-ups PASS)
+
+=== Requested changes ===
+
+1. AI BUTTON STYLE NOW REPLACES THE STOCK BUTTON
+   Root cause: the AI texture was painted as a background *inside* the stock gold
+   button, so you saw art inside a gold frame with the logo on top of both.
+   Fix: when a button style is applied the board gets .has-btnstyle, which removes the
+   copper border, the inset box-shadow and the glass gloss entirely — the AI art IS
+   the button — and the logo is inset to 17% so the generated bezel stays visible.
+   The generation prompt also now asks for "ONE single empty square button with its own
+   decorative bezel and edge... hollow flat centre, no logo, no text".
+   Verified: border 0px, gloss display:none, box-shadow none.  [v4-button-style.png]
+
+2. GRID STYLES (first section of Board Style)
+   Buttons · Checker board · Checker no edge · Honeycomb · NFL logos only ·
+   8 x 4 rectangles · Slanted rectangles. Each keeps whatever button style is applied.
+   Verified on the overlay: 8x4 really renders 4 rows of 124x35 buttons; honeycomb
+   offsets row 2 (via `left`, so it never fights the pop/slam transform); every grid
+   keeps all 32 cells inside the 1080x165 band.
+   [v4-grid-checker/honeycomb/logos/rect84/slant.png]
+
+3. BUTTON SPACING
+   Buttons touch by default (gap 0). Slider 0-20px; measured 0px at 0 and exactly 14px
+   at 14.  [v4-gap-14.png]
+
+4. HIGHLIGHTS
+   Team Board has a "Tap mode: ELIMINATE / HIGHLIGHT" toggle plus "Clear highlights".
+   With nothing highlighted, button animations play on all 32 buttons. Once any team is
+   highlighted, they play ONLY on highlighted teams (ambient effects are suppressed on
+   the rest; trigger effects are skipped for non-highlighted teams).
+   Eliminating a team clears its highlight automatically — in the panel AND in deck.
+   Deck actions added for the Stream Deck: highlight, unhighlight, highlight_toggle,
+   highlight_clear (all accept &pc=N).  [v4-highlights.png]
+
+5. VIDEO MODEL
+   Root cause was two-fold. (a) LTX-Video is fal's cheapest/weakest model. (b) my brand
+   prompt prefix was being prepended to effect clips, so the model rendered branded
+   hero objects with invented gibberish text instead of the effect asked for.
+   Fixes: Kling 1.6 standard (~$0.25) with a "Best — Kling 2 master" (~$1.40) option in
+   the dropdown; effect prompts now say "isolated visual effect on pure solid black
+   background, only the effect visible, no objects, no scene, no text" plus a negative
+   prompt against text/watermarks/people.
+   Also: sound and video now run through fal's QUEUE (submit + poll) so a 4-minute job
+   can never hit the edge function's wall clock. The poll URLs come from fal's submit
+   response — constructing them fails for nested model ids like kling-video/v1.6/....
+   Verified end to end: a lightning-rim clip generated in 292s and came back as an
+   isolated blue lightning rim on black with a hollow centre, exactly as prompted.
+
+6. REFRAME EVERYWHERE + ZOOM
+   Every image/video card (team styles, one-shots, banners, backgrounds, button styles,
+   board backgrounds) has Reframe. The dialog gained a Zoom slider (100-300%) and shows
+   the asset in the aspect ratio it will actually be displayed in.
+   Verified: zoom 180% saved and the overlay rendered transform scale(1.8).
+   [v4-reframe-zoom.png]
+
+=== Follow-ups ===
+
+7. Composed text banners save to ROTATION only — they no longer appear as composer
+   backgrounds. Uploaded and AI-generated art still populate the picker (9 options).
+   [v4b-banners.png]
+
+8. Folder cards preview a real frame: the Classic Stingers card (32 team videos) now
+   shows a frame lifted from one of them, and every video thumbnail seeks to #t=1.2 so
+   it paints an actual frame instead of a blank/transparent first frame.
+   [v4b-thumbnails.png]
+
+9. Loops and box fill:
+   - Looping media (streamer background, board background) plays through a seamless
+     looper: two copies of the clip crossfading 0.55s at the seam, so clips that do not
+     loop natively never show a jump. Verified: 2 elements, crossfade active.
+   - One-shot animations were mostly empty frame — Spin 2 Pick 1's content was only
+     974x980 inside a 1080x1920 canvas. Both game animations are re-encoded cropped to
+     their content (+6% breathing room for glows), so they now fill the 667x413
+     animation box without crossing it. Verified 62% area coverage — the maximum a
+     circular graphic can occupy in a 1.6:1 box — and fully inside the bounds.
+     [v4b-oneshot-fill.png]
+
+Test artifacts removed afterwards; the bad first-attempt Kling clip was deleted.
