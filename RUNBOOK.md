@@ -43,10 +43,17 @@ in the control panel → pick animation + sound + board slot on every PC at once
 3. **Pick the PC in the header dropdown first** — board taps, banner rotation,
    backgrounds, and styles apply to that PC's stream only ("ALL PCs" broadcasts).
    Uploads and AI generations always land in the shared library for every PC.
-4. Team Board = tap to eliminate (dims the team, plays animation + sound) / tap again
-   to bring back · Animations = team-animation styles + one-shots · Banners = composer +
-   rotation + Reframe · Backgrounds = set live + Reframe · Board Style = button/board
-   looks · AI Generate = new art (≈$0.03/image).
+4. Tabs: **Team Board** (tap to eliminate / tap again to restore) · **Animations**
+   (team-animation styles + one-shots, each with "Link SoundFX") · **SoundFX**
+   (upload/generate/preview sounds) · **Banners** (upload, composer, rotation,
+   Reframe) · **Backgrounds** (set live, Reframe) · **Board Style** (button style +
+   board background + button animation, mixed freely).
+5. Every media tab has an **AI generate** strip at the bottom; tabs with more than one
+   media type have a dropdown next to it. Costs: image ≈$0.03 (seconds), sound ≈$0.05
+   and animation ≈$0.20 (both take 1–4 minutes — leave the tab open).
+6. **Deleting**: any non-built-in asset card has Delete → it turns into "Are you sure?"
+   → click again. This removes the file, the library entry, and any use of it on every
+   PC. Built-in styles can't be deleted.
 
 ## Stream Deck buttons
 

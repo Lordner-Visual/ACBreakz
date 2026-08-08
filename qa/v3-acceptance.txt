@@ -1,0 +1,67 @@
+V3 acceptance transcript — 2026-08-08  (24/24 PASS after 2 fixes)
+
+Requested changes, all verified on the hosted site:
+
+1. ASSET MANAGEMENT + DELETE
+   Every non-builtin asset card (animations, styles, sounds, banners, backgrounds)
+   has Delete. First click swaps the button to a red "Are you sure?" (auto-disarms
+   after 5s); second click deletes. Server-side the keyed /panel delete_asset also
+   removes the storage object(s) and scrubs the asset out of every PC's rotation,
+   background and style slots. Built-in styles have no Delete button at all.
+   Verified: confirm prompt appears, asset survives the first click, is gone from
+   the grid AND from the database after the second.
+
+2. BANNERS TAB
+   "Upload banner" is now the first section; the Quick-text-banner input is gone
+   (the composer covers it and produces a real 1080x97 PNG).
+
+3. AI GENERATE TAB REMOVED -> per-tab generators
+   Tabs: Team Board | Animations | SoundFX | Banners | Backgrounds | Board Style |
+   Settings. Every media tab ends with an "AI generate" strip. Type dropdowns only
+   where a tab holds multiple media types:
+     Animations   -> Team animation style / One-shot animation
+     Backgrounds  -> Background image / Background animation
+     Board Style  -> Background image / Background animation / Button style / Button animation
+     SoundFX, Banners -> single type, no dropdown
+   (Team Board and Settings are control-only tabs, no media library, so no strip.)
+
+4. SOUNDFX TAB
+   New tab owns every sound; Team Pick Sound moved there and no longer appears in
+   Animations. Upload + preview + "Play on stream" + delete. AI sound generation
+   wired to fal stable-audio; generated file verified as audio/wav in our storage.
+   Sound generation takes 1-4 min — the UI says so.
+
+5. LINK SOUNDFX
+   Every animation and team-animation style card has "Link SoundFX". It opens a
+   popup listing "No SoundFX" FIRST, then every sound with ▶ Preview and Link.
+   The link is stored on the asset (meta.sfxUrl/sfxName) and persists until
+   changed or unlinked; the card shows "🔊 <sound>".
+   Verified end to end: linked "AI: deep impact whoosh" to Classic Stingers, then a
+   Stream-Deck pick (deck?action=team_pick) carried that exact file as sfxUrl.
+   "No SoundFX" stores an explicit null, which beats the default sound.
+
+6. BOARD STYLE SPLIT
+   Three independent pickers — Button style / Board background / Button animation —
+   freely mixed. Verified: AI gunmetal buttons + builtin Navy Glass board, applied
+   to PC2 only; PC1 untouched.
+   AI generate offers exactly the four requested options; image kinds use FLUX,
+   the two animation kinds use fal LTX-Video (endpoint verified).
+
+7. BUTTON ANIMATIONS
+   Builtins: No Button Animation, Edge Glow (synced, ambient), Glitch Pulse
+   (ambient), Pop & Slam (trigger). Ambient effects run off one shared clock on the
+   board element so all 32 buttons pulse together; trigger effects fire only on the
+   team that was just hit, and Pop & Slam throws a dust-particle puff on the slam.
+   AI-generated button animations play as a screen-blended clip over the hit button.
+   Verified: anim-glow class reached PC2's board; Pop & Slam + dust fired on a
+   deck pick.
+
+Fixes made during acceptance:
+  - Builtin button EFFECTS were being stored as "no selection" (the null-for-builtin
+    rule was too broad), so Edge Glow/Glitch/Pop silently did nothing. Now only
+    no-effect builtins (Gold Buttons, Navy Glass Board, No Button Animation) map to
+    null; real effects are stored.
+  - "No Button Animation" card mislabeled "on team hit"; label suppressed.
+
+Screenshots: v3-soundfx-tab.png, v3-link-soundfx.png, v3-board-style-tab.png,
+v3-board-mixed.png, v3-button-pop.png

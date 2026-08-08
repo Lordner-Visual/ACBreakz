@@ -746,7 +746,8 @@
           <div class="meta"><div class="name">${esc(s.name)}</div>
             <div class="row"><button class="btn ${active?"ghost":""}" data-part="${stateKey}:${s.id}">
               ${active?"Applied":"Apply"}</button>${delBtn(s)}</div>
-            ${s.meta?.mode ? `<div class="row"><span class="tag">${s.meta.mode === "ambient" ? "always on" : "on team hit"}</span></div>` : ""}
+            ${s.meta?.mode && s.meta.mode !== "none"
+              ? `<div class="row"><span class="tag">${s.meta.mode === "ambient" ? "always on" : "on team hit"}</span></div>` : ""}
           </div></div>`; }).join("");
     };
     part("board_button", "#btnStyleGrid", "boardButtons", {icon:"🟨"});
