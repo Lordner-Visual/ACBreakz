@@ -10,7 +10,17 @@
       "PowerShell(npx http-server C:\\\\ACBreakz-Cloud -p 8080 -c-1 --silent)",
       "PowerShell(node C:\\\\ACBreakz-Cloud\\\\qa\\\\shoot-m0.mjs)",
       "PowerShell(git init)",
-      "PowerShell(git add -A)"
+      "PowerShell(git add -A)",
+      "PowerShell(git config user.name \"Brandon\")",
+      "PowerShell(git config user.email \"lordnervisualstudios@gmail.com\")",
+      "PowerShell(npm i -D supabase)",
+      "PowerShell(npx supabase --version)",
+      "PowerShell(npx supabase init --with-vscode-settings=false --with-intellij-settings=false)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxb3duZ2RrZ25maGF3b3J5cHBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTgyNjMsImV4cCI6MjEwMTczNDI2M30.2M5RRKfBbgtBwVv5QvKI4Hu88Xdzh5xAhZvBxNdD4qo\" \"https://jqowngdkgnfhaworyppo.supabase.co/rest/v1/\")",
+      "Bash(curl -s -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxb3duZ2RrZ25maGF3b3J5cHBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTgyNjMsImV4cCI6MjEwMTczNDI2M30.2M5RRKfBbgtBwVv5QvKI4Hu88Xdzh5xAhZvBxNdD4qo' https://jqowngdkgnfhaworyppo.supabase.co/rest/v1/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://jqowngdkgnfhaworyppo.supabase.co/auth/v1/health\")",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxb3duZ2RrZ25maGF3b3J5cHBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTgyNjMsImV4cCI6MjEwMTczNDI2M30.2M5RRKfBbgtBwVv5QvKI4Hu88Xdzh5xAhZvBxNdD4qo' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxb3duZ2RrZ25maGF3b3J5cHBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTgyNjMsImV4cCI6MjEwMTczNDI2M30.2M5RRKfBbgtBwVv5QvKI4Hu88Xdzh5xAhZvBxNdD4qo' 'https://jqowngdkgnfhaworyppo.supabase.co/rest/v1/stream_state?select=*&limit=1')",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\" -H \"apikey: bogus\" \"https://jqowngdkgnfhaworyppo.supabase.co/rest/v1/stream_state?select=*&limit=1\")"
     ]
   }
 }

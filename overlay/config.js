@@ -8,8 +8,8 @@ window.ACBZ = (() => {
   const qs = new URLSearchParams(location.search);
 
   return {
-    SUPABASE_URL: "",            // e.g. https://xxxx.supabase.co
-    SUPABASE_ANON_KEY: "",       // anon public key (safe to ship in overlay)
+    SUPABASE_URL: "https://jqowngdkgnfhaworyppo.supabase.co",
+    SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxb3duZ2RrZ25maGF3b3J5cHBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTgyNjMsImV4cCI6MjEwMTczNDI2M30.2M5RRKfBbgtBwVv5QvKI4Hu88Xdzh5xAhZvBxNdD4qo", // anon public key (safe to ship in overlay)
 
     DEVICE: qs.get("pc") || "1", // ?pc=1..5 identifies each stream PC
     LAYER:  qs.get("layer") || "all", // bg | hud | fx | all
