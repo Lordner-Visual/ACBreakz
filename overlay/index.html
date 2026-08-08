@@ -4,20 +4,18 @@
 <meta charset="UTF-8">
 <title>ACBreakz Overlay</title>
 <!--
-  ACBreakz Cloud Overlay — one URL, five PCs, zero manual updates.
+  ACBreakz Cloud Overlay v2 — one URL, five independent PCs.
   OBS Browser Source: width 1080, height 1920, FPS 60.
-  Layers (add as 3 separate browser sources, same URL, different ?layer=):
-    ?layer=bg   -> streamer background (BOTTOM of scene, under Camera 1)
-    ?layer=hud  -> team board + banners (ABOVE both cameras)
-    ?layer=fx   -> animations + sfx     (TOP of scene)
-  ?layer=all for testing in a normal browser. Add &debug=1 to see section guides.
-  ?pc=1..5 identifies the machine (presence shows in the control panel).
+  Layers (3 separate browser sources, same URL, different ?layer=):
+    ?layer=bg   -> streamer background   ?layer=hud -> board + banners
+    ?layer=fx   -> animations + sfx      ?layer=all -> testing in a browser
+  ?pc=1..5 selects WHICH stream this is (each PC has its own board/banners/
+  background/styles; the asset library is shared). &debug=1 draws guides.
 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{
-    /* AC Breakz brand tokens — pulled from the logo badge + board bronze */
     --navy-deep:#071527; --navy:#0B1E33; --steel:#274A66;
     --teal-glass:#0D3540; --teal-dim:#082228;
     --copper:#B87333; --copper-dk:#7A4A1E; --gold:#D9A441;
@@ -32,60 +30,55 @@
   #layer-bg{inset:0;display:none}
   #bgFrame{left:0;top:0;width:1080px;height:480px;overflow:hidden;background:
     radial-gradient(120% 160% at 50% -20%, #123a5c 0%, var(--navy) 45%, var(--navy-deep) 100%)}
-  #bgFrame video,#bgFrame img{width:100%;height:100%;object-fit:cover}
+  #bgFrame video,#bgFrame img{width:100%;height:100%;object-fit:cover;object-position:50% 50%}
   #bgFrame .fade{position:absolute;left:0;right:0;bottom:0;height:70px;
     background:linear-gradient(180deg,transparent,rgba(4,10,18,.85))}
 
   /* ---------- HUD LAYER (board 1080x165 @y480, banners 1080x97 @y645) ---------- */
   #layer-hud{inset:0;display:none}
-  #board{left:0;top:480px;width:1080px;height:165px;
+  #board{left:0;top:480px;width:1080px;height:165px;overflow:hidden;
     background:
       radial-gradient(140% 220% at 50% -60%, rgba(53,167,255,.18), transparent 55%),
       linear-gradient(180deg,#0E2A38 0%, #0A1F2C 55%, #081824 100%);
+    background-size:cover;background-position:center;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -14px 26px rgba(0,0,0,.55);
     display:grid;grid-template-columns:repeat(16,1fr);grid-template-rows:1fr 1fr;
     gap:8px;padding:12px 46px}
+  /* one wide, feathered light bar sweeping BOTH rows at once (v2) */
+  #board::after{content:"";position:absolute;top:-10px;bottom:-10px;left:0;width:430px;
+    background:linear-gradient(100deg,
+      transparent 0%, rgba(255,255,255,.015) 18%, rgba(255,255,255,.07) 38%,
+      rgba(255,255,255,.13) 50%, rgba(255,255,255,.07) 62%, rgba(255,255,255,.015) 82%,
+      transparent 100%);
+    transform:skewX(-14deg);pointer-events:none;z-index:6;
+    animation:sweep 9s cubic-bezier(.45,.05,.55,.95) infinite}
+  @keyframes sweep{
+    0%{left:-470px;opacity:0} 6%{opacity:1}
+    58%{left:1120px;opacity:1} 62%{left:1120px;opacity:0} 100%{left:-470px;opacity:0}}
   .cell{position:relative;border-radius:10px;overflow:hidden;
     background:linear-gradient(160deg,#12444F 0%, var(--teal-glass) 40%, var(--teal-dim) 100%);
+    background-size:cover;background-position:center;
     border:2px solid var(--copper);
     box-shadow:inset 0 2px 5px rgba(255,255,255,.14), inset 0 -6px 10px rgba(0,0,0,.6),
-               0 2px 4px rgba(0,0,0,.5)}
+               0 2px 4px rgba(0,0,0,.5);
+    transition:filter .45s ease, border-color .45s ease}
   .cell::before{ /* glass gloss */
     content:"";position:absolute;inset:0;border-radius:8px;
     background:linear-gradient(178deg,rgba(255,255,255,.28) 0%,rgba(255,255,255,.06) 26%,transparent 48%);
     pointer-events:none;z-index:3}
-  .cell::after{ /* travelling shimmer — staggered per cell via --i */
-    content:"";position:absolute;top:-40%;bottom:-40%;left:-70%;width:45%;
-    background:linear-gradient(105deg,transparent,rgba(255,255,255,.5),transparent);
-    transform:skewX(-18deg);opacity:0;z-index:4;
-    animation:shimmer 9s linear infinite;animation-delay:calc(var(--i) * .28s)}
-  @keyframes shimmer{0%,88%{left:-70%;opacity:0}90%{opacity:.9}100%{left:130%;opacity:0}}
   .cell img{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);
     object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
-    opacity:0;transform:scale(.4);transition:opacity .25s,transform .25s}
-  /* FILL mode: logo pops in when a team is picked */
-  .cell.on img{opacity:1;transform:scale(1);animation:pop .55s cubic-bezier(.2,1.6,.4,1)}
-  .cell.on{border-color:var(--gold);
-    box-shadow:inset 0 2px 5px rgba(255,255,255,.2), inset 0 -6px 10px rgba(0,0,0,.6),
-               0 0 14px rgba(217,164,65,.55)}
-  @keyframes pop{0%{transform:scale(.2);filter:brightness(3)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
-  /* ELIMINATE mode: all logos shown; picked = dead */
-  #board.mode-eliminate .cell img{opacity:1;transform:scale(1)}
-  #board.mode-eliminate .cell.on{border-color:#3a3f45;
-    background:linear-gradient(160deg,#20262b,#14181c);box-shadow:inset 0 -6px 10px rgba(0,0,0,.7)}
-  #board.mode-eliminate .cell.on img{filter:grayscale(1) brightness(.4);animation:none}
-  #board.mode-eliminate .cell.on .x{opacity:1}
-  .x{position:absolute;inset:0;opacity:0;z-index:5;transition:opacity .2s}
-  .x i{position:absolute;left:8%;right:8%;top:50%;height:5px;border-radius:3px;
-    background:linear-gradient(90deg,#ff6b6e,var(--danger));box-shadow:0 0 8px rgba(229,72,77,.9)}
-  .x i:first-child{transform:rotate(28deg)} .x i:last-child{transform:rotate(-28deg)}
+    transition:filter .45s ease, opacity .45s ease}
+  /* v2: eliminate-only — picked teams simply dim (no X, no color change) */
+  .cell.on{filter:brightness(.38) saturate(.55)}
+  .cell.on img{opacity:.55}
   .cell.slam{animation:slam .5s ease-out}
-  @keyframes slam{0%{transform:scale(1)}30%{transform:scale(1.15) rotate(-2deg)}55%{transform:scale(.94) rotate(1deg)}100%{transform:scale(1)}}
+  @keyframes slam{0%{transform:scale(1)}30%{transform:scale(1.12) rotate(-2deg)}55%{transform:scale(.95) rotate(1deg)}100%{transform:scale(1)}}
 
   #banners{left:0;top:645px;width:1080px;height:97px;overflow:hidden;background:#06111b}
   #banners .b{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
   #banners .b.live{opacity:1}
-  #banners .b img,#banners .b video{width:100%;height:100%;object-fit:cover}
+  #banners .b img,#banners .b video{width:100%;height:100%;object-fit:cover;object-position:50% 50%}
   #banners .b .txt{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
     color:var(--bone);font-size:44px;letter-spacing:1px;text-transform:uppercase;
     text-shadow:0 3px 0 #000,0 0 18px rgba(53,167,255,.6);padding:0 40px;text-align:center;
@@ -94,7 +87,14 @@
   /* ---------- FX LAYER (full canvas; focus box 667x413 @207,800) ---------- */
   #layer-fx{inset:0;display:none;pointer-events:none}
   #fxVideo{position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover;
-    display:none;z-index:20}
+    display:none;z-index:20;opacity:1;transition:opacity .35s ease}
+  /* v2: one-shot animations play INSIDE the ANIM focus box, per the layout key */
+  #fxVideo.boxed{left:207px;top:800px;width:667px;height:413px;inset:auto;object-fit:contain}
+  #fxImg{position:absolute;left:207px;top:800px;width:667px;height:413px;display:none;
+    z-index:20;object-fit:contain;opacity:0}
+  #fxImg.go{animation:still 3s ease-out forwards}
+  @keyframes still{0%{opacity:0;transform:scale(.82)}12%{opacity:1}
+    85%{opacity:1;transform:scale(1.02)}100%{opacity:0;transform:scale(1.04)}}
   #burst{position:absolute;left:207px;top:800px;width:667px;height:413px;display:none;z-index:21}
   #burst .ring{position:absolute;left:50%;top:50%;width:80px;height:80px;border-radius:50%;
     border:6px solid var(--volt);transform:translate(-50%,-50%);
@@ -107,10 +107,13 @@
     /* gentle overshoot: even mid-pop the tilted core's bounds stay inside ANIM 667x413 */
     animation:core 2.4s cubic-bezier(.2,1.2,.3,1) forwards}
   #burst .core img{width:78%;height:78%;object-fit:contain;filter:drop-shadow(0 6px 14px rgba(0,0,0,.8))}
+  #burst .core.bare{background:transparent;border:none;box-shadow:none}
   @keyframes core{0%{transform:translate(-50%,-50%) scale(0) rotate(-14deg)}
     55%{transform:translate(-50%,-50%) scale(1.12) rotate(2deg)}
     75%{transform:translate(-50%,-50%) scale(1)}
     100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+  #burst.fadeout .core{animation:coreout .4s ease-in forwards}
+  @keyframes coreout{to{opacity:0;transform:translate(-50%,-50%) scale(.85)}}
   #burst .p{position:absolute;left:50%;top:50%;width:12px;height:12px;border-radius:3px;
     background:var(--team,#35A7FF);box-shadow:0 0 10px var(--team,#35A7FF);
     animation:p 1.6s ease-out forwards}
@@ -139,6 +142,7 @@
 <div id="layer-fx" class="abs">
   <div id="flash"></div>
   <video id="fxVideo" playsinline></video>
+  <img id="fxImg" alt="">
   <div id="burst"></div>
 </div>
 
@@ -148,33 +152,44 @@
 (() => {
   const C = window.ACBZ, G = C.GEOM;
   const $ = (s) => document.querySelector(s);
-  const layer = C.LAYER;
+  const layer = C.LAYER, PC = C.DEVICE;
   const show = (id) => { $(id).style.display = "block"; };
   if (layer === "bg"  || layer === "all") show("#layer-bg");
   if (layer === "hud" || layer === "all") show("#layer-hud");
   if (layer === "fx"  || layer === "all") show("#layer-fx");
 
-  /* ---------------- board cells ---------------- */
+  /* ---------------- board cells (v2: all logos always visible) ---------------- */
   const boardEl = $("#board");
   const cells = {};
-  C.ORDER.forEach((abbr, i) => {
+  C.ORDER.forEach((abbr) => {
     const t = C.TEAMS[abbr];
     const d = document.createElement("div");
-    d.className = "cell"; d.style.setProperty("--i", i);
-    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}" alt="${t.name}">
-                   <div class="x"><i></i><i></i></div>`;
+    d.className = "cell";
+    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}" alt="${t.name}">`;
     boardEl.appendChild(d); cells[abbr] = d;
   });
 
+  /* ---------------- board style (button texture + band background) ------------ */
+  let styleKey = null;
+  function applyBoardStyle(st) {
+    const key = st?.meta?.button_url ? st.meta.button_url + (st.meta.bg_url ?? "") : null;
+    if (key === styleKey) return; styleKey = key;
+    boardEl.style.backgroundImage = st?.meta?.bg_url ? `url("${st.meta.bg_url}")` : "";
+    for (const abbr of C.ORDER)
+      cells[abbr].style.backgroundImage = st?.meta?.button_url ? `url("${st.meta.button_url}")` : "";
+  }
+
   /* ---------------- banner rotator ---------------- */
   const banEl = $("#banners");
+  const pos = (m) => m?.crop ? `${m.crop.x ?? 50}% ${m.crop.y ?? 50}%` : "50% 50%";
   const rotator = {
-    list: [], i: -1, timer: null, nodes: [],
+    list: [], i: -1, timer: null,
     setList(list) {
-      const same = JSON.stringify(list.map(a=>a.id)) === JSON.stringify(this.list.map(a=>a.id));
+      const same = JSON.stringify((list||[]).map(a=>[a.id,a.meta?.crop])) ===
+                   JSON.stringify(this.list.map(a=>[a.id,a.meta?.crop]));
       this.list = list || [];
       if (!same) { this.i = -1; this.next(); }
-      if (!this.list.length) { clearTimeout(this.timer); banEl.innerHTML=""; this.nodes=[]; }
+      if (!this.list.length) { clearTimeout(this.timer); banEl.innerHTML=""; }
     },
     next() {
       clearTimeout(this.timer);
@@ -185,9 +200,9 @@
       if (a.meta?.type === "text" && !a.url) {
         b.innerHTML = `<div class="txt">${(a.meta.text||"").replace(/</g,"&lt;")}</div>`;
       } else if (/\.(webm|mp4)(\?|$)/i.test(a.url||"")) {
-        b.innerHTML = `<video src="${a.url}" autoplay muted loop playsinline></video>`;
+        b.innerHTML = `<video src="${a.url}" autoplay muted loop playsinline style="object-position:${pos(a.meta)}"></video>`;
       } else {
-        b.innerHTML = `<img src="${a.url}">`;
+        b.innerHTML = `<img src="${a.url}" style="object-position:${pos(a.meta)}">`;
       }
       banEl.appendChild(b);
       requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add("live")));
@@ -197,16 +212,18 @@
     },
   };
 
-  /* ---------------- background ---------------- */
-  let bgUrl = null;
+  /* ---------------- background (with reframe crop) ---------------- */
+  let bgKey = null;
   function setBackground(bg) {
-    if (!bg || bg.url === bgUrl) return; bgUrl = bg?.url || null;
+    const key = bg?.url ? bg.url + JSON.stringify(bg.crop ?? null) : null;
+    if (key === bgKey) return; bgKey = key;
     const f = $("#bgFrame");
     f.querySelectorAll("video,img").forEach(n => n.remove());
     if (!bg?.url) return;
     const n = /\.(webm|mp4)(\?|$)/i.test(bg.url)
       ? Object.assign(document.createElement("video"), {src:bg.url, autoplay:true, muted:true, loop:true, playsInline:true})
       : Object.assign(document.createElement("img"), {src:bg.url});
+    if (bg.crop) n.style.objectPosition = `${bg.crop.x ?? 50}% ${bg.crop.y ?? 50}%`;
     f.insertBefore(n, f.firstChild);
   }
 
@@ -214,19 +231,51 @@
   const fxQ = []; let fxBusy = false;
   function sfx(url, vol=1){ if(!url) return; try{ const a=new Audio(url); a.volume=vol; a.play(); }catch(e){} }
   function runFx(job){ fxQ.push(job); pump(); }
+  const fxV = $("#fxVideo");
+  fxV.addEventListener("timeupdate", () => {   // safety fade even if the file lacks one
+    if (fxV.duration && fxV.duration - fxV.currentTime < 0.35) fxV.style.opacity = "0";
+  });
+  function playVideo(url, boxed, done){
+    fxV.classList.toggle("boxed", !!boxed);
+    fxV.style.opacity = "1"; fxV.src = url; fxV.style.display = "block";
+    fxV.onended = fxV.onerror = () => {
+      fxV.style.display = "none"; fxV.removeAttribute("src"); fxV.style.opacity = "1"; done();
+    };
+    fxV.play().catch(() => { fxV.style.display = "none"; done(); });
+  }
+  function logoPop(team, bare, ms, done){   // logo core pop inside the ANIM box
+    const t = C.TEAMS[team]; const b = $("#burst");
+    b.classList.remove("fadeout");
+    b.style.setProperty("--team", t?.color ?? "#35A7FF"); b.style.display = "block";
+    b.innerHTML = `<div class="core${bare ? "" : ""}"><img src="${C.LOGO_URL(team)}"></div>`;
+    setTimeout(() => b.classList.add("fadeout"), ms - 400);
+    setTimeout(() => { b.style.display="none"; b.innerHTML=""; b.classList.remove("fadeout"); done && done(); }, ms);
+  }
   function pump(){
     if (fxBusy || !fxQ.length) return; fxBusy = true;
     const job = fxQ.shift();
     const done = () => { fxBusy = false; pump(); };
     sfx(job.sfxUrl);
-    if (job.url) {                       // webm/mp4 with alpha, full-canvas
-      const v = $("#fxVideo"); v.src = job.url; v.style.display = "block";
-      v.onended = v.onerror = () => { v.style.display = "none"; v.removeAttribute("src"); done(); };
-      v.play().catch(done);
-    } else if (job.team) {               // CSS fallback burst
+    if (job.styleUrl && job.logoOverlay) {          // v2 style: one base + team logo on top
+      if (job.styleImage) {
+        const im = $("#fxImg"); im.src = job.styleUrl; im.style.display = "block";
+        im.classList.remove("go"); void im.offsetWidth; im.classList.add("go");
+        setTimeout(() => { im.style.display = "none"; im.classList.remove("go"); }, 3050);
+        logoPop(job.team, false, 2900, done);
+      } else {
+        playVideo(job.styleUrl, true, done);
+        logoPop(job.team, false, 2900, null);
+      }
+    } else if (job.url && job.image) {              // one-shot AI still in the box
+      const im = $("#fxImg"); im.src = job.url; im.style.display = "block";
+      im.classList.remove("go"); void im.offsetWidth; im.classList.add("go");
+      setTimeout(() => { im.style.display = "none"; im.classList.remove("go"); done(); }, 3050);
+    } else if (job.url) {                           // video: boxed one-shot or full-canvas stinger
+      playVideo(job.url, !!job.boxed, done);
+    } else if (job.team) {                          // CSS fallback burst
       const t = C.TEAMS[job.team]; const b = $("#burst");
       $("#flash").classList.remove("go"); void $("#flash").offsetWidth; $("#flash").classList.add("go");
-      b.style.setProperty("--team", t.color); b.style.display = "block";
+      b.style.setProperty("--team", t.color); b.style.display = "block"; b.classList.remove("fadeout");
       let parts = "";
       for (let i=0;i<26;i++){
         const ang = Math.random()*Math.PI*2, dist = 320+Math.random()*560;
@@ -235,34 +284,37 @@
       }
       b.innerHTML = `<div class="ring"></div><div class="ring" style="animation-delay:.15s"></div>
         <div class="core"><img src="${C.LOGO_URL(job.team)}"></div>${parts}`;
-      setTimeout(() => { b.style.display="none"; b.innerHTML=""; done(); }, 2600);
+      setTimeout(() => b.classList.add("fadeout"), 2200);
+      setTimeout(() => { b.style.display="none"; b.innerHTML=""; b.classList.remove("fadeout"); done(); }, 2600);
     } else done();
   }
 
   /* ---------------- state application ---------------- */
-  const seen = new Set();
   function applyState(s) {
     if (!s) return;
     setBackground(s.background);
-    boardEl.classList.toggle("mode-eliminate", s.board?.mode === "eliminate");
-    boardEl.style.opacity = s.board?.visible === false ? 0 : 1;
+    applyBoardStyle(s.boardStyle);
     const picked = s.board?.picked || {};
     for (const abbr of C.ORDER) cells[abbr].classList.toggle("on", !!picked[abbr]);
     rotator.setList(s.banners?.rotation || []);
   }
+  const seen = new Set();
   function handleEvent(ev) {
     if (!ev || seen.has(ev.id)) return; seen.add(ev.id);
-    if (ev.created_at && Date.now() - new Date(ev.created_at).getTime() > 20000) return; // stale on reconnect
+    if (ev.created_at && Date.now() - new Date(ev.created_at).getTime() > 20000) return;
     const p = ev.payload || {};
+    if (p.pc && Number(p.pc) !== PC) return;        // v2: not for this PC
     switch (ev.type) {
       case "team_pick":
-        runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl });
+        runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl,
+                styleUrl: p.styleUrl, styleImage: p.styleImage, logoOverlay: p.logoOverlay });
         setTimeout(() => { cells[p.team]?.classList.add("on","slam");
-          setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); }, p.animUrl ? 1200 : 900);
+          setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); },
+          (p.animUrl || p.styleUrl) ? 1200 : 900);
         break;
       case "team_restore": cells[p.team]?.classList.remove("on"); break;
       case "board_reset": C.ORDER.forEach(a => cells[a].classList.remove("on")); break;
-      case "play_animation": runFx({ url: p.url, sfxUrl: p.sfxUrl }); break;
+      case "play_animation": runFx({ url: p.url, boxed: p.boxed, image: p.image, sfxUrl: p.sfxUrl }); break;
       case "play_sfx": sfx(p.url); break;
       case "banner_skip": rotator.next(); break;
     }
@@ -271,19 +323,18 @@
   /* ---------------- transport: Supabase or same-browser preview ---------------- */
   if (C.SUPABASE_URL && C.SUPABASE_ANON_KEY) {
     const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
-    sb.from("stream_state").select("data").eq("id",1).single()
+    sb.from("stream_state").select("data").eq("id", PC).single()
       .then(({data}) => applyState(data?.data));
     sb.channel("db")
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
-          (p)=>applyState(p.new.data))
+          (p)=>{ if (p.new.id === PC) applyState(p.new.data); })
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
           (p)=>handleEvent(p.new))
       .subscribe();
-    sb.channel("presence:overlays",{config:{presence:{key:`pc-${C.DEVICE}-${layer}`}}})
+    sb.channel("presence:overlays",{config:{presence:{key:`pc-${PC}-${layer}`}}})
       .subscribe((st)=>{ if(st==="SUBSCRIBED")
-        sb.channel("presence:overlays").track({pc:C.DEVICE, layer, at:Date.now()}); });
+        sb.channel("presence:overlays").track({pc:PC, layer, at:Date.now()}); });
   } else {
-    /* PREVIEW MODE — control panel + overlay tabs in the SAME browser */
     try { applyState(JSON.parse(localStorage.getItem("acbz-state"))); } catch(e){}
     const bus = new BroadcastChannel("acbz-bus");
     bus.onmessage = (m) => {

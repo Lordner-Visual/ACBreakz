@@ -40,9 +40,13 @@ in the control panel → pick animation + sound + board slot on every PC at once
 1. Open `https://lordner-visual.github.io/ACBreakz/control/`.
 2. First time on a device: **Settings tab → "Panel key" → paste `<PANEL_KEY>` → Save &
    reconnect.** Without it the panel can watch but not change anything.
-3. Team Board = tap to pick / tap again to restore · Games & FX = play animations ·
-   Banners = composer + rotation · Backgrounds = tap to set live · AI Generate = new art
-   (≈$0.03/image, saved to the library).
+3. **Pick the PC in the header dropdown first** — board taps, banner rotation,
+   backgrounds, and styles apply to that PC's stream only ("ALL PCs" broadcasts).
+   Uploads and AI generations always land in the shared library for every PC.
+4. Team Board = tap to eliminate (dims the team, plays animation + sound) / tap again
+   to bring back · Animations = team-animation styles + one-shots · Banners = composer +
+   rotation + Reframe · Backgrounds = set live + Reframe · Board Style = button/board
+   looks · AI Generate = new art (≈$0.03/image).
 
 ## Stream Deck buttons
 
@@ -54,13 +58,13 @@ Base URL (everything before `&action`):
 https://jqowngdkgnfhaworyppo.supabase.co/functions/v1/deck?key=<DECK_KEY>
 ```
 
+Add `&pc=2` to target one PC's stream; leave it off to hit ALL PCs.
+
 | Button | Append |
 |---|---|
-| Pick a team (32 buttons) | `&action=team_pick&team=sea` (abbr list below) |
-| Un-pick a team | `&action=team_restore&team=sea` |
+| Eliminate a team (32 buttons) | `&action=team_pick&team=sea` (abbr list below) |
+| Bring a team back | `&action=team_restore&team=sea` |
 | Reset board | `&action=board_reset` |
-| Eliminate / Fill mode | `&action=board_mode&mode=eliminate` or `&mode=fill` |
-| Hide / show board | `&action=board_visible&v=0` / `&v=1` |
 | Stash or Pass | `&action=play&name=Stash` |
 | Spin 2 Pick 1 | `&action=play&name=Spin` |
 | Skip banner | `&action=banner_skip` |

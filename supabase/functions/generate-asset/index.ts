@@ -33,6 +33,8 @@ const SIZES: Record<string, { width: number; height: number }> = {
   background: { width: 1344, height: 576 },
   banner: { width: 1344, height: 576 },
   animation_still: { width: 1080, height: 1350 },
+  board_button: { width: 1024, height: 1024 },   // team-board button texture
+  board_bg: { width: 1344, height: 384 },        // team-board band background
 };
 
 const json = (b: unknown, s = 200) =>
@@ -47,7 +49,8 @@ Deno.serve(async (req) => {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "authorization, content-type, apikey, x-client-info" } });
 
-  const { kind = "background", prompt = "", key = "" } = await req.json().catch(() => ({}));
+  const { kind = "background", prompt = "", key = "", no_row = false, as = null } =
+    await req.json().catch(() => ({}));
   const PANEL_KEY = Deno.env.get("PANEL_KEY") ?? "";
   if (!PANEL_KEY || key !== PANEL_KEY) return json({ error: "bad panel key" }, 401); // M6: spend gate
   if (!prompt.trim()) return json({ error: "prompt required" }, 400);
@@ -79,12 +82,15 @@ Deno.serve(async (req) => {
   if (upErr) return json({ error: "storage failed: " + upErr.message }, 500);
   const { data: pub } = sb.storage.from("media").getPublicUrl(path);
 
-  const { data: asset, error: dbErr } = await sb.from("assets").insert({
-    kind: kind === "animation_still" ? "background" : kind,
-    name: "AI: " + prompt.slice(0, 48),
+  if (no_row) return json({ ok: true, url: pub.publicUrl, path });
+
+  const row = {
+    kind: as?.kind ?? (kind === "animation_still" ? "background" : kind),
+    name: as?.name ?? "AI: " + prompt.slice(0, 48),
     url: pub.publicUrl,
-    meta: { type: "ai", prompt },
-  }).select().single();
+    meta: { type: "ai", prompt, ...(as?.meta ?? {}) },
+  };
+  const { data: asset, error: dbErr } = await sb.from("assets").insert(row).select().single();
   if (dbErr) return json({ error: dbErr.message }, 500);
 
   return json({ ok: true, asset });

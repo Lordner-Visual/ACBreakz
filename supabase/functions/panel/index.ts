@@ -32,17 +32,51 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   if (!PANEL_KEY || body.key !== PANEL_KEY) return json({ error: "bad panel key" }, 401);
 
+  const pcList = (v: unknown) => {
+    const n = parseInt(String(v), 10);
+    return n >= 1 && n <= 5 ? [n] : [1, 2, 3, 4, 5];   // 'all' or missing -> every PC
+  };
+
   switch (body.action) {
     case "state": {
       if (!body.data || typeof body.data !== "object") return json({ error: "data required" }, 400);
-      const { error } = await sb.from("stream_state")
-        .update({ data: body.data, updated_at: new Date() }).eq("id", 1);
-      return error ? json({ error: error.message }, 500) : json({ ok: true });
+      for (const pc of pcList(body.pc)) {
+        const { error } = await sb.from("stream_state")
+          .update({ data: body.data, updated_at: new Date() }).eq("id", pc);
+        if (error) return json({ error: error.message }, 500);
+      }
+      return json({ ok: true });
     }
     case "event": {
       if (!body.type) return json({ error: "type required" }, 400);
-      const { error } = await sb.from("events").insert({ type: body.type, payload: body.payload ?? {} });
+      const payload = { ...(body.payload ?? {}) };
+      const n = parseInt(String(body.pc), 10);
+      if (n >= 1 && n <= 5) payload.pc = n;
+      const { error } = await sb.from("events").insert({ type: body.type, payload });
       return error ? json({ error: error.message }, 500) : json({ ok: true });
+    }
+    case "update_asset": {
+      if (!body.id) return json({ error: "id required" }, 400);
+      const { data: cur, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
+      if (gErr || !cur) return json({ error: gErr?.message ?? "asset not found" }, 404);
+      const meta = { ...cur.meta, ...(body.meta ?? {}) };
+      const { data: upd, error } = await sb.from("assets").update({ meta }).eq("id", body.id).select().single();
+      if (error) return json({ error: error.message }, 500);
+      /* propagate the new meta into every PC's rotation copies / active background */
+      const { data: rows } = await sb.from("stream_state").select("id,data");
+      for (const row of rows ?? []) {
+        let touched = false;
+        const d = row.data ?? {};
+        const rot = d.banners?.rotation;
+        if (Array.isArray(rot)) rot.forEach((b: Record<string, unknown>, i: number) => {
+          if (b?.id === body.id) { rot[i] = { ...b, meta }; touched = true; }
+        });
+        if (d.background?.url && d.background.url === cur.url) {
+          d.background.crop = meta.crop ?? null; touched = true;
+        }
+        if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
+      }
+      return json({ ok: true, asset: upd });
     }
     case "asset": {
       const a = body.asset ?? {};

@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ACBreakz Control</title>
 <!--
-  ACBreakz Control Panel — open from ANY device (phone, tablet, laptop).
-  Every action here updates all 5 stream PCs instantly.
-  Works in PREVIEW MODE (no keys, same browser as the overlay tab) or CLOUD MODE.
+  ACBreakz Control Panel v2 — open from ANY device.
+  Pick a PC in the header: changes apply to THAT stream only.
+  Uploads / AI generations always land in the shared library for every PC.
 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../overlay/config.js"></script>
@@ -17,11 +17,13 @@
   *{margin:0;padding:0;box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
   body{background:radial-gradient(140% 100% at 50% 0%,#0F2A44,var(--navy-deep) 70%);
     color:var(--bone);min-height:100vh}
-  header{display:flex;align-items:center;gap:14px;padding:14px 18px;
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;
     border-bottom:2px solid var(--copper);background:rgba(7,21,39,.7);backdrop-filter:blur(6px);
     position:sticky;top:0;z-index:10}
   header h1{font-size:20px;letter-spacing:2px;text-transform:uppercase}
   header h1 b{color:var(--gold)}
+  #pcSel{background:#0E2436;border:1px solid var(--volt);color:#fff;border-radius:10px;
+    padding:8px 12px;font-size:14px;font-weight:700}
   #presence{margin-left:auto;font-size:13px;color:#9FB6C9}
   #presence b{color:var(--ok)}
   nav{display:flex;gap:6px;padding:10px 18px;flex-wrap:wrap}
@@ -37,20 +39,20 @@
   .btn.ghost{background:#0E2436;border-color:#1E3A52;color:#B9CBDB}
   .btn.warn{background:linear-gradient(180deg,#7A2C2F,#5A1E20);border-color:var(--danger)}
   .btn.gold{background:linear-gradient(180deg,#8A6522,#6B4C15);border-color:var(--gold)}
-  input[type=text],textarea,input[type=number]{background:#0A1C2C;border:1px solid #1E3A52;
+  input[type=text],textarea,input[type=range]{background:#0A1C2C;border:1px solid #1E3A52;
     color:var(--bone);border-radius:10px;padding:11px 12px;font-size:14px;width:100%}
   textarea{min-height:70px;resize:vertical}
-  /* board mirror */
+  /* board mirror — eliminate style: all teams shown, picked = dimmed OUT */
   #ctlBoard{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
   @media(max-width:700px){#ctlBoard{grid-template-columns:repeat(4,1fr)}}
   .team{position:relative;border-radius:12px;border:2px solid var(--copper);cursor:pointer;
     background:linear-gradient(160deg,#12444F,var(--teal) 45%,#082228);
-    padding:8px 6px 6px;text-align:center;user-select:none}
+    padding:8px 6px 6px;text-align:center;user-select:none;transition:filter .3s}
   .team img{width:46px;height:46px;object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7))}
   .team span{display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:#CFE0EE}
-  .team.on{border-color:var(--gold);box-shadow:0 0 12px rgba(217,164,65,.45)}
-  .team.on::after{content:"PICKED";position:absolute;top:4px;right:4px;font-size:8px;
-    background:var(--gold);color:#081420;font-weight:800;border-radius:4px;padding:1px 4px}
+  .team.on{filter:brightness(.4) saturate(.55)}
+  .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
+    background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
   /* asset grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:8px}
   .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
@@ -63,8 +65,16 @@
   .asset .btn{padding:6px 10px;font-size:12px}
   .tag{font-size:10px;color:#7E97AB}
   .banner-thumb{height:34px !important}
+  /* reframe editor */
+  #reframe{position:fixed;inset:0;background:rgba(4,10,18,.8);display:none;z-index:60;
+    align-items:center;justify-content:center;padding:16px}
+  #reframe.on{display:flex}
+  #reframe .box{background:#0B1E33;border:1px solid var(--volt);border-radius:14px;
+    padding:16px;max-width:560px;width:100%}
+  #rfPreview{width:100%;border-radius:8px;overflow:hidden;background:#04101B;margin:10px 0}
+  #rfPreview img,#rfPreview video{width:100%;height:100%;object-fit:cover;display:block}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
-    border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:50}
+    border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
   label.up{display:inline-block}
   label.up input{display:none}
 </style>
@@ -72,13 +82,18 @@
 <body>
 <header>
   <h1>AC <b>BREAKZ</b> · Control</h1>
+  <select id="pcSel">
+    <option value="1">PC 1</option><option value="2">PC 2</option><option value="3">PC 3</option>
+    <option value="4">PC 4</option><option value="5">PC 5</option><option value="all">ALL PCs</option>
+  </select>
   <div id="presence">connecting…</div>
 </header>
 <nav>
   <button data-tab="board" class="on">Team Board</button>
-  <button data-tab="games">Games & FX</button>
+  <button data-tab="anims">Animations</button>
   <button data-tab="banners">Banners</button>
   <button data-tab="bgs">Backgrounds</button>
+  <button data-tab="style">Board Style</button>
   <button data-tab="gen">AI Generate</button>
   <button data-tab="settings">Settings</button>
 </nav>
@@ -86,23 +101,31 @@
 
 <section id="tab-board" class="on">
   <div class="row">
-    <button class="btn ghost" id="modeBtn">Mode: FILL</button>
-    <button class="btn ghost" id="visBtn">Board: SHOWN</button>
     <button class="btn warn" id="resetBtn">Reset board</button>
+    <span class="tag">Tap a team to eliminate it (plays the animation + sound); tap again to bring it back.</span>
   </div>
-  <h2>Tap a team — plays the pick animation + sound on every stream</h2>
   <div id="ctlBoard"></div>
 </section>
 
-<section id="tab-games">
-  <h2>One-shot animations (play on all streams)</h2>
+<section id="tab-anims">
+  <h2>NFL team animations — one style plays for every team (logo added automatically)</h2>
+  <div class="grid" id="styleGrid"></div>
+  <div class="row" style="margin-top:8px">
+    <input type="text" id="teamStylePrompt" placeholder="AI generate a new team-animation style — describe the backdrop (≈$0.03)" style="flex:1;min-width:240px">
+    <button class="btn gold" id="teamStyleBtn">Generate style</button>
+  </div>
+  <h2>One-shot animations — play inside the animation box</h2>
   <div class="row">
     <label class="up btn gold">Upload animation (.webm)
-      <input type="file" accept="video/webm,video/mp4" data-kind="animation"></label>
+      <input type="file" accept="video/webm,video/mp4" data-kind="animation" data-group="oneshot"></label>
     <label class="up btn ghost">Upload sound (.mp3/.wav)
       <input type="file" accept="audio/*" data-kind="sfx"></label>
   </div>
-  <div class="grid" id="animGrid"></div>
+  <div class="row" style="margin-top:8px">
+    <input type="text" id="oneshotPrompt" placeholder="AI generate a one-shot graphic (≈$0.03)" style="flex:1;min-width:240px">
+    <button class="btn" id="oneshotBtn">Generate one-shot</button>
+  </div>
+  <div class="grid" id="oneshotGrid"></div>
 </section>
 
 <section id="tab-banners">
@@ -120,20 +143,20 @@
     <input type="text" id="compAiPrompt" placeholder="AI art background — describe it (≈$0.03/image)" style="flex:1;min-width:220px">
     <button class="btn" id="compAiBtn">AI art</button>
   </div>
-  <h2>Rotation — checked banners cycle on stream (7–12s each, per layout rules)</h2>
+  <h2>Rotation — checked banners cycle on this PC (7–12s each)</h2>
   <div class="row">
     <label class="up btn gold">Upload banner (1080×97)
       <input type="file" accept="image/*,video/webm,video/mp4" data-kind="banner"></label>
   </div>
   <div class="row" style="margin-top:10px">
-    <input type="text" id="txtBanner" placeholder='Quick text banner — e.g. USE CODE "AUGUST50" FOR $50 OFF $150' style="flex:1;min-width:260px">
+    <input type="text" id="txtBanner" placeholder='Quick text banner' style="flex:1;min-width:260px">
     <button class="btn" id="addTxtBanner">Add text banner</button>
   </div>
   <div class="grid" id="bannerGrid"></div>
 </section>
 
 <section id="tab-bgs">
-  <h2>Streamer background (1080×480) — tap to set live on all streams</h2>
+  <h2>Streamer background (1080×480) — tap to set live on this PC</h2>
   <div class="row">
     <label class="up btn gold">Upload background (image or video)
       <input type="file" accept="image/*,video/webm,video/mp4" data-kind="background"></label>
@@ -141,8 +164,17 @@
   <div class="grid" id="bgGrid"></div>
 </section>
 
+<section id="tab-style">
+  <h2>Team-board style — buttons + board background follow the style, per PC</h2>
+  <div class="grid" id="boardStyleGrid"></div>
+  <div class="row" style="margin-top:8px">
+    <input type="text" id="boardStylePrompt" placeholder="AI generate a new board style — describe the material/mood (2 images ≈$0.06)" style="flex:1;min-width:240px">
+    <button class="btn gold" id="boardStyleBtn">Generate style</button>
+  </div>
+</section>
+
 <section id="tab-gen">
-  <h2>Generate with AI — saved straight into your template library</h2>
+  <h2>Generate with AI — saved straight into the shared library</h2>
   <div class="row" style="align-items:stretch;flex-direction:column;max-width:760px">
     <div class="row">
       <select id="genKind" style="background:#0A1C2C;color:var(--bone);border:1px solid #1E3A52;border-radius:10px;padding:11px">
@@ -151,9 +183,9 @@
         <option value="animation_still">Animation still / concept</option>
       </select>
     </div>
-    <textarea id="genPrompt" placeholder="Describe it — brand style is applied automatically (navy + teal glass + copper/gold, graffiti-shatter energy)…"></textarea>
+    <textarea id="genPrompt" placeholder="Describe it — brand style is applied automatically…"></textarea>
     <div class="row"><button class="btn gold" id="genBtn">Generate & save to templates</button>
-      <span class="tag">Uses the generate-asset edge function (fal.ai FLUX ≈ $0.03/image)</span></div>
+      <span class="tag">fal.ai FLUX ≈ $0.03/image</span></div>
   </div>
 </section>
 
@@ -171,6 +203,19 @@
 </section>
 
 </main>
+
+<div id="reframe"><div class="box">
+  <h2 style="margin-top:0">Reframe — drag the sliders to choose the visible crop</h2>
+  <div id="rfPreview"></div>
+  <div class="row"><span class="tag" style="width:60px">Left–Right</span>
+    <input type="range" id="rfX" min="0" max="100" value="50" style="flex:1"></div>
+  <div class="row"><span class="tag" style="width:60px">Up–Down</span>
+    <input type="range" id="rfY" min="0" max="100" value="50" style="flex:1"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn gold" id="rfSave">Save crop</button>
+    <button class="btn ghost" id="rfCancel">Cancel</button>
+  </div>
+</div></div>
 <div id="toast"></div>
 
 <script>
@@ -196,7 +241,13 @@
   const bus = cloud ? null : new BroadcastChannel("acbz-bus");
   $("#presence").innerHTML = cloud ? "cloud: connecting…" : "<b>preview mode</b> — open overlay/?layer=all&debug=1 in another tab";
 
-  /* all cloud WRITES go through the keyed `panel` edge function (anon key is read-only) */
+  /* which PC this panel is driving */
+  let PC = LS.getItem("acbz-pc") || "1";
+  $("#pcSel").value = PC;
+  $("#pcSel").onchange = async () => { PC = $("#pcSel").value; LS.setItem("acbz-pc", PC);
+    await loadState(); renderAll(); toast(PC === "all" ? "Driving ALL PCs" : "Driving PC " + PC); };
+  const pcRow = () => PC === "all" ? 1 : parseInt(PC, 10);
+
   async function panelCall(body){
     if (!PKEY) { toast("Enter the panel key in Settings to make changes"); return { error: { message: "no panel key" } }; }
     const { data, error } = await sb.functions.invoke("panel", { body: { key: PKEY, ...body } });
@@ -205,19 +256,28 @@
     return { data };
   }
 
-  let state = { background:null, banners:{rotation:[]}, board:{mode:"fill",visible:true,picked:{}} };
+  let state = { background:null, banners:{rotation:[]}, board:{picked:{}}, animStyle:null, boardStyle:null };
   let assets = [];
 
+  async function loadState(){
+    if (cloud) {
+      const {data} = await sb.from("stream_state").select("data").eq("id", pcRow()).single();
+      if (data?.data) state = data.data;
+    } else {
+      try { const s = JSON.parse(LS.getItem("acbz-state")); if (s) state = s; } catch(e){}
+    }
+    state.board ??= {picked:{}}; state.board.picked ??= {}; state.banners ??= {rotation:[]};
+  }
   async function pushState(){
     state.updatedAt = Date.now();
-    if (cloud) { const {error} = await panelCall({action:"state", data:state});
+    if (cloud) { const {error} = await panelCall({action:"state", pc:PC, data:state});
       if (error) toast("State save failed: "+error.message); }
     else { LS.setItem("acbz-state", JSON.stringify(state)); bus.postMessage({kind:"state",data:state}); }
     renderAll();
   }
   async function fireEvent(type, payload){
     const ev = { id: crypto.randomUUID(), type, payload, created_at:new Date().toISOString() };
-    if (cloud) { const {error} = await panelCall({action:"event", type, payload});
+    if (cloud) { const {error} = await panelCall({action:"event", pc:PC, type, payload});
       if (error) toast("Event failed: "+error.message); }
     else bus.postMessage({kind:"event",data:ev});
   }
@@ -231,12 +291,11 @@
   }
   async function saveAsset(a){
     if (cloud) { const {data,error} = await panelCall({action:"asset", asset:a});
-      if (error) return toast("Save failed: "+error.message); assets.unshift(data.asset); }
+      if (error) return toast("Save failed: "+error.message); assets.unshift(data.asset); renderAll(); return data.asset; }
     else { a.id = crypto.randomUUID(); a.created_at = new Date().toISOString();
-      assets.unshift(a); LS.setItem("acbz-assets", JSON.stringify(assets)); }
-    renderAll();
+      assets.unshift(a); LS.setItem("acbz-assets", JSON.stringify(assets)); renderAll(); return a; }
   }
-  async function uploadToStorage(path, blob, contentType){   // keyed signed-URL upload
+  async function uploadToStorage(path, blob, contentType){
     const {data:signed, error:sErr} = await panelCall({action:"sign_upload", path});
     if (sErr) return { error: sErr };
     const {error} = await sb.storage.from("media")
@@ -244,25 +303,26 @@
     if (error) return { error };
     return { url: sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl };
   }
-  async function uploadFile(file, kind){
+  async function uploadFile(file, kind, extraMeta){
     if (cloud) {
       const path = `${kind}/${Date.now()}-${file.name.replace(/[^\w.\-]/g,"_")}`;
       const {url, error} = await uploadToStorage(path, file, file.type || undefined);
       if (error) return toast("Upload failed: "+error.message);
-      await saveAsset({ kind, name:file.name, url, meta:{type:"upload"} });
-      toast("Uploaded & saved to templates");
+      await saveAsset({ kind, name:file.name, url, meta:{type:"upload", ...(extraMeta||{})} });
+      toast("Uploaded & saved to the shared library");
     } else {
       if (file.size > 4*1024*1024) return toast("Preview mode caps uploads at 4MB — connect Supabase for full files");
       const r = new FileReader();
-      r.onload = () => saveAsset({ kind, name:file.name, url:r.result, meta:{type:"upload"} });
+      r.onload = () => saveAsset({ kind, name:file.name, url:r.result, meta:{type:"upload", ...(extraMeta||{})} });
       r.readAsDataURL(file);
     }
   }
   $$("label.up input").forEach(inp => inp.onchange = e => {
-    [...e.target.files].forEach(f => uploadFile(f, e.target.dataset.kind)); e.target.value="";
+    const extra = e.target.dataset.group ? { group: e.target.dataset.group } : null;
+    [...e.target.files].forEach(f => uploadFile(f, e.target.dataset.kind, extra)); e.target.value="";
   });
 
-  /* ---------- board tab ---------- */
+  /* ---------- board tab (eliminate-only) ---------- */
   const boardEl = $("#ctlBoard");
   C.ORDER.forEach(abbr => {
     const t = C.TEAMS[abbr];
@@ -274,17 +334,21 @@
       if (picked) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
       else {
         state.board.picked[abbr] = true;
-        const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
-        const snd  = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
-        fireEvent("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl:snd?.url||null});
+        const snd = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
+        const st = state.animStyle;
+        if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url)) {
+          fireEvent("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
+            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl:snd?.url||null});
+        } else {
+          const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
+          fireEvent("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl:snd?.url||null});
+        }
       }
       pushState();
     };
     boardEl.appendChild(d);
   });
-  $("#modeBtn").onclick = () => { state.board.mode = state.board.mode==="fill"?"eliminate":"fill"; pushState(); };
-  $("#visBtn").onclick  = () => { state.board.visible = !state.board.visible; pushState(); };
-  $("#resetBtn").onclick = () => { if(!confirm("Clear all picked teams?"))return;
+  $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
     state.board.picked = {}; fireEvent("board_reset",{}); pushState(); };
 
   /* ---------- text banner ---------- */
@@ -294,7 +358,7 @@
     $("#txtBanner").value = "";
   };
 
-  /* ---------- banner composer (1080x97, exports PNG) ---------- */
+  /* ---------- banner composer (unchanged core) ---------- */
   const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
   function compImg(url){
     if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin = "anonymous"; i.src = url;
@@ -304,26 +368,26 @@
   function drawComposer(){
     const ctx = comp.canvas.getContext("2d"), W = 1080, H = 97;
     ctx.clearRect(0,0,W,H);
-    if (comp.bgUrl && compImg(comp.bgUrl).naturalWidth) {          // cover-crop the art
+    if (comp.bgUrl && compImg(comp.bgUrl).naturalWidth) {
       const im = comp.imgs[comp.bgUrl], s = Math.max(W/im.naturalWidth, H/im.naturalHeight);
       ctx.drawImage(im, (W - im.naturalWidth*s)/2, (H - im.naturalHeight*s)/2,
                     im.naturalWidth*s, im.naturalHeight*s);
-    } else {                                                        // brand gradient template
+    } else {
       const g = ctx.createLinearGradient(0,0,W,0);
       g.addColorStop(0,"#071527"); g.addColorStop(.5,"#274A66"); g.addColorStop(1,"#071527");
       ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
     }
-    const scrim = ctx.createLinearGradient(0,0,0,H);                // legibility scrim
+    const scrim = ctx.createLinearGradient(0,0,0,H);
     scrim.addColorStop(0,"rgba(4,10,18,.36)"); scrim.addColorStop(1,"rgba(4,10,18,.62)");
     ctx.fillStyle = scrim; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle = "#B87333"; ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3); // copper rails
+    ctx.fillStyle = "#B87333"; ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3);
     const text = ($("#compText").value.trim() || "YOUR BANNER TEXT").toUpperCase();
     let size = 44; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     do { ctx.font = `700 ${size}px "Arial Black","Segoe UI",sans-serif`; size -= 2; }
     while (ctx.measureText(text).width > W - 80 && size > 16);
-    ctx.save(); ctx.shadowColor = "rgba(53,167,255,.65)"; ctx.shadowBlur = 18;   // volt glow
+    ctx.save(); ctx.shadowColor = "rgba(53,167,255,.65)"; ctx.shadowBlur = 18;
     ctx.fillStyle = "#EFE9DC"; ctx.fillText(text, W/2, H/2 + 2); ctx.restore();
-    ctx.save(); ctx.shadowColor = "#000"; ctx.shadowOffsetY = 3;                 // hard drop
+    ctx.save(); ctx.shadowColor = "#000"; ctx.shadowOffsetY = 3;
     ctx.fillStyle = "#EFE9DC"; ctx.fillText(text, W/2, H/2 + 2); ctx.restore();
     const t = $("#compText").value.trim();
     $("#compDur").textContent = C.bannerSeconds({meta:{type:"text", text:t||"x"}}) + "s on stream";
@@ -336,7 +400,7 @@
          <div class="meta"><div class="name">Brand gradient</div></div></div>` +
       arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" data-cbg="${a.url}"
           style="width:120px;cursor:pointer">
-        <div class="thumb banner-thumb"><img src="${a.url}" crossorigin="anonymous"></div>
+        <div class="thumb banner-thumb">${thumb(a)}</div>
         <div class="meta"><div class="name">${a.name}</div></div></div>`).join("");
     $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => {
       comp.bgUrl = d.dataset.cbg || null; renderCompBGs(); drawComposer(); });
@@ -370,16 +434,81 @@
     toast("AI art added to backgrounds");
   };
 
-  /* ---------- AI generate ---------- */
+  /* ---------- AI: one-shots, team styles, board styles ---------- */
+  async function gen(body){
+    const {data, error} = await sb.functions.invoke("generate-asset", { body:{ key:PKEY, ...body } });
+    if (error || data?.error) { toast("Generate failed: "+(error?.message || data?.error)); return null; }
+    return data;
+  }
+  const busy = (btn, on, label) => { btn.disabled = on; btn.textContent = on ? "Generating…" : label; };
+  $("#oneshotBtn").onclick = async () => {
+    const prompt = $("#oneshotPrompt").value.trim(); if (!prompt) return toast("Describe it first");
+    if (!cloud) return toast("Needs the cloud connection");
+    busy($("#oneshotBtn"), true, "Generate one-shot");
+    const d = await gen({ kind:"animation_still", prompt,
+      as:{ kind:"animation", name:"AI: "+prompt.slice(0,40), meta:{ group:"oneshot", image:true } } });
+    busy($("#oneshotBtn"), false, "Generate one-shot");
+    if (d) { toast("One-shot saved"); loadAssets(); }
+  };
+  $("#teamStyleBtn").onclick = async () => {
+    const prompt = $("#teamStylePrompt").value.trim(); if (!prompt) return toast("Describe the style first");
+    if (!cloud) return toast("Needs the cloud connection");
+    busy($("#teamStyleBtn"), true, "Generate style");
+    const d = await gen({ kind:"animation_still", prompt, no_row:true });
+    if (d) await saveAsset({ kind:"style", name:"Style: "+prompt.slice(0,36), url:null,
+      meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt } });
+    busy($("#teamStyleBtn"), false, "Generate style");
+    if (d) toast("Team-animation style created — enable it on a card");
+  };
+  $("#boardStyleBtn").onclick = async () => {
+    const prompt = $("#boardStylePrompt").value.trim(); if (!prompt) return toast("Describe the style first");
+    if (!cloud) return toast("Needs the cloud connection");
+    busy($("#boardStyleBtn"), true, "Generate style");
+    const btn = await gen({ kind:"board_button", prompt: prompt +
+      ", single empty square game-show button face, centered, uniform, no logo", no_row:true });
+    const bg = btn && await gen({ kind:"board_bg", prompt: prompt +
+      ", wide horizontal band, subtle, not distracting", no_row:true });
+    if (btn && bg) await saveAsset({ kind:"style", name:"Board: "+prompt.slice(0,36), url:null,
+      meta:{ domain:"board", button_url:btn.url, bg_url:bg.url, prompt } });
+    busy($("#boardStyleBtn"), false, "Generate style");
+    if (btn && bg) toast("Board style created — apply it on a card");
+  };
   $("#genBtn").onclick = async () => {
     const prompt = $("#genPrompt").value.trim(); if (!prompt) return toast("Type a prompt first");
     if (!cloud) return toast("AI generation needs the cloud connection (Settings tab)");
-    $("#genBtn").disabled = true; $("#genBtn").textContent = "Generating…";
-    const {data, error} = await sb.functions.invoke("generate-asset",
-      { body:{ key:PKEY, kind:$("#genKind").value, prompt } });
-    $("#genBtn").disabled = false; $("#genBtn").textContent = "Generate & save to templates";
-    if (error || data?.error) return toast("Generate failed: "+(error?.message || data?.error));
-    toast("Generated & saved"); loadAssets();
+    busy($("#genBtn"), true, "Generate & save to templates");
+    const d = await gen({ kind:$("#genKind").value, prompt });
+    busy($("#genBtn"), false, "Generate & save to templates");
+    if (d) { toast("Generated & saved"); loadAssets(); }
+  };
+
+  /* ---------- reframe editor ---------- */
+  let rfAsset = null;
+  function openReframe(a){
+    rfAsset = a;
+    const crop = a.meta?.crop ?? {x:50,y:50};
+    $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50;
+    const h = a.kind === "banner" ? Math.round(97/1080*520) : Math.round(480/1080*520);
+    $("#rfPreview").style.height = h + "px";
+    $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(a.url||"")
+      ? `<video src="${a.url}" muted autoplay loop playsinline></video>`
+      : `<img src="${a.url}">`;
+    rfApply(); $("#reframe").classList.add("on");
+  }
+  function rfApply(){
+    const n = $("#rfPreview").firstChild;
+    if (n) n.style.objectPosition = `${$("#rfX").value}% ${$("#rfY").value}%`;
+  }
+  $("#rfX").oninput = rfApply; $("#rfY").oninput = rfApply;
+  $("#rfCancel").onclick = () => { $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML=""; };
+  $("#rfSave").onclick = async () => {
+    if (!rfAsset) return;
+    const crop = { x:+$("#rfX").value, y:+$("#rfY").value };
+    const {error} = await panelCall({action:"update_asset", id:rfAsset.id, meta:{crop}});
+    if (error) return toast("Crop save failed: "+error.message);
+    $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML="";
+    await loadAssets(); await loadState(); renderAll();
+    toast("Crop saved — applies everywhere this asset is shown");
   };
 
   /* ---------- renderers ---------- */
@@ -387,35 +516,54 @@
     if (a.meta?.type==="text" && !a.url)
       return `<div style="font-size:11px;padding:6px;color:#DCE8F2">${a.meta.text}</div>`;
     if (/\.(webm|mp4)(\?|$)/i.test(a.url||"") || (a.url||"").startsWith("data:video"))
-      return `<video src="${a.url}" muted loop autoplay playsinline></video>`;
-    return `<img src="${a.url}">`;
+      return `<video src="${a.url}" muted playsinline preload="metadata"></video>`; /* no autoplay: phones crash */
+    return `<img src="${a.url}" loading="lazy">`;
   }
   function renderAll(){
     /* board mirror */
     $$("#ctlBoard .team").forEach(d => d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]));
-    $("#modeBtn").textContent = "Mode: " + state.board.mode.toUpperCase();
-    $("#visBtn").textContent  = "Board: " + (state.board.visible ? "SHOWN" : "HIDDEN");
-    /* animations */
-    $("#animGrid").innerHTML = assets.filter(a=>a.kind==="animation"||a.kind==="sfx").map(a=>`
+
+    /* team-animation styles */
+    const styles = assets.filter(a => a.kind==="style" && a.meta?.domain==="team_anim");
+    const curStyle = state.animStyle;
+    $("#styleGrid").innerHTML = styles.map(s => {
+      const active = curStyle ? curStyle.id === s.id : s.meta?.builtin;
+      return `<div class="asset ${active?"active":""}">
+        <div class="thumb">${s.meta?.base_url ? `<img src="${s.meta.base_url}" loading="lazy">` : "🏈"}</div>
+        <div class="meta"><div class="name">${s.name}</div>
+          <div class="row"><button class="btn ${active?"ghost":""}" data-style="${s.id}">
+            ${active?"Enabled":"Enable"}</button>
+          <span class="tag">${s.meta?.per_team ? "32 team videos" : "1 base + logo overlay"}</span></div>
+        </div></div>`; }).join("");
+    $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
+      state.animStyle = assets.find(x=>x.id===b.dataset.style); pushState();
+    });
+
+    /* one-shots + sfx */
+    $("#oneshotGrid").innerHTML = assets
+      .filter(a => (a.kind==="animation" && a.meta?.group!=="team") || a.kind==="sfx").map(a=>`
       <div class="asset"><div class="thumb">${a.kind==="sfx" ? "🔊" : thumb(a)}</div>
         <div class="meta"><div class="name">${a.name}</div>
           <div class="row"><button class="btn" data-play="${a.id}">Play</button>
-          <span class="tag">${a.kind}${a.meta?.team ? " · "+a.meta.team.toUpperCase() : ""}</span></div>
+          <span class="tag">${a.kind==="sfx" ? "sfx" : (a.meta?.image ? "still" : "video")}</span></div>
         </div></div>`).join("");
-    $$("#animGrid [data-play]").forEach(b => b.onclick = () => {
+    $$("#oneshotGrid [data-play]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.play);
       if (a.kind==="sfx") fireEvent("play_sfx",{url:a.url});
-      else fireEvent("play_animation",{url:a.url});
+      else fireEvent("play_animation",{url:a.url, boxed:true, image:a.meta?.image===true});
     });
-    /* banners */
+
+    /* banners: rotation grid hides pure-art templates */
     const rotIds = new Set((state.banners.rotation||[]).map(x=>x.id));
-    $("#bannerGrid").innerHTML = assets.filter(a=>a.kind==="banner").map(a=>`
+    $("#bannerGrid").innerHTML = assets
+      .filter(a=>a.kind==="banner" && !a.meta?.template).map(a=>`
       <div class="asset ${rotIds.has(a.id)?"active":""}">
         <div class="thumb banner-thumb">${thumb(a)}</div>
         <div class="meta"><div class="name">${a.name}</div>
           <div class="row">
             <button class="btn ${rotIds.has(a.id)?"warn":""}" data-rot="${a.id}">
-              ${rotIds.has(a.id)?"Remove":"Add to rotation"}</button>
+              ${rotIds.has(a.id)?"Remove":"Add"}</button>
+            ${a.url ? `<button class="btn ghost" data-rf="${a.id}">Reframe</button>` : ""}
             <span class="tag">${C.bannerSeconds(a)}s</span>
           </div></div></div>`).join("");
     $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
@@ -424,16 +572,37 @@
       state.banners.rotation = rotIds.has(a.id) ? rot.filter(x=>x.id!==a.id) : [...rot, a];
       pushState();
     });
+
     /* backgrounds */
     $("#bgGrid").innerHTML = assets.filter(a=>a.kind==="background").map(a=>`
-      <div class="asset ${state.background?.url===a.url?"active":""}" data-bg="${a.id}">
-        <div class="thumb">${thumb(a)}</div>
-        <div class="meta"><div class="name">${a.name}</div></div></div>`).join("");
+      <div class="asset ${state.background?.url===a.url?"active":""}">
+        <div class="thumb" data-bg="${a.id}" style="cursor:pointer">${thumb(a)}</div>
+        <div class="meta"><div class="name">${a.name}</div>
+          <div class="row"><button class="btn" data-bg="${a.id}">Set live</button>
+            <button class="btn ghost" data-rf="${a.id}">Reframe</button></div></div></div>`).join("");
     $$("#bgGrid [data-bg]").forEach(d => d.onclick = () => {
       const a = assets.find(x=>x.id===d.dataset.bg);
-      state.background = { url:a.url, name:a.name }; pushState();
+      state.background = { url:a.url, name:a.name, crop:a.meta?.crop ?? null }; pushState();
     });
-    /* composer picker + live preview */
+    $$("[data-rf]").forEach(b => b.onclick = (e) => {
+      e.stopPropagation(); openReframe(assets.find(x=>x.id===b.dataset.rf));
+    });
+
+    /* board styles */
+    const bStyles = assets.filter(a => a.kind==="style" && a.meta?.domain==="board");
+    const curB = state.boardStyle;
+    $("#boardStyleGrid").innerHTML = bStyles.map(s => {
+      const active = curB ? curB.id === s.id : s.meta?.builtin;
+      return `<div class="asset ${active?"active":""}">
+        <div class="thumb">${s.meta?.button_url ? `<img src="${s.meta.button_url}" loading="lazy">` : "🟨"}</div>
+        <div class="meta"><div class="name">${s.name}</div>
+          <div class="row"><button class="btn ${active?"ghost":""}" data-bstyle="${s.id}">
+            ${active?"Applied":"Apply"}</button></div></div></div>`; }).join("");
+    $$("#boardStyleGrid [data-bstyle]").forEach(b => b.onclick = () => {
+      const s = assets.find(x=>x.id===b.dataset.bstyle);
+      state.boardStyle = s.meta?.builtin ? null : s; pushState();
+    });
+
     renderCompBGs(); drawComposer();
   }
 
@@ -446,13 +615,12 @@
 
   /* ---------- boot ---------- */
   (async () => {
+    await loadState();
     if (cloud) {
-      const {data,error} = await sb.from("stream_state").select("data").eq("id",1).single();
-      if (data?.data) state = data.data;
-      $("#presence").innerHTML = error ? "cloud: error — check keys" : "cloud: <b>connected</b>";
+      $("#presence").innerHTML = "cloud: <b>connected</b>";
       sb.channel("db-ctl")
         .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
-            p => { state = p.new.data; renderAll(); })
+            p => { if (p.new.id === pcRow()) { state = p.new.data; renderAll(); } })
         .subscribe();
       const pres = sb.channel("presence:overlays");
       pres.on("presence",{event:"sync"},()=>{
@@ -461,8 +629,6 @@
         $("#presence").innerHTML = `cloud: <b>connected</b> · <b>${pcs.size}</b> PC${pcs.size===1?"":"s"} live`;
         $("#onlineList").textContent = [...pcs].sort().map(p=>"PC "+p).join(", ") || "none";
       }).subscribe();
-    } else {
-      try { const s = JSON.parse(LS.getItem("acbz-state")); if (s) state = s; } catch(e){}
     }
     await loadAssets();
   })();
