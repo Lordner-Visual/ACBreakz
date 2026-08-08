@@ -1,0 +1,21 @@
+M4 acceptance transcript — 2026-08-08
+
+Banner composer (hosted control panel, Banners tab):
+  PASS  composer duration label says 7s for 9-word text
+  PASS  composed banner saved as storage PNG (banners/composed-<ts>.png, meta.type='text')
+  PASS  banner grid shows 7s duration
+  PASS  composed 9-word banner displayed 6.92s on the hosted overlay
+        (accept: exactly 7s min-rule; transition fade accounts for the 80ms)
+        [m4-banner-live.png = the banner on stream, m4-composer-typed.png]
+
+AI art:
+  First attempt FAILED: fal.ai "No user found for Key ID and Secret".
+  Root cause: FAL key ID was auto-capitalized in transcription (C6a2... vs c6a2...).
+  Verified via zero-cost auth probe (401 vs 422), corrected the Supabase secret.
+  PASS  generate-asset kind=banner -> {ok:true}, stored banner/ai-1786179194995.png
+  PASS  AI art present in composer background picker, selectable as background
+        [m4-composer-ai-bg.png]
+  Cost: 1 image ≈ $0.03 (logged in BUDGET.md; running total $0.03 of $50 cap)
+
+Cleanup: test banner removed from rotation (asset kept in library);
+default rotation = the four M3 banners.
