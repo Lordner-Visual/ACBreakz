@@ -57,12 +57,26 @@ function modelFor(kind: string, quality?: string) {
       : "fal-ai/kling-video/v1.6/standard/text-to-video";
   return "fal-ai/flux/dev";
 }
+const NO_TEXT = "text, letters, words, captions, subtitles, watermark, logo, signage, " +
+  "people, hands, faces, blurry, low quality, distorted";
+
 function payloadFor(kind: string, prompt: string) {
   if (AUDIO_KINDS.has(kind))
     return { prompt: prompt + ", clean punchy broadcast sound effect, no music bed", seconds_total: 5 };
-  if (VIDEO_KINDS.has(kind))
-    return { prompt: BRAND + prompt + ", seamless loop, locked-off camera, pure black background",
+
+  if (VIDEO_KINDS.has(kind)) {
+    /* Effect overlays must be an ISOLATED effect on black so they can be blended over a
+       button — the brand scene prompt would turn them into branded hero objects. */
+    const isEffect = kind === "button_anim";
+    const p = isEffect
+      ? `${prompt}. Isolated visual effect on a pure solid black background. ` +
+        "Only the effect is visible, no objects, no scene, no surface, no text. " +
+        "Centered, macro, high contrast glow, seamless loop, locked-off camera."
+      : `${BRAND}${prompt}. Wide establishing plate, seamless loop, locked-off camera, ` +
+        "no text anywhere in frame.";
+    return { prompt: p, negative_prompt: NO_TEXT,
              duration: "5", aspect_ratio: ASPECT[kind] ?? "16:9" };
+  }
   return { prompt: BRAND + prompt, image_size: SIZES[kind] ?? SIZES.background,
            num_inference_steps: 28, num_images: 1 };
 }
@@ -111,17 +125,21 @@ Deno.serve(async (req) => {
   if (!PANEL_KEY || key !== PANEL_KEY) return json({ error: "bad panel key" }, 401);
   if (!FAL_KEY) return json({ error: "FAL_KEY not configured" }, 500);
 
-  /* ---- poll an already-submitted queue job ---- */
+  /* ---- poll an already-submitted queue job ----
+     fal's queue lives under owner/app even for nested model paths
+     (fal-ai/kling-video/v1.6/... -> fal-ai/kling-video/requests/...), so prefer the
+     status_url/response_url fal handed back at submit time. */
   if (mode === "poll") {
-    if (!request_id || !modelIn) return json({ error: "request_id and model required" }, 400);
-    const st = await fetch(`https://queue.fal.run/${modelIn}/requests/${request_id}/status`,
-      { headers: { Authorization: `Key ${FAL_KEY}` } });
-    if (!st.ok) return json({ error: "status check failed: " + (await st.text()) }, 502);
+    if (!request_id) return json({ error: "request_id required" }, 400);
+    const base = modelIn ? modelIn.split("/").slice(0, 2).join("/") : "";
+    const statusUrl = body.status_url ?? `https://queue.fal.run/${base}/requests/${request_id}/status`;
+    const resultUrl = body.response_url ?? `https://queue.fal.run/${base}/requests/${request_id}`;
+    const st = await fetch(statusUrl, { headers: { Authorization: `Key ${FAL_KEY}` } });
+    if (!st.ok) return json({ error: `status check failed (${st.status}): ${await st.text()}` }, 502);
     const status = await st.json();
     if (status.status !== "COMPLETED") return json({ ok: true, status: status.status ?? "IN_PROGRESS" });
 
-    const rr = await fetch(`https://queue.fal.run/${modelIn}/requests/${request_id}`,
-      { headers: { Authorization: `Key ${FAL_KEY}` } });
+    const rr = await fetch(resultUrl, { headers: { Authorization: `Key ${FAL_KEY}` } });
     if (!rr.ok) return json({ error: "result fetch failed: " + (await rr.text()) }, 502);
     const out = await rr.json();
     const mediaUrl = pickUrl(out);
@@ -145,7 +163,8 @@ Deno.serve(async (req) => {
     if (!q.ok) return json({ error: "submit failed: " + (await q.text()) }, 502);
     const out = await q.json();
     if (!out.request_id) return json({ error: "no request_id returned" }, 502);
-    return json({ ok: true, request_id: out.request_id, model });
+    return json({ ok: true, request_id: out.request_id, model,
+                  status_url: out.status_url, response_url: out.response_url });
   }
 
   /* ---- inline (images) ---- */

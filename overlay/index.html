@@ -103,7 +103,8 @@
 
   /* ---------- v3 button animations ---------- */
   .cell .vfx{position:absolute;inset:-14%;width:128%;height:128%;object-fit:cover;
-    z-index:5;pointer-events:none;mix-blend-mode:screen;opacity:0}
+    z-index:5;pointer-events:none;mix-blend-mode:screen;opacity:0;
+    transition:opacity .28s linear}
   .cell.fx-video .vfx{opacity:1}
   /* AMBIENT: every button animates on the same clock, so the board pulses together */
   #board.anim-glow .cell::after{content:"";position:absolute;inset:0;border-radius:8px;
@@ -250,14 +251,11 @@
     boardEl.classList.toggle("has-btnstyle", !!btn?.url);
 
     /* background: still image or looping video behind the grid */
+    clearLoopers(boardEl);
     boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
     if (bg?.url && /\.(webm|mp4)(\?|$)/i.test(bg.url)) {
       boardEl.style.backgroundImage = "";
-      const v = Object.assign(document.createElement("video"),
-        {src:bg.url, autoplay:true, muted:true, loop:true, playsInline:true, className:"boardbg"});
-      Object.assign(v.style, {position:"absolute",inset:"0",width:"100%",height:"100%",
-        objectFit:"cover",zIndex:"0",pointerEvents:"none"});
-      boardEl.insertBefore(v, boardEl.firstChild);
+      boardEl.insertBefore(makeLoop(bg.url, bg.meta ?? bg, 0), boardEl.firstChild);
     } else {
       boardEl.style.backgroundImage = bg?.url ? `url("${bg.url}")` : "";
     }
@@ -285,7 +283,8 @@
       const v = Object.assign(document.createElement("video"),
         {src:btnAnim.url, autoplay:true, muted:true, playsInline:true, className:"vfx"});
       cell.appendChild(v); cell.classList.add("fx-video");
-      const stop = () => { cell.classList.remove("fx-video"); v.remove(); };
+      const stop = () => { cell.classList.remove("fx-video");        // fade out, then drop
+        setTimeout(() => v.remove(), 320); };
       v.onended = v.onerror = stop; setTimeout(stop, 4000);
       return;
     }
@@ -316,6 +315,42 @@
     node.style.objectPosition = c ? `${c.x ?? 50}% ${c.y ?? 50}%` : "";
     node.style.transform = c?.z ? `scale(${Math.max(1, Math.min(4, c.z / 100))})` : "";
   };
+
+  /* Seamless looper: AI clips rarely loop cleanly, so run two copies of the file and
+     crossfade at the seam — the jump is never visible. Returns a positioned wrapper. */
+  const XFADE = 0.55;
+  function makeLoop(url, cropMeta, z) {
+    const wrap = document.createElement("div");
+    wrap.className = "looper";
+    wrap.style.cssText = `position:absolute;inset:0;overflow:hidden;z-index:${z ?? 0};pointer-events:none`;
+    const mk = () => {
+      const v = Object.assign(document.createElement("video"),
+        { src: url, muted: true, playsInline: true, preload: "auto" });
+      v.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" +
+        `transition:opacity ${XFADE}s linear;opacity:0`;
+      applyCrop(v, cropMeta);
+      wrap.appendChild(v); return v;
+    };
+    let cur = mk(), nxt = mk();
+    cur.style.opacity = "1";
+    cur.addEventListener("loadedmetadata", () => cur.play().catch(()=>{}), { once: true });
+    const tick = () => {
+      const d = cur.duration;
+      if (d && cur.currentTime >= d - XFADE && nxt.paused) {
+        nxt.currentTime = 0; nxt.play().catch(()=>{});
+        nxt.style.opacity = "1"; cur.style.opacity = "0";
+        const finished = cur;
+        setTimeout(() => { finished.pause(); finished.currentTime = 0; }, XFADE * 1000);
+        [cur, nxt] = [nxt, cur];
+      }
+      wrap._raf = requestAnimationFrame(tick);
+    };
+    wrap._raf = requestAnimationFrame(tick);
+    wrap._stop = () => cancelAnimationFrame(wrap._raf);
+    return wrap;
+  }
+  const clearLoopers = (root) => root.querySelectorAll(".looper")
+    .forEach(n => { n._stop?.(); n.remove(); });
   const rotator = {
     list: [], i: -1, timer: null,
     setList(list) {
@@ -352,11 +387,14 @@
     const key = bg?.url ? bg.url + JSON.stringify(bg.crop ?? null) : null;
     if (key === bgKey) return; bgKey = key;
     const f = $("#bgFrame");
+    clearLoopers(f);
     f.querySelectorAll("video,img").forEach(n => n.remove());
     if (!bg?.url) return;
-    const n = /\.(webm|mp4)(\?|$)/i.test(bg.url)
-      ? Object.assign(document.createElement("video"), {src:bg.url, autoplay:true, muted:true, loop:true, playsInline:true})
-      : Object.assign(document.createElement("img"), {src:bg.url});
+    if (/\.(webm|mp4)(\?|$)/i.test(bg.url)) {          // seamless crossfade loop
+      f.insertBefore(makeLoop(bg.url, bg), f.firstChild);
+      return;
+    }
+    const n = Object.assign(document.createElement("img"), {src:bg.url});
     applyCrop(n, bg);
     f.insertBefore(n, f.firstChild);
   }

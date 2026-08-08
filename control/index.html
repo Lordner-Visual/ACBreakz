@@ -570,7 +570,10 @@
     $("#compDur").textContent = C.bannerSeconds({meta:{type:"text", text:t||"x"}}) + "s on stream";
   }
   function renderCompBGs(){
-    const arts = assets.filter(a => (a.kind==="banner"||a.kind==="background") && a.url);
+    /* composer backgrounds = art you can put text ON: uploaded/AI banner art and
+       backgrounds. Composed text banners are finished pieces — rotation only. */
+    const arts = assets.filter(a => a.url &&
+      ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background"));
     $("#compBGs").innerHTML =
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
          <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
@@ -618,7 +621,8 @@
     for (let i = 0; i < 120; i++) {                       // up to ~10 minutes
       await sleep(5000);
       if (btn) btn.textContent = `Generating… ${Math.round((Date.now()-t0)/1000)}s`;
-      const p = await call({ ...body, mode:"poll", request_id:sub.request_id, model:sub.model });
+      const p = await call({ ...body, mode:"poll", request_id:sub.request_id, model:sub.model,
+        status_url:sub.status_url, response_url:sub.response_url });
       if (!p) return null;
       if (p.asset || p.url) return p;
       if (/FAIL|ERROR/i.test(p.status ?? "")) { toast("Generation failed on the provider"); return null; }
@@ -744,12 +748,14 @@
 
   /* ---------- renderers ---------- */
   function thumb(a){
-    const u = a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+    /* a folder-style card (e.g. 32 team videos) carries a poster frame lifted from
+       one of its videos; otherwise seek video thumbs past the blank first frame */
+    const u = a.meta?.poster ?? a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
     if (a.meta?.type==="text" && !a.url)
       return `<div style="font-size:11px;padding:6px;color:#DCE8F2">${esc(a.meta.text)}</div>`;
     if (!u) return "";
     if (/\.(webm|mp4)(\?|$)/i.test(u) || u.startsWith("data:video"))
-      return `<video src="${u}" muted playsinline preload="metadata"></video>`;
+      return `<video src="${u}#t=1.2" muted playsinline preload="metadata"></video>`;
     return `<img src="${u}" loading="lazy">`;
   }
   const delBtn = (a) => a.meta?.builtin ? "" : `<button class="btn warn" data-del="${a.id}">Delete</button>`;
