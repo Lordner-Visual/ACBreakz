@@ -106,6 +106,20 @@
 </section>
 
 <section id="tab-banners">
+  <h2>Banner composer — live 1080×97 preview, brand styling baked in</h2>
+  <canvas id="compCanvas" width="1080" height="97"
+    style="width:100%;max-width:1080px;border:1px solid #1E3A52;border-radius:8px;background:#06111b"></canvas>
+  <div class="row" style="margin-top:8px">
+    <input type="text" id="compText" placeholder='Type the banner text — e.g. USE CODE "AUGUST50" FOR $50 OFF $150' style="flex:1;min-width:260px">
+    <button class="btn gold" id="compSave">Save to library</button>
+    <span class="tag" id="compDur">7s on stream</span>
+  </div>
+  <h2>Composer background — template, upload, or AI art</h2>
+  <div class="row" id="compBGs" style="gap:6px"></div>
+  <div class="row" style="margin-top:6px">
+    <input type="text" id="compAiPrompt" placeholder="AI art background — describe it (≈$0.03/image)" style="flex:1;min-width:220px">
+    <button class="btn" id="compAiBtn">AI art</button>
+  </div>
   <h2>Rotation — checked banners cycle on stream (7–12s each, per layout rules)</h2>
   <div class="row">
     <label class="up btn gold">Upload banner (1080×97)
@@ -262,6 +276,84 @@
     $("#txtBanner").value = "";
   };
 
+  /* ---------- banner composer (1080x97, exports PNG) ---------- */
+  const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
+  function compImg(url){
+    if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin = "anonymous"; i.src = url;
+      i.onload = drawComposer; comp.imgs[url] = i; }
+    return comp.imgs[url];
+  }
+  function drawComposer(){
+    const ctx = comp.canvas.getContext("2d"), W = 1080, H = 97;
+    ctx.clearRect(0,0,W,H);
+    if (comp.bgUrl && compImg(comp.bgUrl).naturalWidth) {          // cover-crop the art
+      const im = comp.imgs[comp.bgUrl], s = Math.max(W/im.naturalWidth, H/im.naturalHeight);
+      ctx.drawImage(im, (W - im.naturalWidth*s)/2, (H - im.naturalHeight*s)/2,
+                    im.naturalWidth*s, im.naturalHeight*s);
+    } else {                                                        // brand gradient template
+      const g = ctx.createLinearGradient(0,0,W,0);
+      g.addColorStop(0,"#071527"); g.addColorStop(.5,"#274A66"); g.addColorStop(1,"#071527");
+      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+    }
+    const scrim = ctx.createLinearGradient(0,0,0,H);                // legibility scrim
+    scrim.addColorStop(0,"rgba(4,10,18,.36)"); scrim.addColorStop(1,"rgba(4,10,18,.62)");
+    ctx.fillStyle = scrim; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#B87333"; ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3); // copper rails
+    const text = ($("#compText").value.trim() || "YOUR BANNER TEXT").toUpperCase();
+    let size = 44; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    do { ctx.font = `700 ${size}px "Arial Black","Segoe UI",sans-serif`; size -= 2; }
+    while (ctx.measureText(text).width > W - 80 && size > 16);
+    ctx.save(); ctx.shadowColor = "rgba(53,167,255,.65)"; ctx.shadowBlur = 18;   // volt glow
+    ctx.fillStyle = "#EFE9DC"; ctx.fillText(text, W/2, H/2 + 2); ctx.restore();
+    ctx.save(); ctx.shadowColor = "#000"; ctx.shadowOffsetY = 3;                 // hard drop
+    ctx.fillStyle = "#EFE9DC"; ctx.fillText(text, W/2, H/2 + 2); ctx.restore();
+    const t = $("#compText").value.trim();
+    $("#compDur").textContent = C.bannerSeconds({meta:{type:"text", text:t||"x"}}) + "s on stream";
+  }
+  function renderCompBGs(){
+    const arts = assets.filter(a => (a.kind==="banner"||a.kind==="background") && a.url);
+    $("#compBGs").innerHTML =
+      `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
+         <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
+         <div class="meta"><div class="name">Brand gradient</div></div></div>` +
+      arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" data-cbg="${a.url}"
+          style="width:120px;cursor:pointer">
+        <div class="thumb banner-thumb"><img src="${a.url}" crossorigin="anonymous"></div>
+        <div class="meta"><div class="name">${a.name}</div></div></div>`).join("");
+    $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => {
+      comp.bgUrl = d.dataset.cbg || null; renderCompBGs(); drawComposer(); });
+  }
+  $("#compText").oninput = drawComposer;
+  $("#compSave").onclick = () => {
+    const text = $("#compText").value.trim(); if (!text) return toast("Type the banner text first");
+    comp.canvas.toBlob(async (blob) => {
+      if (cloud) {
+        const path = `banners/composed-${Date.now()}.png`;
+        const {error} = await sb.storage.from("media").upload(path, blob,
+          { contentType:"image/png", cacheControl:"31536000" });
+        if (error) return toast("Upload failed: "+error.message);
+        const {data} = sb.storage.from("media").getPublicUrl(path);
+        await saveAsset({ kind:"banner", name:text.slice(0,40), url:data.publicUrl, meta:{type:"text", text} });
+      } else {
+        const r = new FileReader();
+        r.onload = () => saveAsset({ kind:"banner", name:text.slice(0,40), url:r.result, meta:{type:"text", text} });
+        r.readAsDataURL(blob);
+      }
+      toast(`Saved — ${C.bannerSeconds({meta:{type:"text",text}})}s on stream`);
+    }, "image/png");
+  };
+  $("#compAiBtn").onclick = async () => {
+    const prompt = $("#compAiPrompt").value.trim(); if (!prompt) return toast("Describe the art first");
+    if (!cloud) return toast("AI art needs the cloud connection (Settings tab)");
+    $("#compAiBtn").disabled = true; $("#compAiBtn").textContent = "Generating…";
+    const {data, error} = await sb.functions.invoke("generate-asset", { body:{ kind:"banner", prompt } });
+    $("#compAiBtn").disabled = false; $("#compAiBtn").textContent = "AI art";
+    if (error || data?.error) return toast("Generate failed: "+(error?.message || data?.error));
+    await loadAssets();
+    if (data?.asset?.url) { comp.bgUrl = data.asset.url; renderCompBGs(); drawComposer(); }
+    toast("AI art added to backgrounds");
+  };
+
   /* ---------- AI generate ---------- */
   $("#genBtn").onclick = async () => {
     const prompt = $("#genPrompt").value.trim(); if (!prompt) return toast("Type a prompt first");
@@ -325,6 +417,8 @@
       const a = assets.find(x=>x.id===d.dataset.bg);
       state.background = { url:a.url, name:a.name }; pushState();
     });
+    /* composer picker + live preview */
+    renderCompBGs(); drawComposer();
   }
 
   /* ---------- settings ---------- */
