@@ -156,7 +156,7 @@
     <div class="row">
       <input type="text" id="sfxGenPrompt" placeholder="Describe the sound — e.g. deep impact whoosh with metallic shimmer" style="flex:1;min-width:220px">
       <button class="btn gold" id="sfxGenBtn">Generate sound</button>
-      <span class="tag">≈$0.05/sound</span>
+      <span class="tag">≈$0.05/sound · takes 1–4 min, leave this tab open</span>
     </div>
   </div>
 </section>
@@ -205,7 +205,7 @@
       </select>
       <input type="text" id="bgGenPrompt" placeholder="Describe the background" style="flex:1;min-width:220px">
       <button class="btn gold" id="bgGenBtn">Generate</button>
-      <span class="tag">image ≈$0.03 · animation ≈$0.20</span>
+      <span class="tag">image ≈$0.03 (fast) · animation ≈$0.20 (1–4 min)</span>
     </div>
   </div>
 </section>
@@ -228,7 +228,7 @@
       </select>
       <input type="text" id="styleGenPrompt" placeholder="Describe the look — e.g. brushed gunmetal with blue neon edge" style="flex:1;min-width:220px">
       <button class="btn gold" id="styleGenBtn">Generate</button>
-      <span class="tag">image ≈$0.03 · animation ≈$0.20</span>
+      <span class="tag">image ≈$0.03 (fast) · animation ≈$0.20 (1–4 min)</span>
     </div>
   </div>
 </section>
@@ -739,7 +739,8 @@
     const part = (domain, gridSel, stateKey, extra) => {
       const list = assets.filter(a => a.kind==="style" && a.meta?.domain===domain);
       $(gridSel).innerHTML = list.map(s => {
-        const active = state[stateKey] ? state[stateKey].id === s.id : !!s.meta?.builtin;
+        const isDefault = s.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
+        const active = state[stateKey] ? state[stateKey].id === s.id : isDefault;
         return `<div class="asset ${active?"active":""}">
           <div class="thumb">${thumb(s) || (extra?.icon ?? "🎛")}</div>
           <div class="meta"><div class="name">${esc(s.name)}</div>
@@ -754,7 +755,10 @@
     $$("[data-part]").forEach(b => b.onclick = () => {
       const [k, id] = b.dataset.part.split(":");
       const s = assets.find(x=>x.id===id);
-      state[k] = s?.meta?.builtin ? null : s;   // builtin = the CSS default, stored as null
+      /* "no effect" builtins (Gold Buttons, Navy Glass Board, No Button Animation)
+         mean "use the CSS default" and store as null; builtin EFFECTS still store. */
+      const isDefault = s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
+      state[k] = isDefault ? null : s;
       pushState();
     });
 
