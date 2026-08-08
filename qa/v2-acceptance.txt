@@ -1,0 +1,37 @@
+V2 acceptance transcript — 2026-08-08  (all 22 checks PASS after 1 fix)
+
+Root causes found:
+  BLACK BACKGROUNDS: the original webms carry VP9 side-channel alpha that ffprobe
+    reports as plain yuv420p; the M3 re-encode used the native decoder and silently
+    dropped it. Fixed: re-encoded all 34 with -c:v libvpx-vp9 (decoder) ->
+    yuva420p + alpha fade-out (0.4s) at the end. Storage: animations/v2/*.
+  PHONE CRASHES: every video asset thumbnail was <video autoplay loop> — dozens of
+    simultaneous decoders on a phone tab. Now preload="metadata", no autoplay.
+
+Verified on the hosted site:
+  stinger transparency mid-clip (corner alpha 196/255, center 255/255 opaque)
+  stinger end fade (center alpha 1/255 at t=2.93)
+  single feathered 430px light sweep across BOTH rows (per-cell shimmer removed)
+  eliminate-only board: 32 logos always visible, no X anywhere,
+    eliminated teams dim via brightness(.38) saturate(.55)
+  Mode + Board-visibility buttons removed from the panel
+  per-PC isolation: deck &pc=2 pick dims Cowboys on PC2 only; PC1 board/FX untouched
+  per-PC background: PC2 swap left PC1 on the TV loop
+  rotation default = Band – Navy Steel only; NFL Mosaic / Gold Frame / Stadium Strip
+    are template-flagged: out of the rotation grid, still in the composer picker
+  Spin 2 Pick 1 plays inside ANIM 667x413 @ (207,800) [after fixing inset shorthand order]
+  reframe editor: crop saved to asset meta, propagated server-side, PC2 overlay
+    rendered object-position "50% 10%"
+  tab renamed Animations; Classic Stingers style card (enabled default);
+    one-shot section with upload + AI-generate
+  AI board style generated (button texture + board bg, 2 FLUX images $0.06),
+    applied to PC2 only — PC1 kept Gold Buttons  [v2-board-style-pc2.png]
+
+Deck retired actions: board_mode / board_visible respond {ok, note} but do nothing.
+Old non-alpha animation files remain unreferenced in storage (~112MB, harmless).
+Team-anim style AI generation implemented (single base + runtime logo superimpose,
+no 32x generation) — pipeline identical to board style; first real use will be its
+paid test.
+
+Screenshots: v2-eliminated-dim.png, v2-oneshot-boxed.png, v2-panel-pc2.png,
+v2-board-style-pc2.png

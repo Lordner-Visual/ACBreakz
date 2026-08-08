@@ -9,8 +9,9 @@
 | 2026-08-08 | M4: 1 fal.ai FLUX [dev] banner image (acceptance test) | $0.03 | $0.03 |
 | 2026-08-08 | M5: vision QA (Playwright, free) | $0.00 | $0.03 |
 | 2026-08-08 | M6: handoff + hardening (all free) | $0.00 | $0.03 |
+| 2026-08-08 | V2: AI board style acceptance test (2 FLUX images) | $0.06 | $0.09 |
 
-**Final: $0.03 spent of the $50 cap.** Remaining fal.ai credits cover ~300 more images.
+**Running total: $0.09 spent of the $50 cap.**
 
 Planned spend (not yet incurred): fal.ai starter credits $10.
 Rule: never batch-generate more than 10 images without asking.
