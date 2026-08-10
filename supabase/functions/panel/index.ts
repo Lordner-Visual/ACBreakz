@@ -42,7 +42,18 @@ Deno.serve(async (req) => {
     if (!passwordOk(body.password)) return json({ error: "wrong password" }, 401);
     return json({ ok: true, token: await issueToken() });
   }
-  if (!await authorized(body)) return json({ error: "signed out" }, 401);
+  /* Operator scope: the per-PC dashboards ship an OP_KEY so they work with no login.
+     It can ONLY change what its own PC is showing — never assets, uploads, deletes,
+     AI spend, or another PC. Checked before the normal gate so it can stand alone. */
+  const OP_KEY = Deno.env.get("OP_KEY") ?? "";
+  const isOperator = !!OP_KEY && body.op === OP_KEY;
+  if (isOperator) {
+    const n = parseInt(String(body.pc), 10);
+    if (!(n >= 1 && n <= 5)) return json({ error: "operator calls must name one PC" }, 400);
+    if (body.action !== "state") return json({ error: "operator scope is limited to state" }, 403);
+  } else if (!await authorized(body)) {
+    return json({ error: "signed out" }, 401);
+  }
 
   const pcList = (v: unknown) => {
     const n = parseInt(String(v), 10);

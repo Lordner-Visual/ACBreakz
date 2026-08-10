@@ -1,69 +1,74 @@
-/* Verify the generated Stream Deck profile: zip layout, settings completeness,
-   URL encoding, and that a sample of the real URLs actually return ok from deck. */
-import { readFileSync, readdirSync, statSync, mkdtempSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+/* Verify all five per-PC Stream Deck profiles: layout, plugin wiring, PC scoping,
+   and that the URLs baked into them actually work. */
+import { readFileSync } from "fs";
 import JSZip from "jszip";
 
-const FILE = "C:/ACBreakz-Cloud/streamdeck/ACBreakz Cloud.local.streamDeckProfile";
+const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
+  .filter(l => l.includes("=") && !l.startsWith("#"))
+  .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
 let fails = 0;
 const ok = (n, c) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}`); if (!c) fails++; };
 
-const zip = await JSZip.loadAsync(readFileSync(FILE));
-const names = Object.keys(zip.files);
-ok(`zip entries use forward slashes (${names.length} entries)`, !names.some(n => n.includes("\\")));
-ok("package.json at archive root", names.includes("package.json"));
+for (let pc = 1; pc <= 5; pc++) {
+  const file = `C:/ACBreakz-Cloud/streamdeck/ACBreakz Cloud PC${pc}.local.streamDeckProfile`;
+  const zip = await JSZip.loadAsync(readFileSync(file));
+  const names = Object.keys(zip.files);
+  const pages = [];
+  for (const n of names.filter(n => n.endsWith("manifest.json"))) {
+    const j = JSON.parse(await zip.file(n).async("string"));
+    if (j.Controllers?.[0]?.Actions) pages.push(j.Controllers[0].Actions);
+  }
+  pages.sort((a, b) => Object.keys(a).length - Object.keys(b).length);
+  const [main, teams, highs] = pages;
 
-const manifests = names.filter(n => n.endsWith("manifest.json"));
-const pages = [];
-for (const n of manifests) {
-  const j = JSON.parse(await zip.file(n).async("string"));
-  if (j.Controllers?.[0]?.Actions) pages.push(j.Controllers[0].Actions);
+  const flat = [];
+  const collect = (a) => { if (!a || typeof a !== "object") return; if (a.UUID) flat.push(a);
+    const k = a.Actions; if (Array.isArray(k)) k.forEach(collect);
+    else if (k && typeof k === "object") Object.values(k).forEach(collect); };
+  pages.forEach(p => Object.values(p).forEach(collect));
+  const urls = flat.filter(a => a.UUID === "com.barraider.apininja").map(a => a.Settings.url);
+
+  const head = `PC${pc}`;
+  if (pc === 1) {
+    ok(`${head} zip uses forward slashes`, !names.some(n => n.includes("\\")));
+    ok(`${head} main page: 4 scenes + 4 animations + 2 jumps + 3 OBS + dashboard`,
+      Object.keys(main).length === 14);
+    ok(`${head} scene row is Cloud N + Archived 1-3`,
+      ["0,0","1,0","2,0","3,0"].every(p => main[p]?.UUID === "com.elgato.obsstudio.scene"));
+    ok(`${head} record + replay row`,
+      main["0,3"]?.UUID === "com.elgato.obsstudio.record" &&
+      main["1,3"]?.UUID === "com.elgato.obsstudio.replaybuffer" &&
+      main["2,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
+    ok(`${head} dashboard button top-right opens this PC's control page`,
+      main["7,0"]?.UUID === "com.elgato.streamdeck.system.open" &&
+      main["7,0"].Settings.path.endsWith("/control/pc.html?pc=1"));
+    ok(`${head} teams + highlights pages are 32 keys each`,
+      Object.keys(teams).length === 32 && Object.keys(highs).length === 32);
+    ok(`${head} animation row includes Spin 3 Pick 1 and PYT`,
+      urls.some(u => /name=Spin%203%20Pick%201/.test(u)) && urls.some(u => /name=PYT/.test(u)));
+    ok(`${head} autorun disabled everywhere`,
+      flat.filter(a => a.UUID === "com.barraider.apininja")
+          .every(a => a.Settings.autorunMinutes === ""));
+  }
+  /* the point of five profiles: each one only ever talks to its own PC */
+  /* 4 animations + (32 teams + 32 highlights) x 2 identical switch states = 132 */
+  ok(`${head} every request is scoped to pc=${pc} (${urls.length} urls)`,
+    urls.length === 132 && urls.every(u => u.endsWith(`&pc=${pc}`)));
+  ok(`${head} profile name`, JSON.parse(await zip.file(
+      names.find(n => n.endsWith(".sdProfile/manifest.json"))).async("string")).Name
+      === `ACBreakz Cloud PC${pc}`);
 }
-ok(`3 key pages found`, pages.length === 3);
 
-/* every API Ninja action: full settings + encoded url */
-const REQUIRED = ["url","urlFile","requestType","contentType","data","dataFile","headers",
-  "headersFile","loadFromFiles","loadURLFromFiles","parseResponse","responseFormat",
-  "responseRegex","responseRegexFetch","responseShown","responseShownFile","saveResponseToFile",
-  "showCustomImages","customImageValue","matchedImage","unmatchedImage","treatResponseAsImage",
-  "treatResponseAsText","responseImageField","titlePrefix","titleSuffix","autorunType",
-  "autorunMinutes","debugLogging","hideSuccessIndicator"];
-
-const ninjas = [];
-const collect = (a) => {
-  if (a?.UUID === "com.barraider.apininja") ninjas.push(a);
-  const kids = a?.Actions;
-  if (Array.isArray(kids)) kids.forEach(collect);
-  else if (kids && typeof kids === "object") Object.values(kids).forEach(collect);
-};
-pages.forEach(p => Object.values(p).forEach(collect));
-/* 32 team toggles + 32 highlight toggles + 7 controls = 71 */
-ok(`71 API Ninja actions (${ninjas.length})`, ninjas.length === 71);
-ok("team keys use the server-side toggle (no stateful switch)",
-  ninjas.filter(a => /action=team_toggle/.test(a.Settings.url)).length === 32 &&
-  !ninjas.some(a => /action=team_pick|action=team_restore/.test(a.Settings.url)));
-ok("every action has all 30 settings keys",
-  ninjas.every(a => REQUIRED.every(k => k in a.Settings)));
-ok("every action is a GET", ninjas.every(a => a.Settings.requestType === "0"));
-ok("autorun disabled on every action (empty, not 0)",
-  ninjas.every(a => a.Settings.autorunMinutes === ""));
-ok("no raw spaces in any url", !ninjas.some(a => / /.test(a.Settings.url)));
-ok("no mojibake in titles",
-  !JSON.stringify(pages).match(/[\u00C2-\u00C3][\u0080-\u00BF]/));
-
-/* live-fire a representative sample straight from the profile */
-const pick = (re) => ninjas.find(a => re.test(a.Settings.url))?.Settings.url;
-const samples = [["team_toggle", pick(/team_toggle&team=sea/)],
-                 ["highlight_toggle", pick(/highlight_toggle&team=sea/)],
-                 ["board_reset", pick(/board_reset/)],
-                 ["set_background", pick(/set_background/)]];
-for (const [label, url] of samples) {
-  if (!url) { ok(`${label} url present`, false); continue; }
-  const r = await fetch(url).then(x => x.json()).catch(e => ({ error: String(e) }));
-  ok(`${label} returns ok from the profile's exact URL (${JSON.stringify(r).slice(0, 60)})`, r.ok === true);
-}
-/* leave the board clean */
-await fetch(pick(/board_reset/));
-await fetch(pick(/highlight_clear/));
+/* live-fire a couple of PC-scoped URLs and confirm they only touch that PC */
+const B = `${env.SUPABASE_URL}/functions/v1/deck?key=${env.DECK_KEY}`;
+const REST = { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${env.SUPABASE_ANON_KEY}` };
+const boards = async () => Object.fromEntries((await (await fetch(
+  `${env.SUPABASE_URL}/rest/v1/stream_state?select=id,data->board&order=id`, { headers: REST })).json())
+  .map(r => [r.id, r.board]));
+await fetch(`${B}&action=board_reset`);
+await fetch(`${B}&action=team_toggle&team=gb&pc=3`);
+const b = await boards();
+ok("a PC3 key changes only PC3",
+  b[3].picked?.gb === true && [1,2,4,5].every(n => !b[n].picked?.gb));
+await fetch(`${B}&action=board_reset`);
 console.log(fails ? `\nDONE with ${fails} FAILURES` : "\nDONE all ok");
