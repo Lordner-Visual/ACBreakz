@@ -56,9 +56,15 @@ for (let pc = 1; pc <= 5; pc++) {
       Object.keys(teams).length === 32 && Object.keys(highs).length === 32);
     ok(`${head} animation row includes Spin 3 Pick 1 and PYT`,
       urls.some(u => /name=Spin%203%20Pick%201/.test(u)) && urls.some(u => /name=PYT/.test(u)));
+    const ninjas = flat.filter(a => a.UUID === "com.barraider.apininja");
     ok(`${head} autorun disabled everywhere`,
-      flat.filter(a => a.UUID === "com.barraider.apininja")
-          .every(a => a.Settings.autorunMinutes === ""));
+      ninjas.every(a => a.Settings.autorunMinutes === ""));
+    /* the bug that killed every request: empty file fields null-crash the plugin */
+    ok(`${head} file fields use the plugin's "No file..." sentinel`,
+      ninjas.every(a => ["urlFile","dataFile","headersFile","matchedImage","unmatchedImage"]
+        .every(k => a.Settings[k] === "No file...")));
+    ok(`${head} plugin version matches the installed 1.5.1`,
+      ninjas.every(a => a.Plugin.Version === "1.5.1"));
   }
   /* the point of five profiles: each one only ever talks to its own PC */
   /* 4 animations + (32 teams + 32 highlights) x 2 identical switch states = 132 */

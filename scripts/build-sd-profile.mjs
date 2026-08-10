@@ -57,23 +57,31 @@ console.log(`icons matched: ${icons.size}/32`);
 /* ---- action builders (every settings shape below was read off real, working files) ---- */
 const deckUrl = (q, pc) => `${BASE}&${q.replace(/ /g, "%20")}&pc=${pc}`;
 
+/* Every value below was copied from a button API Ninja built itself. The file fields
+   MUST be the sentinel "No file..." — an empty string makes the plugin treat it as a
+   real path and null-crash in LoadHeadersAndUserData, which kills every request. */
+const NO_FILE = "No file...";
 const apiNinja = (url, title) => ({
-  ActionID: randomUUID(), LinkedTitle: false, Name: "API Ninja",
-  Plugin: { Name: "API Ninja", UUID: "com.barraider.apininja", Version: "1.0" },
+  ActionID: randomUUID(), LinkedTitle: true, Name: "API Ninja",
+  Plugin: { Name: "API Ninja", UUID: "com.barraider.apininja", Version: "1.5.1" },
   Resources: null,
   Settings: {
-    url, urlFile: "", requestType: "0", contentType: "",
-    data: "", dataFile: "", headers: "", headersFile: "",
+    url, urlFile: NO_FILE, requestType: "0", contentType: "",
+    data: "", dataFile: NO_FILE, headers: "", headersFile: NO_FILE,
     loadFromFiles: false, loadURLFromFiles: false, parseResponse: false,
     responseFormat: "", responseRegex: "", responseRegexFetch: "",
     responseShown: "", responseShownFile: "", saveResponseToFile: false,
-    showCustomImages: false, customImageValue: "", matchedImage: "", unmatchedImage: "",
-    treatResponseAsImage: false, treatResponseAsText: false, responseImageField: "",
+    showCustomImages: false, customImageValue: "",
+    matchedImage: NO_FILE, unmatchedImage: NO_FILE,
+    treatResponseAsImage: false, treatResponseAsText: true, responseImageField: "",
     titlePrefix: "", titleSuffix: "",
-    autorunType: "0", autorunMinutes: "",          // EMPTY = no autorun (0 = loop + crash)
+    autorunType: "0", autorunMinutes: "",          // EMPTY = no autorun
     debugLogging: false, hideSuccessIndicator: false,
   },
-  State: 0, States: [ { Title: title ?? "", FSize: "10" } ],
+  State: 0,
+  States: [ { Title: title ?? "", FontSize: 11, FontFamily: "", FontStyle: "",
+              FontUnderline: false, OutlineThickness: 2, ShowTitle: true,
+              TitleAlignment: "middle", TitleColor: "#ffffff" } ],
   UUID: "com.barraider.apininja",
 });
 
