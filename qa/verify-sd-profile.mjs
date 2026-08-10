@@ -51,6 +51,12 @@ for (let pc = 1; pc <= 5; pc++) {
       k.States?.length === 2 &&
       /^Images\/\w[\w'.-]*\.png$/.test(k.States[0].Image ?? "") &&
       (k.States[1].Image ?? "").includes(alt));
+    ok(`${head} scenes go black when that scene isn't active`,
+      ["0,0","1,0","2,0","3,0"].every(p =>
+        (main[p].States?.[1]?.Image ?? "").includes("scene-inactive")));
+    ok(`${head} no key is left showing the API Ninja logo`,
+      Object.values(main).filter(k => k.UUID === "com.barraider.apininja")
+        .every(k => !!k.States[0].Image));
     ok(`${head} team keys show the X'd logo after removal`, twoState(teams, "-x"));
     ok(`${head} highlight keys show the glowing logo`, twoState(highs, "-glow"));
     ok(`${head} dashboard key uses the Website action (open handles files, not URLs)`,

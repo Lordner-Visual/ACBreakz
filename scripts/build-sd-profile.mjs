@@ -152,16 +152,31 @@ function buildProfile(pc) {
     const MAIN_ART = {
       "0,0": "Auction-1", "1,0": "Auction-2", "2,0": "Auction-3", "3,0": "Solo-1",
       "0,1": "STASH-OR-PASS", "1,1": "SPIN-2-PICK-1",
-      "0,2": "Teams", "1,2": "Highlight", "1,3": "Highlight-Off",
+      /* row-2 animations with no art of their own fall back to Stash or Pass */
+      "2,1": "anim-default", "3,1": "anim-default",
+      "0,2": "Teams", "1,2": "Highlight",
+      "0,3": "blank", "1,3": "Highlight-Off",
+    };
+    const art = (name) => {
+      const src = join(ICONS, "main", `${name}.png`);
+      if (!existsSync(src)) return null;
+      const rel = `Images/${name}.png`;
+      copyFileSync(src, join(dir, rel));
+      return rel;
     };
     const dressUp = () => {
-      for (const [key, art] of Object.entries(MAIN_ART)) {
-        const src = join(ICONS, "main", `${art}.png`);
-        if (!A[key] || !existsSync(src)) continue;
-        const rel = `Images/${art}.png`;
-        copyFileSync(src, join(dir, rel));
-        A[key].States[0].Image = rel;
+      for (const [key, name] of Object.entries(MAIN_ART)) {
+        const rel = A[key] && art(name);
+        if (rel) A[key].States[0].Image = rel;
       }
+      /* scenes: logo while live, the black tile while that scene is not active */
+      const black = art("scene-inactive");
+      for (const key of ["0,0", "1,0", "2,0", "3,0"])
+        if (A[key]?.States?.[1]) A[key].States[1].Image = black;
+      /* nothing may fall back to the plugin's own logo */
+      const blank = art("blank");
+      for (const k of Object.values(A))
+        if (k.UUID === "com.barraider.apininja" && !k.States[0].Image) k.States[0].Image = blank;
     };
     /* row 1: scenes */
     [[`ACBreakz Cloud ${pc}`, `Cloud ${pc}`], ["Archived 1","Archived 1"],
