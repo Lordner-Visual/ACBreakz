@@ -55,6 +55,40 @@ Deno.serve(async (req) => {
   const scoped = pcs.length === 1;
 
   switch (action) {
+    /* team_toggle: the SERVER decides from the live board, so a Stream Deck key can
+       never fall out of sync the way a stateful toggle button does. */
+    case "team_toggle": {
+      const team = (g("team") ?? "").toLowerCase();
+      if (!team) return json({ error: "team required" }, 400);
+      const defSfx = await findAsset("sfx");
+      let removed = false;
+      for (const pc of pcs) {
+        const state = await getState(pc);
+        state.board ??= { picked: {} }; state.board.picked ??= {};
+        if (state.board.picked[team]) {                    // already out -> put it back
+          delete state.board.picked[team];
+          await fire("team_restore", { team, pc });
+        } else {                                           // out it goes, with the FX
+          removed = true;
+          state.board.picked[team] = true;
+          if (state.board.highlighted) delete state.board.highlighted[team];
+          const style = state.animStyle;
+          const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
+          const payload: Record<string, unknown> = { team, pc, sfxUrl };
+          if (style && style.meta?.per_team !== true && (style.url || style.meta?.base_url)) {
+            payload.styleUrl = style.url ?? style.meta.base_url;
+            payload.styleImage = style.meta?.image === true;
+            payload.logoOverlay = true;
+          } else {
+            const anim = await findAsset("animation", undefined, team);
+            payload.animUrl = anim?.url ?? null;
+          }
+          await fire("team_pick", payload);
+        }
+        await setState(pc, state);
+      }
+      return json({ ok: true, team, action: removed ? "removed" : "restored", pcs });
+    }
     case "team_pick": {
       const team = (g("team") ?? "").toLowerCase();
       if (!team) return json({ error: "team required" }, 400);

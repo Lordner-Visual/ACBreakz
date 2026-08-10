@@ -38,7 +38,11 @@ const collect = (a) => {
   else if (kids && typeof kids === "object") Object.values(kids).forEach(collect);
 };
 pages.forEach(p => Object.values(p).forEach(collect));
-ok(`103 API Ninja actions (${ninjas.length})`, ninjas.length === 103);
+/* 32 team toggles + 32 highlight toggles + 7 controls = 71 */
+ok(`71 API Ninja actions (${ninjas.length})`, ninjas.length === 71);
+ok("team keys use the server-side toggle (no stateful switch)",
+  ninjas.filter(a => /action=team_toggle/.test(a.Settings.url)).length === 32 &&
+  !ninjas.some(a => /action=team_pick|action=team_restore/.test(a.Settings.url)));
 ok("every action has all 30 settings keys",
   ninjas.every(a => REQUIRED.every(k => k in a.Settings)));
 ok("every action is a GET", ninjas.every(a => a.Settings.requestType === "0"));
@@ -48,7 +52,7 @@ ok("no mojibake in titles",
 
 /* live-fire a representative sample straight from the profile */
 const pick = (re) => ninjas.find(a => re.test(a.Settings.url))?.Settings.url;
-const samples = [["team_pick", pick(/team_pick&team=sea/)],
+const samples = [["team_toggle", pick(/team_toggle&team=sea/)],
                  ["highlight_toggle", pick(/highlight_toggle&team=sea/)],
                  ["board_reset", pick(/board_reset/)],
                  ["set_background", pick(/set_background/)]];

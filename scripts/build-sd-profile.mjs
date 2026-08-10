@@ -103,23 +103,15 @@ const pageGoto = (index, title) => ({
   UUID: "com.elgato.streamdeck.page.goto",
 });
 
-/* team key: Multi Action Switch â€” press 1 removes the team, press 2 puts it back */
-const teamToggle = (abbr, name, imageRel) => ({
-  ActionID: randomUUID(),
-  Actions: [
-    { Actions: [ apiNinja(deckUrl(`action=team_pick&team=${abbr}`)) ] },
-    { Actions: [ apiNinja(deckUrl(`action=team_restore&team=${abbr}`)) ] },
-  ],
-  LinkedTitle: true,
-  Name: "Multi Action Switch",
-  Plugin: { Name: "Multi Action", UUID: "com.elgato.streamdeck.multiactions", Version: "1.0" },
-  Resources: null,
-  Settings: {},
-  State: 0,
-  States: [ { Image: imageRel, Title: name, FSize: "10" },
-            { Image: imageRel, Title: name + "\nOUT", FSize: "10" } ],
-  UUID: "com.elgato.streamdeck.multiactions.routine2",
-});
+/* team key: ONE plain request. The server reads the live board and decides whether
+   this press removes the team or puts it back, so the key can never fall out of sync
+   (a stateful Multi Action Switch drifts the moment you use Reset Board). */
+const teamToggle = (abbr, name, imageRel) => {
+  const a = apiNinja(deckUrl(`action=team_toggle&team=${abbr}`), name);
+  a.States[0].Image = imageRel;
+  a.States[0].FSize = "10";
+  return a;
+};
 
 /* ---- lay out the pages (Stream Deck XL: 8 x 4) ---- */
 const COLS = 8;
