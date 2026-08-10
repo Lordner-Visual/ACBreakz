@@ -98,19 +98,16 @@ Deno.serve(async (req) => {
         .select().single();
       return error ? json({ error: error.message }, 500) : json({ ok: true, asset: data });
     }
+    /* Deleting moves an asset to the trash: the row and its files stay, so it can be
+       restored. `purge_asset` is the irreversible one. */
     case "delete_asset": {
       if (!body.id) return json({ error: "id required" }, 400);
       const { data: a, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
       if (gErr || !a) return json({ error: gErr?.message ?? "asset not found" }, 404);
       if (a.meta?.builtin) return json({ error: "built-in styles cannot be deleted" }, 400);
-      /* remove storage objects this asset owns (main url + style part urls) */
-      const paths = [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url]
-        .filter((u: unknown): u is string => typeof u === "string")
-        .map((u: string) => u.split("/storage/v1/object/public/media/")[1])
-        .filter(Boolean).map((p: string) => decodeURIComponent(p));
-      if (paths.length) await sb.storage.from("media").remove(paths);
-      const { error: dErr } = await sb.from("assets").delete().eq("id", body.id);
-      if (dErr) return json({ error: dErr.message }, 500);
+      const meta = { ...a.meta, deleted: true, deletedAt: new Date().toISOString() };
+      const { error: uErr } = await sb.from("assets").update({ meta }).eq("id", body.id);
+      if (uErr) return json({ error: uErr.message }, 500);
       /* scrub references from every PC's state */
       const { data: rows } = await sb.from("stream_state").select("id,data");
       for (const row of rows ?? []) {
@@ -127,6 +124,43 @@ Deno.serve(async (req) => {
         if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
       }
       return json({ ok: true });
+    }
+    case "restore_asset": {
+      if (!body.id) return json({ error: "id required" }, 400);
+      const { data: a, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
+      if (gErr || !a) return json({ error: gErr?.message ?? "asset not found" }, 404);
+      const meta = { ...a.meta }; delete meta.deleted; delete meta.deletedAt;
+      const { data: upd, error } = await sb.from("assets")
+        .update({ meta }).eq("id", body.id).select().single();
+      return error ? json({ error: error.message }, 500) : json({ ok: true, asset: upd });
+    }
+    case "purge_asset": {
+      if (!body.id) return json({ error: "id required" }, 400);
+      const { data: a, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
+      if (gErr || !a) return json({ error: gErr?.message ?? "asset not found" }, 404);
+      if (a.meta?.builtin) return json({ error: "built-in styles cannot be deleted" }, 400);
+      /* now really remove the files this asset owns */
+      const paths = [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url, a.meta?.poster]
+        .filter((u: unknown): u is string => typeof u === "string")
+        .map((u: string) => u.split("/storage/v1/object/public/media/")[1])
+        .filter(Boolean).map((p: string) => decodeURIComponent(p));
+      if (paths.length) await sb.storage.from("media").remove(paths);
+      const { error } = await sb.from("assets").delete().eq("id", body.id);
+      return error ? json({ error: error.message }, 500) : json({ ok: true });
+    }
+    case "empty_trash": {
+      const { data: rows } = await sb.from("assets").select("*").eq("meta->>deleted", "true");
+      const paths: string[] = [];
+      for (const a of rows ?? [])
+        for (const u of [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url, a.meta?.poster])
+          if (typeof u === "string") {
+            const p = u.split("/storage/v1/object/public/media/")[1];
+            if (p) paths.push(decodeURIComponent(p));
+          }
+      if (paths.length) await sb.storage.from("media").remove(paths);
+      const { error } = await sb.from("assets").delete().eq("meta->>deleted", "true");
+      return error ? json({ error: error.message }, 500)
+                   : json({ ok: true, purged: (rows ?? []).length });
     }
     case "sign_upload": {
       const path = String(body.path ?? "");

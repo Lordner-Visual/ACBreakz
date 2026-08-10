@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>ACBreakz Overlay</title>
 <!--
   ACBreakz Cloud Overlay v2 — one URL, five independent PCs.
@@ -125,30 +128,28 @@
     z-index:5;pointer-events:none;mix-blend-mode:screen;opacity:0;
     transition:opacity .28s linear}
   .cell.fx-video .vfx{opacity:1}
-  /* AMBIENT: every button animates on the same clock, so the board pulses together */
-  #board.anim-glow .cell::after{content:"";position:absolute;inset:0;border-radius:8px;
+  /* AMBIENT: effects play ONLY on highlighted teams, all on the same clock so the
+     highlighted buttons pulse together. Nothing highlighted = nothing animates. */
+  #board.anim-glow .cell.hl::after{content:"";position:absolute;inset:0;border-radius:8px;
     z-index:4;pointer-events:none;box-shadow:inset 0 0 0 2px var(--gold), 0 0 14px 2px var(--gold);
     animation:bglow 2.6s ease-in-out infinite}
   @keyframes bglow{0%,100%{opacity:.12}50%{opacity:.85}}
-  #board.anim-fire .cell::after{content:"";position:absolute;inset:-2px;border-radius:10px;
+  #board.anim-fire .cell.hl::after{content:"";position:absolute;inset:-2px;border-radius:10px;
     z-index:4;pointer-events:none;
     background:linear-gradient(0deg,rgba(255,140,20,.85),rgba(255,60,0,.25) 45%,transparent 70%);
     filter:blur(3px);animation:bfire 1.5s ease-in-out infinite alternate}
   @keyframes bfire{0%{opacity:.35;transform:translateY(2px) scaleY(.96)}
     100%{opacity:.9;transform:translateY(-2px) scaleY(1.04)}}
-  #board.anim-lightning .cell::after{content:"";position:absolute;inset:-1px;border-radius:10px;
+  #board.anim-lightning .cell.hl::after{content:"";position:absolute;inset:-1px;border-radius:10px;
     z-index:4;pointer-events:none;border:2px solid var(--volt);
     box-shadow:0 0 12px var(--volt),inset 0 0 8px var(--volt);opacity:0;
     animation:blight 3.4s linear infinite}
   @keyframes blight{0%,86%{opacity:0}88%{opacity:1}90%{opacity:.15}92%{opacity:1}96%{opacity:0}}
-  #board.anim-glitch .cell{animation:bglitch 3.2s steps(1,end) infinite}
+  #board.anim-glitch .cell.hl{animation:bglitch 3.2s steps(1,end) infinite}
   @keyframes bglitch{0%,90%{transform:none;filter:none}
     91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
     93%{transform:translateX(3px);filter:hue-rotate(-60deg)}
     95%{transform:translateX(-1px)}97%{transform:none;filter:none}}
-  /* v4: once any team is highlighted, ambient effects play ONLY on those teams */
-  #board.hl-mode .cell:not(.hl)::after{display:none !important}
-  #board.hl-mode.anim-glitch .cell:not(.hl){animation:none}
   /* TRIGGER: fires on the team that was just hit */
   .cell.fx-pop{animation:bpop .85s cubic-bezier(.22,1.4,.3,1);z-index:7}
   @keyframes bpop{0%{transform:scale(1)}35%{transform:scale(1.55);filter:brightness(1.6)}
@@ -271,7 +272,7 @@
     const byHeight = (SAFE_H - (c.rows - 1) * gap) / c.rows;
     return Math.max(12, Math.floor(Math.min(MAX_TILE, byWidth, byHeight)));
   }
-  let partsKey = null, btnAnim = null;
+  let partsKey = null, btnAnim = null, lastHlKey = null;
   function applyBoardParts(s) {
     const btn = s?.boardButtons, bg = s?.boardBg, anim = s?.buttonAnim;
     const grid = GRIDS.includes(s?.boardGrid) ? s.boardGrid : "buttons";
@@ -314,7 +315,7 @@
      (suppressed when highlight mode is on and this team isn't highlighted) */
   function triggerButtonAnim(abbr) {
     const cell = cells[abbr]; if (!cell || !btnAnim) return;
-    if (boardEl.classList.contains("hl-mode") && !cell.classList.contains("hl")) return;
+    if (!cell.classList.contains("hl")) return;   // effects only on highlighted teams
     const m = btnAnim.meta ?? {};
     if (m.effect === "none") return;
     if (btnAnim.url && /\.(webm|mp4)(\?|$)/i.test(btnAnim.url)) {   // AI-generated clip
@@ -440,7 +441,18 @@
 
   /* ---------------- FX ---------------- */
   const fxQ = []; let fxBusy = false;
-  function sfx(url, vol=1){ if(!url) return; try{ const a=new Audio(url); a.volume=vol; a.play(); }catch(e){} }
+  /* keep a reference until it finishes — a bare `new Audio().play()` can be collected
+     mid-load, which silently aborts the request and eats the sound */
+  const sfxLive = new Set();
+  function sfx(url, vol=1){
+    if(!url) return;
+    try{
+      const a = new Audio(url); a.volume = vol; sfxLive.add(a);
+      const drop = () => sfxLive.delete(a);
+      a.onended = a.onerror = drop; setTimeout(drop, 15000);
+      a.play().catch(drop);
+    }catch(e){}
+  }
   function runFx(job){ fxQ.push(job); pump(); }
   const fxV = $("#fxVideo");
   fxV.addEventListener("timeupdate", () => {   // safety fade even if the file lacks one
@@ -510,8 +522,15 @@
       cells[abbr].classList.toggle("on", !!picked[abbr]);
       cells[abbr].classList.toggle("hl", !!hl[abbr] && !picked[abbr]);
     }
-    boardEl.classList.toggle("hl-mode",
-      C.ORDER.some(a => hl[a] && !picked[a]));
+    /* when the highlighted set changes, restart the ambient effect so every
+       highlighted button animates on one shared clock instead of drifting */
+    const hlKey = C.ORDER.filter(a => hl[a] && !picked[a]).join(",");
+    if (hlKey !== lastHlKey) {
+      lastHlKey = hlKey;
+      const active = AMBIENT.map(e => "anim-" + e).find(c => boardEl.classList.contains(c));
+      if (active) { boardEl.classList.remove(active); void boardEl.offsetWidth;
+        boardEl.classList.add(active); }
+    }
     rotator.setList(s.banners?.rotation || []);
   }
   const seen = new Set();
@@ -559,6 +578,34 @@
       if (m.data.kind === "event") handleEvent(m.data.data);
     };
   }
+
+  /* ---------------- self-update (no more "refresh cache" in OBS) ----------------
+     OBS's browser source caches aggressively, so a deploy can sit unseen for hours.
+     Poll our own files with cache:no-store; when the bytes change, reload. Nothing is
+     lost on reload — all state lives in the cloud. */
+  (function selfUpdate(){
+    const FILES = ["index.html", "config.js"];
+    const hash = (s) => { let h = 0; for (let i = 0; i < s.length; i++)
+      h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; return h; };
+    let baseline = null;
+    const read = async () => {
+      const parts = [];
+      for (const f of FILES) {
+        const r = await fetch(`${f}?cb=${Date.now()}`, { cache: "no-store" });
+        parts.push(hash(await r.text()));
+      }
+      return parts.join("|");
+    };
+    const tick = async () => {
+      try {
+        const now = await read();
+        if (baseline === null) baseline = now;
+        else if (now !== baseline) { console.log("[acbz] new build detected, reloading");
+          location.reload(); }
+      } catch (e) { /* offline: keep the current build running */ }
+    };
+    tick(); setInterval(tick, 45000);
+  })();
 
   /* ---------------- debug guides ---------------- */
   if (new URLSearchParams(location.search).get("debug")) {

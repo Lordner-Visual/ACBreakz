@@ -169,8 +169,14 @@ Deno.serve(async (req) => {
         const on = action === "highlight" ? true
           : action === "unhighlight" ? false
           : !state.board.highlighted[team];
-        if (on && !state.board.picked?.[team]) state.board.highlighted[team] = true;
-        else delete state.board.highlighted[team];
+        if (on) {
+          /* highlighting a team that's off the board brings it back, then stars it */
+          if (state.board.picked?.[team]) {
+            delete state.board.picked[team];
+            await fire("team_restore", { team, pc });
+          }
+          state.board.highlighted[team] = true;
+        } else delete state.board.highlighted[team];
         await setState(pc, state);
       }
       return json({ ok: true, team, pcs });

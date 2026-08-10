@@ -274,6 +274,12 @@
   </div>
   <h2>Overlays online</h2>
   <div id="onlineList" class="tag">—</div>
+  <h2>Trash — deleted assets</h2>
+  <div class="row">
+    <button class="btn warn" id="emptyTrash">Empty trash</button>
+    <span class="tag">Restore puts an asset back in its library. Delete forever removes the files.</span>
+  </div>
+  <div class="grid" id="trashGrid"></div>
 </section>
 
 </main>
@@ -441,10 +447,15 @@
   }
 
   /* ---------- assets ---------- */
+  let trash = [];
   async function loadAssets(){
+    let all;
     if (cloud) { const {data} = await sb.from("assets").select("*").order("created_at",{ascending:false});
-      assets = data || []; }
-    else assets = JSON.parse(LS.getItem("acbz-assets") || "[]");
+      all = data || []; }
+    else all = JSON.parse(LS.getItem("acbz-assets") || "[]");
+    /* deleted assets live in the trash until purged, so they stay out of every list */
+    assets = all.filter(a => !a.meta?.deleted);
+    trash  = all.filter(a => a.meta?.deleted);
     renderAll();
   }
   async function saveAsset(a){
@@ -567,7 +578,12 @@
       if (hlMode) {                                   // highlight mode: scope button animations
         state.board.highlighted ??= {};
         if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
-        else if (!state.board.picked[abbr]) state.board.highlighted[abbr] = true;
+        else {
+          /* starring a team that's off the board brings it back too */
+          if (state.board.picked[abbr]) { delete state.board.picked[abbr];
+            fireEvent("team_restore", { team: abbr }); }
+          state.board.highlighted[abbr] = true;
+        }
         return pushState();
       }
       if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
@@ -592,6 +608,14 @@
   });
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
     state.board.picked = {}; fireEvent("board_reset",{}); pushState(); };
+
+  $("#emptyTrash").onclick = async () => {
+    if (!trash.length) return toast("Trash is already empty");
+    if (!confirm(`Permanently delete ${trash.length} asset(s)? This cannot be undone.`)) return;
+    const {data, error} = await panelCall({action:"empty_trash"});
+    if (error) return toast("Empty trash failed: "+error.message);
+    await loadAssets(); toast(`Deleted ${data?.purged ?? 0} asset(s) forever`);
+  };
 
   /* ---------- grid styles + button spacing ---------- */
   const GRIDS = [
@@ -658,12 +682,13 @@
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
          <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
          <div class="meta"><div class="name">Brand gradient</div></div></div>` +
-      arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" data-cbg="${a.url}"
-          style="width:120px;cursor:pointer">
-        <div class="thumb banner-thumb">${thumb(a)}</div>
-        <div class="meta"><div class="name">${esc(a.name)}</div></div></div>`).join("");
+      arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" style="width:120px">
+        <div class="thumb banner-thumb" data-cbg="${a.url}" style="cursor:pointer">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row">${delBtn(a)}</div></div></div>`).join("");
     $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => {
       comp.bgUrl = d.dataset.cbg || null; renderCompBGs(); drawComposer(); });
+    wireDeletes();
   }
   $("#compText").oninput = drawComposer;
   $("#compSave").onclick = () => {
@@ -992,6 +1017,31 @@
     $$("[data-sfx]").forEach(b => b.onclick = (e) => {
       e.stopPropagation(); openSfxPicker(assets.find(x=>x.id===b.dataset.sfx)); });
     wireDeletes();
+    /* trash */
+    $("#trashGrid").innerHTML = trash.length ? trash.map(a => `
+      <div class="asset"><div class="thumb">${thumb(a) || "🗑"}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-restore="${a.id}">Restore</button>
+            <button class="btn warn" data-purge="${a.id}">Delete forever</button></div>
+          <div class="row"><span class="tag">${a.kind}${a.meta?.deletedAt ? " · " + a.meta.deletedAt.slice(0,10) : ""}</span></div>
+        </div></div>`).join("") : `<span class="tag">Trash is empty.</span>`;
+    $$("#trashGrid [data-restore]").forEach(b => b.onclick = async () => {
+      b.disabled = true; const {error} = await panelCall({action:"restore_asset", id:b.dataset.restore});
+      if (error) return toast("Restore failed: "+error.message);
+      await loadAssets(); toast("Restored");
+    });
+    $$("#trashGrid [data-purge]").forEach(b => b.onclick = async () => {
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b._l = b.textContent;
+        b.textContent = "Are you sure?"; b.classList.add("danger");
+        clearTimeout(b._t); b._t = setTimeout(() => { b.dataset.armed = "0";
+          b.textContent = b._l; b.classList.remove("danger"); }, 5000);
+        return; }
+      clearTimeout(b._t); b.disabled = true; b.textContent = "Deleting…";
+      const {error} = await panelCall({action:"purge_asset", id:b.dataset.purge});
+      if (error) return toast("Delete failed: "+error.message);
+      await loadAssets(); toast("Deleted forever");
+    });
+
     renderCompBGs(); drawComposer();
   }
 
