@@ -16,6 +16,7 @@
     "supabase": "^2.112.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.2"
+    "@supabase/supabase-js": "^2.112.2",
+    "jszip": "^3.10.1"
   }
 }

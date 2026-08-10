@@ -6,8 +6,11 @@
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync, existsSync,
          readdirSync, statSync } from "fs";
 import { join, dirname } from "path";
-import { execFileSync } from "child_process";
 import { randomUUID } from "crypto";
+import JSZip from "jszip";
+
+/* Elgato writes folder GUIDs uppercase and references them lowercase in JSON */
+const guid = () => randomUUID().toUpperCase();
 
 const SRC_PROFILE = process.argv[2];   // extracted existing profile (for icons)
 const OUT_DIR     = "C:/ACBreakz-Cloud/streamdeck/build";
@@ -109,7 +112,7 @@ const pos = (i) => `${i % COLS},${Math.floor(i / COLS)}`;
 
 const pageDirs = [];
 function newPage(build) {
-  const uuid = randomUUID();
+  const uuid = guid();
   const dir = join(OUT_DIR, "Profiles", `${PROFILE_UUID}.sdProfile`, "Profiles", uuid);
   mkdirSync(join(dir, "Images"), { recursive: true });
   const Actions = build(dir);
@@ -119,7 +122,8 @@ function newPage(build) {
   return uuid;
 }
 
-const PROFILE_UUID = randomUUID();
+const PROFILE_UUID = guid();
+const DEVICE_UUID = randomUUID();
 rmSync(OUT_DIR, { recursive: true, force: true });
 
 /* page 0 — Teams: tap to remove, tap again to put back */
@@ -170,10 +174,11 @@ newPage(() => {
 const profDir = join(OUT_DIR, "Profiles", `${PROFILE_UUID}.sdProfile`);
 writeFileSync(join(profDir, "manifest.json"), JSON.stringify({
   AppIdentifier: "*",
-  Device: { Model: "20GAT9902", UUID: "" },      // blank = bind to any XL on import
+  Device: { Model: "20GAT9902", UUID: DEVICE_UUID },
   Name: "ACBreakz Cloud",
   Pages: { Current: "00000000-0000-0000-0000-000000000000",
-           Default: pageDirs[0], Pages: pageDirs },
+           Default: pageDirs[0].toLowerCase(),
+           Pages: pageDirs.map(p => p.toLowerCase()) },
   Version: "3.0",
 }));
 writeFileSync(join(OUT_DIR, "package.json"), JSON.stringify({
@@ -183,13 +188,23 @@ writeFileSync(join(OUT_DIR, "package.json"), JSON.stringify({
                     "com.elgato.streamdeck.page"],
 }));
 
-/* ---- zip it (let the icon writes settle first; Compress-Archive trips over
-       freshly-written files, so use .NET's ZipFile directly) ---- */
+/* ---- zip it ----
+   Entry names MUST use forward slashes. PowerShell's ZipFile (.NET Framework) writes
+   backslashes on Windows, which Stream Deck silently refuses to import, so build the
+   archive here and mirror Elgato's layout: explicit directory entries included. */
 if (existsSync(OUT_FILE)) rmSync(OUT_FILE);
-await new Promise(r => setTimeout(r, 1500));
-execFileSync("powershell", ["-NoProfile", "-Command",
-  `Add-Type -AssemblyName System.IO.Compression.FileSystem; ` +
-  `[System.IO.Compression.ZipFile]::CreateFromDirectory('${OUT_DIR.replace(/\//g,"\\")}', ` +
-  `'${OUT_FILE.replace(/\//g,"\\")}')`]);
+const zip = new JSZip();
+zip.file("package.json", readFileSync(join(OUT_DIR, "package.json")));   // Elgato lists it first
+(function add(dir, prefix) {
+  for (const e of readdirSync(dir).sort()) {
+    if (!prefix && e === "package.json") continue;
+    const p = join(dir, e);
+    const name = prefix ? `${prefix}/${e}` : e;
+    if (statSync(p).isDirectory()) { zip.folder(name); add(p, name); }
+    else zip.file(name, readFileSync(p));
+  }
+})(OUT_DIR, "");
+writeFileSync(OUT_FILE, await zip.generateAsync({ type: "nodebuffer",
+  compression: "DEFLATE", compressionOptions: { level: 6 } }));
 console.log(`\nbuilt: ${OUT_FILE}`);
 console.log(`pages: Teams(32 toggle) · Highlight(32) · Controls(9)`);
