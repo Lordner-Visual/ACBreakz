@@ -444,8 +444,12 @@
   /* keep a reference until it finishes — a bare `new Audio().play()` can be collected
      mid-load, which silently aborts the request and eats the sound */
   const sfxLive = new Set();
+  /* Only the FX source makes sound. Otherwise all three browser sources play the same
+     clip at once (and you still hear audio even when the FX source is missing, which
+     makes a missing layer look like a broken animation). */
+  const AUDIO_LAYER = (layer === "fx" || layer === "all");
   function sfx(url, vol=1){
-    if(!url) return;
+    if(!url || !AUDIO_LAYER) return;
     try{
       const a = new Audio(url); a.volume = vol; sfxLive.add(a);
       const drop = () => sfxLive.delete(a);

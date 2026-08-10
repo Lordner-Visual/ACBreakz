@@ -52,6 +52,8 @@ Deno.serve(async (req) => {
     if (!(n >= 1 && n <= 5)) return json({ error: "operator calls must name one PC" }, 400);
     const allowed =
       body.action === "state" ||
+      /* FX triggers (stingers, sounds, one-shots) for its own PC */
+      body.action === "event" ||
       /* the banner composer: save a composed strip and register it, nothing else */
       (body.action === "sign_upload" && /^banners\/composed-[\w.-]+$/.test(String(body.path))) ||
       (body.action === "asset" && body.asset?.kind === "banner" && !body.asset?.meta?.template);

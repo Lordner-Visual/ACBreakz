@@ -77,6 +77,7 @@
 </header>
 <nav>
   <button data-tab="board" class="on">Team Board</button>
+  <button data-tab="anims">Animations</button>
   <button data-tab="sfx">SoundFX</button>
   <button data-tab="banners">Banners</button>
   <button data-tab="bgs">Backgrounds</button>
@@ -92,6 +93,13 @@
   </div>
   <div class="row" style="margin-top:6px"><span class="tag" id="hlHint"></span></div>
   <div id="ctlBoard"></div>
+</section>
+
+<section id="tab-anims">
+  <h2>NFL team animation style — one style plays for every team on this PC</h2>
+  <div class="grid" id="styleGrid"></div>
+  <h2>One-shot animations — play one on this stream</h2>
+  <div class="grid" id="oneshotGrid"></div>
 </section>
 
 <section id="tab-sfx">
@@ -299,6 +307,31 @@
     $("#hlHint").textContent = hlMode
       ? "Highlight mode — tap teams to star them. Button animations play only on starred teams."
       : (n ? `${n} team${n===1?"":"s"} highlighted.` : "Tap a team to eliminate it; tap again to bring it back.");
+
+    /* team animation styles: choosing one is a per-PC selection */
+    $("#styleGrid").innerHTML = assets.filter(a=>a.kind==="style" && a.meta?.domain==="team_anim")
+      .map(s => {
+        const on = state.animStyle ? state.animStyle.id === s.id : s.meta?.builtin;
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "🏈"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <button class="btn ${on?"ghost":""}" data-style="${s.id}">${on?"Enabled":"Enable"}</button>
+            <div class="tag">${s.meta && "sfxName" in s.meta ? "🔊 "+esc(s.meta.sfxName) : "default sound"}</div>
+          </div></div>`; }).join("");
+    $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
+      state.animStyle = assets.find(x=>x.id===b.dataset.style); push(); });
+
+    /* one-shots: play on this stream */
+    $("#oneshotGrid").innerHTML = assets
+      .filter(a=>a.kind==="animation" && a.meta?.group!=="team").map(a=>`
+      <div class="asset"><div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <button class="btn" data-anim="${a.id}">Play</button></div></div>`).join("");
+    $$("#oneshotGrid [data-anim]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.anim);
+      fire("play_animation",{url:a.url, boxed:true, image:a.meta?.image===true,
+        sfxUrl:a.meta?.sfxUrl ?? null});
+      toast("Playing " + a.name);
+    });
 
     $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`
       <div class="asset"><div class="thumb">🔊</div><div class="meta"><div class="name">${esc(a.name)}</div>
