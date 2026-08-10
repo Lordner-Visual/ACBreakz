@@ -146,8 +146,23 @@ function buildProfile(pc) {
   };
 
   /* page 0 — main */
-  newPage(() => {
+  newPage((dir) => {
     const A = {};
+    /* reuse the old profile's artwork where an equivalent button existed */
+    const MAIN_ART = {
+      "0,0": "Auction-1", "1,0": "Auction-2", "2,0": "Auction-3", "3,0": "Solo-1",
+      "0,1": "STASH-OR-PASS", "1,1": "SPIN-2-PICK-1",
+      "0,2": "Teams", "1,2": "Highlight", "1,3": "Highlight-Off",
+    };
+    const dressUp = () => {
+      for (const [key, art] of Object.entries(MAIN_ART)) {
+        const src = join(ICONS, "main", `${art}.png`);
+        if (!A[key] || !existsSync(src)) continue;
+        const rel = `Images/${art}.png`;
+        copyFileSync(src, join(dir, rel));
+        A[key].States[0].Image = rel;
+      }
+    };
     /* row 1: scenes */
     [[`ACBreakz Cloud ${pc}`, `Cloud ${pc}`], ["Archived 1","Archived 1"],
      ["Archived 2","Archived 2"], ["Archived 3","Archived 3"]]
@@ -169,6 +184,7 @@ function buildProfile(pc) {
     A[pos(7, 1)] = obsSimple("com.elgato.obsstudio.record", "Record", "RECORD");
     A[pos(7, 2)] = obsSimple("com.elgato.obsstudio.replaybuffer", "Replay Buffer", "START\nREPLAY");
     A[pos(7, 3)] = obsSimple("com.elgato.obsstudio.replaybuffer.save", "Replay Buffer Save", "SAVE\nREPLAY");
+    dressUp();
     return A;
   });
 

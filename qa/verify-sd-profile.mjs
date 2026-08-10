@@ -18,8 +18,12 @@ for (let pc = 1; pc <= 5; pc++) {
     const j = JSON.parse(await zip.file(n).async("string"));
     if (j.Controllers?.[0]?.Actions) pages.push(j.Controllers[0].Actions);
   }
-  pages.sort((a, b) => Object.keys(a).length - Object.keys(b).length);
-  const [main, teams, highs] = pages;
+  /* identify pages by what their keys DO — both team pages have 32 keys, so their
+     order in the archive is not meaningful */
+  const urlsOf = (p) => JSON.stringify(Object.values(p));
+  const main  = pages.find(p => Object.keys(p).length !== 32);
+  const teams = pages.find(p => /action=team_toggle/.test(urlsOf(p)));
+  const highs = pages.find(p => /action=highlight_toggle/.test(urlsOf(p)));
 
   const flat = [];
   const collect = (a) => { if (!a || typeof a !== "object") return; if (a.UUID) flat.push(a);
