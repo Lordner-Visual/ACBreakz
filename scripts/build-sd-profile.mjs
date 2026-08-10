@@ -83,7 +83,9 @@ const apiNinja = (url, title) => ({
     matchedImage: "", unmatchedImage: "",
     treatResponseAsImage: false, treatResponseAsText: false, responseImageField: "",
     titlePrefix: "", titleSuffix: "",
-    autorunType: "0", autorunMinutes: "0",   // 0 minutes = never auto-fire
+    /* Autorun is a plain number box: EMPTY = off. "0" means "every 0 minutes", which
+       makes the plugin fire in a loop and crash in its own autorun code path. */
+    autorunType: "0", autorunMinutes: "",
     debugLogging: false, hideSuccessIndicator: false,
   },
   State: 0,

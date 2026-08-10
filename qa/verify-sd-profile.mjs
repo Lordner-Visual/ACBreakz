@@ -46,6 +46,8 @@ ok("team keys use the server-side toggle (no stateful switch)",
 ok("every action has all 30 settings keys",
   ninjas.every(a => REQUIRED.every(k => k in a.Settings)));
 ok("every action is a GET", ninjas.every(a => a.Settings.requestType === "0"));
+ok("autorun disabled on every action (empty, not 0)",
+  ninjas.every(a => a.Settings.autorunMinutes === ""));
 ok("no raw spaces in any url", !ninjas.some(a => / /.test(a.Settings.url)));
 ok("no mojibake in titles",
   !JSON.stringify(pages).match(/[\u00C2-\u00C3][\u0080-\u00BF]/));
