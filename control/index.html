@@ -425,8 +425,9 @@
     state.banners ??= {rotation:[]};
     state.boardGrid ??= "buttons"; state.boardGap ??= 0;
   }
+  let lastPushedAt = 0;
   async function pushState(){
-    state.updatedAt = Date.now();
+    state.updatedAt = lastPushedAt = Date.now();
     if (cloud) { const {error} = await panelCall({action:"state", pc:PC, data:state});
       if (error) toast("State save failed: "+error.message); }
     else { LS.setItem("acbz-state", JSON.stringify(state)); bus.postMessage({kind:"state",data:state}); }
@@ -1005,7 +1006,13 @@
       $("#presence").innerHTML = "cloud: <b>connected</b>";
       sb.channel("db-ctl")
         .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
-            p => { if (p.new.id === pcRow()) { state = p.new.data; renderAll(); } })
+            p => {
+              if (p.new.id !== pcRow()) return;
+              /* ignore the echo of our own write — adopting it would clobber a change
+                 the operator made in the moment between push and echo */
+              if (p.new.data?.updatedAt && p.new.data.updatedAt <= lastPushedAt) return;
+              state = p.new.data; renderAll();
+            })
         .subscribe();
       const pres = sb.channel("presence:overlays");
       pres.on("presence",{event:"sync"},()=>{
