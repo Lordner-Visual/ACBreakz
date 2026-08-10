@@ -3,6 +3,7 @@ node_modules/
 .env.*
 *.local
 *.local.*
+streamdeck/build/
 supabase/.temp/
 supabase/.branches/
 .wrangler/
