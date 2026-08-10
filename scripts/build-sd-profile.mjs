@@ -93,25 +93,15 @@ const obsSimple = (uuid, name, title) => ({
   UUID: uuid,
 });
 
-const pageGoto = (index, title) => ({
-  ActionID: randomUUID(), LinkedTitle: false, Name: "Switch Page",
-  Plugin: { Name: "Pages", UUID: "com.elgato.streamdeck.page", Version: "1.0" },
-  Resources: null, Settings: { PageIndex: index },
-  State: 0, States: [ { Title: title, FSize: "10" } ],
-  UUID: "com.elgato.streamdeck.page.goto",
-});
-
-const openUrl = (url, title) => ({
-  ActionID: randomUUID(), LinkedTitle: true, Name: "Open",
-  Plugin: { Name: "Open", UUID: "com.elgato.streamdeck.system.open", Version: "1.0" },
-  Settings: { path: url },
-  State: 0, States: [ { Title: title, FSize: "9", ShowTitle: true } ],
-  UUID: "com.elgato.streamdeck.system.open",
-});
-
-/* a request that also hops back to the main page, like the old profile did */
+/* a request that then hops back to the main page */
 const requestThenHome = (url, title, imageRel) => {
-  const step = () => ({ Actions: [ apiNinja(url), pageGoto(0, "") ] });
+  const step = () => {
+    const req = apiNinja(url);
+    req.Settings.isInMultiAction = true;
+    const back = pageGoto(1, "");
+    back.Settings.isInMultiAction = true;
+    return { Actions: [ req, back ] };
+  };
   return {
     ActionID: randomUUID(), Actions: [ step(), step() ],
     LinkedTitle: true, Name: "Multi Action Switch",
@@ -122,6 +112,24 @@ const requestThenHome = (url, title, imageRel) => {
     UUID: "com.elgato.streamdeck.multiactions.routine2",
   };
 };
+
+const pageGoto = (index, title) => ({
+  ActionID: randomUUID(), LinkedTitle: false, Name: "Switch Page",
+  Plugin: { Name: "Pages", UUID: "com.elgato.streamdeck.page", Version: "1.0" },
+  Resources: null, Settings: { PageIndex: index },
+  State: 0, States: [ { Title: title, FSize: "10" } ],
+  UUID: "com.elgato.streamdeck.page.goto",
+});
+
+/* URLs need the Website action — system.open only handles apps/files/folders.
+   Shape copied from a real Website key already on this machine. */
+const openUrl = (url, title) => ({
+  ActionID: randomUUID(), LinkedTitle: true, Name: "Website",
+  Resources: null,
+  Settings: { openInBrowser: true, path: url },
+  State: 0, States: [ { Title: title, FSize: "9" } ],
+  UUID: "com.elgato.streamdeck.system.website",
+});
 
 /* ---- build one profile for a given PC ---- */
 const COLS = 8;
@@ -159,9 +167,9 @@ function buildProfile(pc) {
       .forEach(([name, title], i) => {
         A[pos(i, 1)] = apiNinja(deckUrl(`action=play&name=${name}`, pc), title);
       });
-    /* row 3: page jumps */
-    A[pos(0, 2)] = pageGoto(1, "TEAMS");
-    A[pos(1, 2)] = pageGoto(2, "HIGH\nLIGHTS");
+    /* row 3: page jumps — PageIndex is 1-based (main = 1) */
+    A[pos(0, 2)] = pageGoto(2, "TEAMS");
+    A[pos(1, 2)] = pageGoto(3, "HIGH\nLIGHTS");
     /* row 4: OBS recording */
     A[pos(0, 3)] = obsSimple("com.elgato.obsstudio.record", "Record", "RECORD");
     A[pos(1, 3)] = obsSimple("com.elgato.obsstudio.replaybuffer", "Replay Buffer", "START\nREPLAY");
@@ -169,8 +177,10 @@ function buildProfile(pc) {
     return A;
   });
 
-  /* page 1 — teams, page 2 — highlights */
-  for (const [action, label] of [["team_toggle", ""], ["highlight_toggle", ""]]) {
+  /* pages 2 and 3 — all 32 teams, each firing its request then hopping back to main
+     (exactly what the original profile did, which is how 32 teams fit on 32 keys).
+     Nested actions need isInMultiAction — without it the step is skipped silently. */
+  for (const action of ["team_toggle", "highlight_toggle"]) {
     newPage((dir) => {
       const A = {};
       TEAMS.forEach(([abbr, name], i) => {
@@ -178,7 +188,7 @@ function buildProfile(pc) {
         const src = icons.get(name);
         if (src) { rel = `Images/${name}.png`; copyFileSync(src, join(dir, rel)); }
         A[pos(i % COLS, Math.floor(i / COLS))] =
-          requestThenHome(deckUrl(`action=${action}&team=${abbr}`, pc), label || name, rel);
+          requestThenHome(deckUrl(`action=${action}&team=${abbr}`, pc), name, rel);
       });
       return A;
     });

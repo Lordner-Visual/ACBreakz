@@ -39,9 +39,19 @@ for (let pc = 1; pc <= 5; pc++) {
       main["0,3"]?.UUID === "com.elgato.obsstudio.record" &&
       main["1,3"]?.UUID === "com.elgato.obsstudio.replaybuffer" &&
       main["2,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
-    ok(`${head} dashboard button top-right opens this PC's control page`,
-      main["7,0"]?.UUID === "com.elgato.streamdeck.system.open" &&
+    ok(`${head} dashboard key uses the Website action (open handles files, not URLs)`,
+      main["7,0"]?.UUID === "com.elgato.streamdeck.system.website" &&
+      main["7,0"].Settings.openInBrowser === true &&
       main["7,0"].Settings.path.endsWith("/control/pc.html?pc=1"));
+    ok(`${head} TEAMS -> page 2, HIGHLIGHTS -> page 3 (1-based)`,
+      main["0,2"]?.Settings.PageIndex === 2 && main["1,2"]?.Settings.PageIndex === 3);
+    ok(`${head} nested multi-action steps carry isInMultiAction`,
+      Object.values(teams).every(k =>
+        k.Actions?.[0]?.Actions?.every(s => s.Settings?.isInMultiAction === true)));
+    ok(`${head} team keys hop back to main (page 1)`,
+      Object.values(teams).every(k =>
+        k.Actions[0].Actions.some(s => s.UUID === "com.elgato.streamdeck.page.goto" &&
+          s.Settings.PageIndex === 1)));
     ok(`${head} teams + highlights pages are 32 keys each`,
       Object.keys(teams).length === 32 && Object.keys(highs).length === 32);
     ok(`${head} animation row includes Spin 3 Pick 1 and PYT`,
