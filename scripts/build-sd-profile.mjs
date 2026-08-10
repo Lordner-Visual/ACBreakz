@@ -1,4 +1,4 @@
-/* Build an importable Stream Deck profile for the ACBreakz cloud system.
+﻿/* Build an importable Stream Deck profile for the ACBreakz cloud system.
    - reuses the 32 team icons from the existing profile
    - every key is ONE API Ninja HTTPS request (no OBS scene names, no sceneitemids)
      => the profile is fully portable to any PC
@@ -21,7 +21,7 @@ const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").sp
   .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
 const BASE = `${env.SUPABASE_URL}/functions/v1/deck?key=${env.DECK_KEY}`;
 
-const TEAMS = [ /* board order: left→right, top row then bottom row */
+const TEAMS = [ /* board order: leftâ†’right, top row then bottom row */
   ["atl","Falcons"],["phi","Eagles"],["mia","Dolphins"],["dal","Cowboys"],["wsh","Commanders"],
   ["ind","Colts"],["kc","Chiefs"],["lac","Chargers"],["ari","Cardinals"],["sf","49ers"],
   ["tb","Buccaneers"],["cle","Browns"],["den","Broncos"],["buf","Bills"],["cin","Bengals"],
@@ -58,18 +58,33 @@ for (const { dir, j } of pages)
 console.log(`icons matched: ${icons.size}/32`);
 
 /* ---- action builders ---- */
+/* spaces (and friends) in query values must be percent-encoded or the request dies */
+const deckUrl = (query) => `${BASE}&${query.replace(/ /g, "%20")}`;
 const apiNinja = (url, title) => ({
   ActionID: randomUUID(),
   LinkedTitle: false,
   Name: "API Ninja",
   Plugin: { Name: "API Ninja", UUID: "com.barraider.apininja", Version: "1.0" },
   Resources: null,
+  /* EVERY key the property inspector defines must be present â€” the plugin trims
+     these strings on load, and a missing one throws (Stream Deck shows âš ). */
   Settings: {
-    url, requestType: "0", contentType: "", responseShown: "",
+    url, urlFile: "",
+    requestType: "0",                 // 0 = GET
+    contentType: "",
+    data: "", dataFile: "",
+    headers: "", headersFile: "",
+    loadFromFiles: false, loadURLFromFiles: false,
+    parseResponse: false,
+    responseFormat: "", responseRegex: "", responseRegexFetch: "",
+    responseShown: "", responseShownFile: "",
+    saveResponseToFile: false,
+    showCustomImages: false, customImageValue: "",
+    matchedImage: "", unmatchedImage: "",
+    treatResponseAsImage: false, treatResponseAsText: false, responseImageField: "",
     titlePrefix: "", titleSuffix: "",
-    autorunType: "0", autorunMinutes: "5",
-    parseResponse: false, loadFromFiles: false, loadURLFromFiles: false,
-    saveResponseToFile: false, showCustomImages: false, treatResponseAsImage: false,
+    autorunType: "0", autorunMinutes: "0",   // 0 minutes = never auto-fire
+    debugLogging: false, hideSuccessIndicator: false,
   },
   State: 0,
   States: [ { Title: title ?? "", FFamily: "", FSize: "12" } ],
@@ -88,12 +103,12 @@ const pageGoto = (index, title) => ({
   UUID: "com.elgato.streamdeck.page.goto",
 });
 
-/* team key: Multi Action Switch — press 1 removes the team, press 2 puts it back */
+/* team key: Multi Action Switch â€” press 1 removes the team, press 2 puts it back */
 const teamToggle = (abbr, name, imageRel) => ({
   ActionID: randomUUID(),
   Actions: [
-    { Actions: [ apiNinja(`${BASE}&action=team_pick&team=${abbr}`) ] },
-    { Actions: [ apiNinja(`${BASE}&action=team_restore&team=${abbr}`) ] },
+    { Actions: [ apiNinja(deckUrl(`action=team_pick&team=${abbr}`)) ] },
+    { Actions: [ apiNinja(deckUrl(`action=team_restore&team=${abbr}`)) ] },
   ],
   LinkedTitle: true,
   Name: "Multi Action Switch",
@@ -102,7 +117,7 @@ const teamToggle = (abbr, name, imageRel) => ({
   Settings: {},
   State: 0,
   States: [ { Image: imageRel, Title: name, FSize: "10" },
-            { Image: imageRel, Title: name + " ↩", FSize: "10" } ],
+            { Image: imageRel, Title: name + "\nOUT", FSize: "10" } ],
   UUID: "com.elgato.streamdeck.multiactions.routine2",
 });
 
@@ -126,7 +141,7 @@ const PROFILE_UUID = guid();
 const DEVICE_UUID = randomUUID();
 rmSync(OUT_DIR, { recursive: true, force: true });
 
-/* page 0 — Teams: tap to remove, tap again to put back */
+/* page 0 â€” Teams: tap to remove, tap again to put back */
 newPage((dir) => {
   const A = {};
   TEAMS.forEach(([abbr, name], i) => {
@@ -138,21 +153,21 @@ newPage((dir) => {
   return A;
 });
 
-/* page 1 — Highlight: tap a team to star it (button animations play only on starred) */
+/* page 1 â€” Highlight: tap a team to star it (button animations play only on starred) */
 newPage((dir) => {
   const A = {};
   TEAMS.forEach(([abbr, name], i) => {
     let rel = "";
     const src = icons.get(name);
     if (src) { rel = `Images/${name}.png`; copyFileSync(src, join(dir, rel)); }
-    const a = apiNinja(`${BASE}&action=highlight_toggle&team=${abbr}`, name);
+    const a = apiNinja(deckUrl(`action=highlight_toggle&team=${abbr}`), name);
     a.States[0].Image = rel;
     A[pos(i)] = a;
   });
   return A;
 });
 
-/* page 2 — Controls */
+/* page 2 â€” Controls */
 newPage(() => {
   const A = {};
   const ctrl = [
@@ -164,8 +179,8 @@ newPage(() => {
     ["BG: TV\nLoop",        "action=set_background&name=TV Background"],
     ["BG:\nStadium",        "action=set_background&name=Stadium"],
   ];
-  ctrl.forEach(([title, q], i) => { A[pos(i)] = apiNinja(`${BASE}&${q}`, title); });
-  A[pos(24)] = pageGoto(0, "◀ Teams");
+  ctrl.forEach(([title, q], i) => { A[pos(i)] = apiNinja(deckUrl(q), title); });
+  A[pos(24)] = pageGoto(0, "Teams");
   A[pos(25)] = pageGoto(1, "Highlight");
   return A;
 });
@@ -207,4 +222,4 @@ zip.file("package.json", readFileSync(join(OUT_DIR, "package.json")));   // Elga
 writeFileSync(OUT_FILE, await zip.generateAsync({ type: "nodebuffer",
   compression: "DEFLATE", compressionOptions: { level: 6 } }));
 console.log(`\nbuilt: ${OUT_FILE}`);
-console.log(`pages: Teams(32 toggle) · Highlight(32) · Controls(9)`);
+console.log(`pages: Teams(32 toggle) Â· Highlight(32) Â· Controls(9)`);
