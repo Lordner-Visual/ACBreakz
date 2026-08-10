@@ -31,14 +31,24 @@ for (let pc = 1; pc <= 5; pc++) {
   const head = `PC${pc}`;
   if (pc === 1) {
     ok(`${head} zip uses forward slashes`, !names.some(n => n.includes("\\")));
-    ok(`${head} main page: 4 scenes + 4 animations + 2 jumps + 3 OBS + dashboard`,
-      Object.keys(main).length === 14);
+    /* 4 scenes + 4 animations + 2 page jumps + 2 resets + 3 OBS + dashboard */
+    ok(`${head} main page has all 16 keys`, Object.keys(main).length === 16);
     ok(`${head} scene row is Cloud N + Archived 1-3`,
       ["0,0","1,0","2,0","3,0"].every(p => main[p]?.UUID === "com.elgato.obsstudio.scene"));
-    ok(`${head} record + replay row`,
-      main["0,3"]?.UUID === "com.elgato.obsstudio.record" &&
-      main["1,3"]?.UUID === "com.elgato.obsstudio.replaybuffer" &&
-      main["2,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
+    ok(`${head} record + replay sit under the control key (column 7)`,
+      main["7,1"]?.UUID === "com.elgato.obsstudio.record" &&
+      main["7,2"]?.UUID === "com.elgato.obsstudio.replaybuffer" &&
+      main["7,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
+    ok(`${head} resets sit under TEAMS and HIGHLIGHTS`,
+      /action=board_reset/.test(main["0,3"]?.Settings?.url ?? "") &&
+      /action=highlight_clear/.test(main["1,3"]?.Settings?.url ?? ""));
+    /* two-state keys: normal art, then X'd (teams) / glowing (highlights) */
+    const twoState = (page, alt) => Object.values(page).every(k =>
+      k.States?.length === 2 &&
+      /^Images\/\w[\w'.-]*\.png$/.test(k.States[0].Image ?? "") &&
+      (k.States[1].Image ?? "").includes(alt));
+    ok(`${head} team keys show the X'd logo after removal`, twoState(teams, "-x"));
+    ok(`${head} highlight keys show the glowing logo`, twoState(highs, "-glow"));
     ok(`${head} dashboard key uses the Website action (open handles files, not URLs)`,
       main["7,0"]?.UUID === "com.elgato.streamdeck.system.website" &&
       main["7,0"].Settings.openInBrowser === true &&
@@ -67,9 +77,9 @@ for (let pc = 1; pc <= 5; pc++) {
       ninjas.every(a => a.Plugin.Version === "1.5.1"));
   }
   /* the point of five profiles: each one only ever talks to its own PC */
-  /* 4 animations + (32 teams + 32 highlights) x 2 identical switch states = 132 */
+  /* 4 animations + 2 resets + (32 teams + 32 highlights) x 2 switch states = 134 */
   ok(`${head} every request is scoped to pc=${pc} (${urls.length} urls)`,
-    urls.length === 132 && urls.every(u => u.endsWith(`&pc=${pc}`)));
+    urls.length === 134 && urls.every(u => u.endsWith(`&pc=${pc}`)));
   ok(`${head} profile name`, JSON.parse(await zip.file(
       names.find(n => n.endsWith(".sdProfile/manifest.json"))).async("string")).Name
       === `ACBreakz Cloud PC${pc}`);

@@ -28,31 +28,13 @@ const TEAMS = [ /* board order: left->right, top row then bottom row */
   ["car","Panthers"],["gb","Packers"],["det","Lions"],["jax","Jaguars"],["nyj","Jets"],
   ["nyg","Giants"],["bal","Ravens"] ];
 
-/* ---- team icons from the existing profile ---- */
-const srcPages = [];
-(function walk(d) {
-  for (const e of readdirSync(d)) {
-    const p = join(d, e);
-    if (statSync(p).isDirectory()) walk(p);
-    else if (e === "manifest.json") {
-      const j = JSON.parse(readFileSync(p, "utf8"));
-      if (j.Controllers?.some(c => c.Actions && Object.keys(c.Actions).length))
-        srcPages.push({ dir: dirname(p), j });
-    }
-  }
-})(SRC_PROFILE);
-const icons = new Map();
-for (const { dir, j } of srcPages)
-  for (const a of Object.values(j.Controllers[0].Actions ?? {})) {
-    const img = a.States?.[0]?.Image;
-    const blob = JSON.stringify(a.Settings ?? {}) + " " + (a.States?.[0]?.Title ?? "");
-    for (const [, name] of TEAMS)
-      if (!icons.has(name) && img && new RegExp(`\\b${name}\\b`, "i").test(blob)) {
-        const abs = join(dir, img);
-        if (existsSync(abs)) icons.set(name, abs);
-      }
-  }
-console.log(`icons matched: ${icons.size}/32`);
+/* ---- icon sets prepared by scripts/make-icons.mjs from the old profile's art ---- */
+const ICONS = "C:/ACBreakz-Cloud/streamdeck/icons";
+const iconPath = (set, team) => {
+  const p = join(ICONS, set, `${team}.png`);
+  return existsSync(p) ? p : null;
+};
+console.log(`icon sets: normal/x/glow from ${ICONS}`);
 
 /* ---- action builders (every settings shape below was read off real, working files) ---- */
 const deckUrl = (q, pc) => `${BASE}&${q.replace(/ /g, "%20")}&pc=${pc}`;
@@ -101,8 +83,11 @@ const obsSimple = (uuid, name, title) => ({
   UUID: uuid,
 });
 
-/* a request that then hops back to the main page */
-const requestThenHome = (url, title, imageRel) => {
+/* A request that hops back to the main page. Two states so the key can show a second
+   icon after it fires (X'd when removed, glowing when highlighted). Both states run the
+   same server-authoritative toggle, so the ACTION is always right even if the icon and
+   the board drift apart (e.g. after Reset Board). */
+const requestThenHome = (url, title, imageRel, imageRel2) => {
   const step = () => {
     const req = apiNinja(url);
     req.Settings.isInMultiAction = true;
@@ -115,8 +100,8 @@ const requestThenHome = (url, title, imageRel) => {
     LinkedTitle: true, Name: "Multi Action Switch",
     Plugin: { Name: "Multi Action", UUID: "com.elgato.streamdeck.multiactions", Version: "1.0" },
     Resources: null, Settings: {}, State: 0,
-    States: [ { Image: imageRel, Title: title, FSize: "10" },
-              { Image: imageRel, Title: title, FSize: "10" } ],
+    States: [ { Image: imageRel,  Title: "", ShowTitle: false },
+              { Image: imageRel2 ?? imageRel, Title: "", ShowTitle: false } ],
     UUID: "com.elgato.streamdeck.multiactions.routine2",
   };
 };
@@ -175,28 +160,35 @@ function buildProfile(pc) {
       .forEach(([name, title], i) => {
         A[pos(i, 1)] = apiNinja(deckUrl(`action=play&name=${name}`, pc), title);
       });
-    /* row 3: page jumps — PageIndex is 1-based (main = 1) */
+    /* row 3: page jumps — PageIndex is 1-based (main = 1) — with their resets beneath */
     A[pos(0, 2)] = pageGoto(2, "TEAMS");
     A[pos(1, 2)] = pageGoto(3, "HIGH\nLIGHTS");
-    /* row 4: OBS recording */
-    A[pos(0, 3)] = obsSimple("com.elgato.obsstudio.record", "Record", "RECORD");
-    A[pos(1, 3)] = obsSimple("com.elgato.obsstudio.replaybuffer", "Replay Buffer", "START\nREPLAY");
-    A[pos(2, 3)] = obsSimple("com.elgato.obsstudio.replaybuffer.save", "Replay Buffer Save", "SAVE\nREPLAY");
+    A[pos(0, 3)] = apiNinja(deckUrl("action=board_reset", pc), "RESET\nBOARD");
+    A[pos(1, 3)] = apiNinja(deckUrl("action=highlight_clear", pc), "RESET\nHIGHLIGHTS");
+    /* OBS recording sits under the control key, right-hand column */
+    A[pos(7, 1)] = obsSimple("com.elgato.obsstudio.record", "Record", "RECORD");
+    A[pos(7, 2)] = obsSimple("com.elgato.obsstudio.replaybuffer", "Replay Buffer", "START\nREPLAY");
+    A[pos(7, 3)] = obsSimple("com.elgato.obsstudio.replaybuffer.save", "Replay Buffer Save", "SAVE\nREPLAY");
     return A;
   });
 
   /* pages 2 and 3 — all 32 teams, each firing its request then hopping back to main
      (exactly what the original profile did, which is how 32 teams fit on 32 keys).
      Nested actions need isInMultiAction — without it the step is skipped silently. */
-  for (const action of ["team_toggle", "highlight_toggle"]) {
+  for (const [action, altSet] of [["team_toggle", "x"], ["highlight_toggle", "glow"]]) {
     newPage((dir) => {
       const A = {};
       TEAMS.forEach(([abbr, name], i) => {
-        let rel = "";
-        const src = icons.get(name);
-        if (src) { rel = `Images/${name}.png`; copyFileSync(src, join(dir, rel)); }
+        const put = (set, suffix) => {
+          const src = iconPath(set, name);
+          if (!src) return "";
+          const rel = `Images/${name}${suffix}.png`;
+          copyFileSync(src, join(dir, rel));
+          return rel;
+        };
         A[pos(i % COLS, Math.floor(i / COLS))] =
-          requestThenHome(deckUrl(`action=${action}&team=${abbr}`, pc), name, rel);
+          requestThenHome(deckUrl(`action=${action}&team=${abbr}`, pc), name,
+            put("normal", ""), put(altSet, "-" + altSet));
       });
       return A;
     });
