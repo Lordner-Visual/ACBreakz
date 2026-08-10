@@ -36,15 +36,22 @@
 
   /* ---------- HUD LAYER (board 1080x165 @y480, banners 1080x97 @y645) ---------- */
   #layer-hud{inset:0;display:none}
-  #board{--gap:0px;--radius:10px;--logopad:6px;
+  /* Tiles live inside the WhatNot-safe area measured from the original board art:
+     x 111..968 (858 wide), tiles 53x53 square, 16 x 2. Never wider than this. */
+  #board{--gap:0px;--tile:53px;--cols:16;--rows:2;
+    --radius:calc(var(--tile) * .14);--bezel:calc(var(--tile) * .1);
+    --logopad:calc(var(--tile) * .18);
     left:0;top:480px;width:1080px;height:165px;overflow:hidden;
     background:
       radial-gradient(140% 220% at 50% -60%, rgba(53,167,255,.18), transparent 55%),
       linear-gradient(180deg,#0E2A38 0%, #0A1F2C 55%, #081824 100%);
     background-size:cover;background-position:center;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -14px 26px rgba(0,0,0,.55);
-    display:grid;grid-template-columns:repeat(16,1fr);grid-template-rows:1fr 1fr;
-    gap:var(--gap);padding:12px 46px}
+    display:grid;
+    grid-template-columns:repeat(var(--cols), var(--tile));
+    grid-template-rows:repeat(var(--rows), var(--tile));
+    justify-content:center;align-content:center;
+    gap:var(--gap);padding:0 111px}
   /* one wide, feathered light bar sweeping BOTH rows at once (v2) */
   #board::after{content:"";position:absolute;top:-10px;bottom:-10px;left:0;width:430px;
     background:linear-gradient(100deg,
@@ -56,41 +63,53 @@
   @keyframes sweep{
     0%{left:-470px;opacity:0} 6%{opacity:1}
     58%{left:1120px;opacity:1} 62%{left:1120px;opacity:0} 100%{left:-470px;opacity:0}}
+  /* Beveled copper bezel + dark inset line + teal glass, matching the original art.
+     Two background layers: glass clipped to the padding box, bezel to the border box. */
   .cell{position:relative;border-radius:var(--radius);overflow:hidden;
-    background:linear-gradient(160deg,#12444F 0%, var(--teal-glass) 40%, var(--teal-dim) 100%);
-    background-size:100% 100%;background-position:center;
-    border:2px solid var(--copper);
-    box-shadow:inset 0 2px 5px rgba(255,255,255,.14), inset 0 -6px 10px rgba(0,0,0,.6),
-               0 2px 4px rgba(0,0,0,.5);
-    transition:filter .45s ease, border-color .45s ease}
-  .cell::before{ /* glass gloss */
-    content:"";position:absolute;inset:0;border-radius:calc(var(--radius) - 2px);
-    background:linear-gradient(178deg,rgba(255,255,255,.28) 0%,rgba(255,255,255,.06) 26%,transparent 48%);
+    border:var(--bezel) solid transparent;
+    background-image:
+      radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
+      linear-gradient(145deg, #E8C07A 0%, #C08A45 17%, #8A5A26 52%, #6B3F17 76%, #B27A3E 100%);
+    background-origin:padding-box, border-box;
+    background-clip:padding-box, border-box;
+    background-size:100% 100%, 100% 100%;background-repeat:no-repeat;
+    box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.85), 0 2px 3px rgba(0,0,0,.55);
+    transition:filter .45s ease}
+  .cell::before{ /* faint glass gloss across the top edge */
+    content:"";position:absolute;inset:0;
+    background:linear-gradient(178deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,.04) 30%,transparent 52%);
     pointer-events:none;z-index:3}
   .cell img{position:absolute;inset:var(--logopad);
     width:calc(100% - 2*var(--logopad));height:calc(100% - 2*var(--logopad));
     object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
     transition:filter .45s ease, opacity .45s ease}
 
-  /* ---- v4: a custom button style REPLACES the stock gold button entirely ---- */
-  #board.has-btnstyle{--logopad:17%}
-  #board.has-btnstyle .cell{border:none;box-shadow:none;background-color:transparent}
+  /* ---- v4: a custom button style REPLACES the stock bezel entirely ---- */
+  #board.has-btnstyle{--logopad:calc(var(--tile) * .17)}
+  #board.has-btnstyle .cell{border:none;box-shadow:none;background-color:transparent;
+    background-size:100% 100%}
   #board.has-btnstyle .cell::before{display:none}
 
   /* ---- v4: grid styles (each still wears the chosen button style) ---- */
   #board.grid-checker{--radius:0px}
-  #board.grid-checker .cell{border-width:1px}
+  #board.grid-checker{--bezel:calc(var(--tile) * .06)}
   #board.grid-checkerbare{--radius:0px}
-  #board.grid-checkerbare .cell{border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
-  #board.grid-honeycomb{--radius:0px;--logopad:19%}
+  #board.grid-checkerbare .cell{border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+  #board.grid-honeycomb{--radius:0px;--logopad:calc(var(--tile) * .22)}
   #board.grid-honeycomb .cell{border:none;box-shadow:none;
     clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
-  #board.grid-honeycomb .cell:nth-child(n+17){left:50%}   /* offset row 2, no transform clash */
+  /* interlock the rows by splitting the half-tile offset, so the combined span of both
+     rows is exactly the safe width — neither row can run past the crop edge */
+  #board.grid-honeycomb .cell:nth-child(-n+16){left:calc(var(--tile) * -.25)}
+  #board.grid-honeycomb .cell:nth-child(n+17){left:calc(var(--tile) * .25)}
   #board.grid-honeycomb .cell::before{clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
-  #board.grid-logos{--logopad:2px}
-  #board.grid-logos .cell{border:none;box-shadow:none;background:none !important}
+  #board.grid-logos{--logopad:1px}
+  #board.grid-logos .cell{border:none;box-shadow:none;background-image:none !important}
   #board.grid-logos .cell::before{display:none}
-  #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);--logopad:4px}
+  /* the one deliberately non-square grid: wide buttons stretched across the safe area */
+  #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);
+    justify-content:stretch;align-content:stretch;padding:12px 111px;
+    --logopad:4px;--radius:6px;--bezel:3px}
   #board.grid-slant{--radius:0px}
   #board.grid-slant .cell{border:none;
     clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%)}
@@ -236,6 +255,22 @@
   /* ------- board style parts: buttons / background / button animation (v3) ------- */
   const AMBIENT = ["glow","fire","lightning","glitch"];
   const GRIDS = ["buttons","checker","checkerbare","honeycomb","logos","rect84","slant"];
+  /* WhatNot-safe tile area, measured from the original board art:
+     x 111..968 (858 wide) inside the 1080x165 band; original tiles are 53x53. */
+  const SAFE_W = 858, SAFE_H = 141, MAX_TILE = 53;
+  const GRID_CFG = {
+    buttons:{cols:16,rows:2}, checker:{cols:16,rows:2}, checkerbare:{cols:16,rows:2},
+    honeycomb:{cols:16,rows:2,slack:0.5},           // row 2 is offset half a tile
+    logos:{cols:16,rows:2}, slant:{cols:16,rows:2},
+    rect84:{cols:8,rows:4,stretch:true},            // deliberately rectangular
+  };
+  /* biggest SQUARE tile that keeps every button inside the safe area at this spacing */
+  function tileFor(grid, gap) {
+    const c = GRID_CFG[grid] ?? GRID_CFG.buttons;
+    const byWidth  = (SAFE_W - (c.cols - 1) * gap) / (c.cols + (c.slack ?? 0));
+    const byHeight = (SAFE_H - (c.rows - 1) * gap) / c.rows;
+    return Math.max(12, Math.floor(Math.min(MAX_TILE, byWidth, byHeight)));
+  }
   let partsKey = null, btnAnim = null;
   function applyBoardParts(s) {
     const btn = s?.boardButtons, bg = s?.boardBg, anim = s?.buttonAnim;
@@ -244,10 +279,14 @@
     const key = [btn?.url, bg?.url, anim?.id, anim?.meta?.effect, anim?.url, grid, gap].join("|");
     if (key === partsKey) return; partsKey = key;
 
-    /* grid shape + spacing (buttons touch at gap 0) */
+    /* grid shape + spacing (buttons touch at gap 0, and are square unless it's 8x4) */
     GRIDS.forEach(g => boardEl.classList.remove("grid-" + g));
     boardEl.classList.add("grid-" + grid);
+    const cfg = GRID_CFG[grid] ?? GRID_CFG.buttons;
     boardEl.style.setProperty("--gap", gap + "px");
+    boardEl.style.setProperty("--cols", cfg.cols);
+    boardEl.style.setProperty("--rows", cfg.rows);
+    boardEl.style.setProperty("--tile", cfg.stretch ? "auto" : tileFor(grid, gap) + "px");
     boardEl.classList.toggle("has-btnstyle", !!btn?.url);
 
     /* background: still image or looping video behind the grid */
