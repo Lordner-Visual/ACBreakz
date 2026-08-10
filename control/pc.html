@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>ACBreakz · PC Control</title>
+<!--
+  Per-PC control dashboard. Opened by that PC's Stream Deck "CONTROL" key as
+  control/pc.html?pc=N. No login: it carries an operator key that can ONLY change
+  what THIS PC is showing, plus save a composed banner. It cannot upload files,
+  generate AI, delete anything, or touch another PC.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../overlay/config.js"></script>
+<script src="op.js"></script>
+<style>
+  :root{--navy-deep:#071527;--navy:#0B1E33;--steel:#274A66;--teal:#0D3540;
+    --copper:#B87333;--gold:#D9A441;--bone:#EFE9DC;--volt:#35A7FF;--danger:#E5484D;--ok:#3FB68B}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:radial-gradient(140% 100% at 50% 0%,#0F2A44,var(--navy-deep) 70%);
+    color:var(--bone);min-height:100vh}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;
+    border-bottom:2px solid var(--copper);background:rgba(7,21,39,.7);position:sticky;top:0;z-index:10}
+  header h1{font-size:19px;letter-spacing:2px;text-transform:uppercase}
+  header h1 b{color:var(--gold)}
+  #pcTag{background:var(--volt);color:#04101B;font-weight:800;border-radius:8px;padding:4px 10px;font-size:14px}
+  #status{margin-left:auto;font-size:13px;color:#9FB6C9}
+  #status b{color:var(--ok)}
+  nav{display:flex;gap:6px;padding:10px 18px;flex-wrap:wrap}
+  nav button{background:#0E2436;border:1px solid #1E3A52;color:#B9CBDB;padding:10px 16px;
+    border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+  nav button.on{background:linear-gradient(180deg,#1A4D74,#123650);border-color:var(--volt);color:#fff}
+  main{padding:12px 18px 60px;max-width:1150px}
+  section{display:none}section.on{display:block}
+  h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8FA8BC;margin:18px 0 10px}
+  h2:first-child{margin-top:6px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{background:linear-gradient(180deg,#1A4D74,#123650);border:1px solid var(--volt);
+    color:#fff;padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
+  .btn.ghost{background:#0E2436;border-color:#1E3A52;color:#B9CBDB}
+  .btn.warn{background:linear-gradient(180deg,#7A2C2F,#5A1E20);border-color:var(--danger)}
+  .btn.gold{background:linear-gradient(180deg,#8A6522,#6B4C15);border-color:var(--gold)}
+  input[type=text],input[type=range]{background:#0A1C2C;border:1px solid #1E3A52;
+    color:var(--bone);border-radius:10px;padding:11px 12px;font-size:14px;width:100%}
+  #ctlBoard{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
+  @media(max-width:700px){#ctlBoard{grid-template-columns:repeat(4,1fr)}}
+  .team{position:relative;border-radius:12px;border:2px solid var(--copper);cursor:pointer;
+    background:linear-gradient(160deg,#12444F,var(--teal) 45%,#082228);
+    padding:8px 6px 6px;text-align:center;user-select:none;transition:filter .3s}
+  .team img{width:46px;height:46px;object-fit:contain}
+  .team span{display:block;font-size:11px;font-weight:700;color:#CFE0EE}
+  .team.on{filter:brightness(.4) saturate(.55)}
+  .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
+    background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
+  .team.hl{border-color:var(--volt);box-shadow:0 0 12px rgba(53,167,255,.55)}
+  .team.hl::after{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:8px}
+  .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
+  .asset.active{border-color:var(--gold);box-shadow:0 0 10px rgba(217,164,65,.4)}
+  .asset .thumb{height:78px;background:#04101B;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;font-size:24px}
+  .asset .thumb img,.asset .thumb video{width:100%;height:100%;object-fit:cover}
+  .asset .meta{padding:8px;font-size:12px}
+  .asset .meta .name{font-weight:700;color:#DCE8F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .asset .btn{padding:6px 10px;font-size:12px;margin-top:6px}
+  .tag{font-size:10px;color:#7E97AB}
+  .banner-thumb{height:34px !important}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
+    border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
+</style>
+</head>
+<body>
+<header>
+  <h1>AC <b>BREAKZ</b></h1><span id="pcTag">PC 1</span>
+  <div id="status">connecting…</div>
+</header>
+<nav>
+  <button data-tab="board" class="on">Team Board</button>
+  <button data-tab="sfx">SoundFX</button>
+  <button data-tab="banners">Banners</button>
+  <button data-tab="bgs">Backgrounds</button>
+  <button data-tab="style">Board Style</button>
+</nav>
+<main>
+
+<section id="tab-board" class="on">
+  <div class="row">
+    <button class="btn ghost" id="hlModeBtn">Tap mode: ELIMINATE</button>
+    <button class="btn ghost" id="hlClearBtn">Clear highlights</button>
+    <button class="btn warn" id="resetBtn">Reset board</button>
+  </div>
+  <div class="row" style="margin-top:6px"><span class="tag" id="hlHint"></span></div>
+  <div id="ctlBoard"></div>
+</section>
+
+<section id="tab-sfx">
+  <h2>Sound effects — preview, or play one on this stream</h2>
+  <div class="grid" id="sfxGrid"></div>
+</section>
+
+<section id="tab-banners">
+  <h2>Banner composer — type it, save it, add it to this PC's rotation</h2>
+  <canvas id="compCanvas" width="1080" height="97"
+    style="width:100%;max-width:1080px;border:1px solid #1E3A52;border-radius:8px;background:#06111b"></canvas>
+  <div class="row" style="margin-top:8px">
+    <input type="text" id="compText" placeholder="Type the banner text" style="flex:1;min-width:240px">
+    <button class="btn gold" id="compSave">Save to library</button>
+    <span class="tag" id="compDur">7s on stream</span>
+  </div>
+  <h2>Composer background</h2>
+  <div class="row" id="compBGs" style="gap:6px"></div>
+  <h2>Rotation on this PC</h2>
+  <div class="grid" id="bannerGrid"></div>
+</section>
+
+<section id="tab-bgs">
+  <h2>Streamer background — tap to set live on this PC</h2>
+  <div class="grid" id="bgGrid"></div>
+</section>
+
+<section id="tab-style">
+  <h2>Grid style</h2>
+  <div class="grid" id="gridStyleGrid"></div>
+  <div class="row" style="margin-top:10px;max-width:520px">
+    <span class="tag" style="width:110px">Button spacing</span>
+    <input type="range" id="gapRange" min="0" max="20" step="1" value="0" style="flex:1">
+    <span class="tag" id="gapVal" style="width:44px">0px</span>
+  </div>
+  <h2>Button style</h2><div class="grid" id="btnStyleGrid"></div>
+  <h2>Board background</h2><div class="grid" id="bgStyleGrid"></div>
+  <h2>Button animation</h2><div class="grid" id="btnAnimGrid"></div>
+</section>
+
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const C = window.ACBZ, $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+  const esc = (s) => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+  const toast = (m) => { const t=$("#toast"); t.textContent=m; t.style.display="block";
+    clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",2600); };
+
+  const PC = String(Math.min(5, Math.max(1, parseInt(new URLSearchParams(location.search).get("pc"), 10) || 1)));
+  $("#pcTag").textContent = "PC " + PC;
+  document.title = `ACBreakz · PC ${PC}`;
+
+  const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+  const OP = window.ACBZ_OP;                       // operator key, scoped to this PC
+
+  $$("nav button").forEach(b => b.onclick = () => {
+    $$("nav button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+    $$("main section").forEach(s=>s.classList.remove("on"));
+    $("#tab-"+b.dataset.tab).classList.add("on");
+  });
+
+  let state = { board:{picked:{},highlighted:{}}, banners:{rotation:[]} };
+  let assets = [];
+
+  async function call(body){
+    const { data, error } = await sb.functions.invoke("panel", { body: { op: OP, pc: PC, ...body } });
+    if (error) return { error };
+    if (data?.error) return { error: { message: data.error } };
+    return { data };
+  }
+  async function loadState(){
+    const {data} = await sb.from("stream_state").select("data").eq("id", +PC).single();
+    if (data?.data) state = data.data;
+    state.board ??= {}; state.board.picked ??= {}; state.board.highlighted ??= {};
+    state.banners ??= {rotation:[]}; state.boardGrid ??= "buttons"; state.boardGap ??= 0;
+  }
+  async function push(){
+    state.updatedAt = Date.now();
+    const {error} = await call({ action:"state", data: state });
+    if (error) toast("Save failed: " + error.message);
+    render();
+  }
+  async function loadAssets(){
+    const {data} = await sb.from("assets").select("*").order("created_at",{ascending:false});
+    assets = (data || []).filter(a => !a.meta?.deleted);
+    render();
+  }
+
+  /* ---------- board ---------- */
+  let hlMode = false;
+  $("#hlModeBtn").onclick = () => { hlMode = !hlMode;
+    $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
+    $("#hlModeBtn").classList.toggle("gold", hlMode); render(); };
+  $("#hlClearBtn").onclick = () => { state.board.highlighted = {}; push(); };
+  $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
+    state.board.picked = {}; fire("board_reset",{}); push(); };
+
+  async function fire(type, payload){
+    /* events are per-PC too; the deck endpoint owns event writes, so mirror it in state */
+    await call({ action:"event", type, payload });
+  }
+
+  C.ORDER.forEach(abbr => {
+    const t = C.TEAMS[abbr];
+    const d = document.createElement("div");
+    d.className = "team"; d.dataset.abbr = abbr;
+    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
+    d.onclick = () => {
+      if (hlMode) {
+        if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
+        else { if (state.board.picked[abbr]) { delete state.board.picked[abbr];
+                 fire("team_restore",{team:abbr}); }
+               state.board.highlighted[abbr] = true; }
+        return push();
+      }
+      if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fire("team_restore",{team:abbr}); }
+      else {
+        state.board.picked[abbr] = true;
+        delete state.board.highlighted[abbr];
+        const st = state.animStyle;
+        const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
+        const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
+        if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url))
+          fire("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
+            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl});
+        else {
+          const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
+          fire("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl});
+        }
+      }
+      push();
+    };
+    $("#ctlBoard").appendChild(d);
+  });
+
+  /* ---------- banner composer (same renderer as the master panel) ---------- */
+  const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
+  const cimg = (url) => { if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin="anonymous";
+    i.src = url; i.onload = draw; comp.imgs[url] = i; } return comp.imgs[url]; };
+  function draw(){
+    const ctx = comp.canvas.getContext("2d"), W=1080, H=97;
+    ctx.clearRect(0,0,W,H);
+    if (comp.bgUrl && cimg(comp.bgUrl).naturalWidth) {
+      const im = comp.imgs[comp.bgUrl], s = Math.max(W/im.naturalWidth, H/im.naturalHeight);
+      ctx.drawImage(im, (W-im.naturalWidth*s)/2, (H-im.naturalHeight*s)/2, im.naturalWidth*s, im.naturalHeight*s);
+    } else {
+      const g = ctx.createLinearGradient(0,0,W,0);
+      g.addColorStop(0,"#071527"); g.addColorStop(.5,"#274A66"); g.addColorStop(1,"#071527");
+      ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    }
+    const sc = ctx.createLinearGradient(0,0,0,H);
+    sc.addColorStop(0,"rgba(4,10,18,.36)"); sc.addColorStop(1,"rgba(4,10,18,.62)");
+    ctx.fillStyle=sc; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#B87333"; ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3);
+    const text = ($("#compText").value.trim() || "YOUR BANNER TEXT").toUpperCase();
+    let size = 44; ctx.textAlign="center"; ctx.textBaseline="middle";
+    do { ctx.font = `700 ${size}px "Arial Black","Segoe UI",sans-serif`; size -= 2; }
+    while (ctx.measureText(text).width > W-80 && size > 16);
+    ctx.save(); ctx.shadowColor="rgba(53,167,255,.65)"; ctx.shadowBlur=18;
+    ctx.fillStyle="#EFE9DC"; ctx.fillText(text, W/2, H/2+2); ctx.restore();
+    ctx.save(); ctx.shadowColor="#000"; ctx.shadowOffsetY=3;
+    ctx.fillStyle="#EFE9DC"; ctx.fillText(text, W/2, H/2+2); ctx.restore();
+    const t = $("#compText").value.trim();
+    $("#compDur").textContent = C.bannerSeconds({meta:{type:"text",text:t||"x"}}) + "s on stream";
+  }
+  $("#compText").oninput = draw;
+  $("#compSave").onclick = () => {
+    const text = $("#compText").value.trim(); if (!text) return toast("Type the banner text first");
+    comp.canvas.toBlob(async (blob) => {
+      const path = `banners/composed-${Date.now()}.png`;
+      const {data:signed, error:sErr} = await call({ action:"sign_upload", path });
+      if (sErr) return toast("Save failed: " + sErr.message);
+      const {error} = await sb.storage.from("media")
+        .uploadToSignedUrl(signed.path, signed.token, blob, { contentType:"image/png" });
+      if (error) return toast("Upload failed: " + error.message);
+      const url = sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl;
+      const {error:aErr} = await call({ action:"asset",
+        asset:{ kind:"banner", name:text.slice(0,40), url, meta:{type:"text", text} } });
+      if (aErr) return toast("Save failed: " + aErr.message);
+      await loadAssets(); toast("Saved — add it to the rotation below");
+    }, "image/png");
+  };
+
+  /* ---------- render ---------- */
+  const thumb = (a) => {
+    const u = a.meta?.poster ?? a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+    if (a.meta?.type==="text" && !a.url) return `<div style="font-size:11px;padding:6px">${esc(a.meta.text)}</div>`;
+    if (!u) return "";
+    return /\.(webm|mp4)(\?|$)/i.test(u)
+      ? `<video src="${u}#t=1.2" muted playsinline preload="metadata"></video>`
+      : `<img src="${u}" loading="lazy">`;
+  };
+  const GRIDS = [["buttons","Buttons"],["checker","Checker board"],["checkerbare","Checker · no edge"],
+    ["honeycomb","Honeycomb"],["logos","NFL logos only"],["rect84","8 × 4 rectangles"],["slant","Slanted"]];
+
+  function render(){
+    const hl = state.board.highlighted || {};
+    $$("#ctlBoard .team").forEach(d => {
+      d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]);
+      d.classList.toggle("hl", !!hl[d.dataset.abbr] && !state.board.picked[d.dataset.abbr]);
+    });
+    const n = Object.keys(hl).filter(a => !state.board.picked[a]).length;
+    $("#hlHint").textContent = hlMode
+      ? "Highlight mode — tap teams to star them. Button animations play only on starred teams."
+      : (n ? `${n} team${n===1?"":"s"} highlighted.` : "Tap a team to eliminate it; tap again to bring it back.");
+
+    $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`
+      <div class="asset"><div class="thumb">🔊</div><div class="meta"><div class="name">${esc(a.name)}</div>
+        <div class="row"><button class="btn" data-prev="${a.url}">▶ Preview</button>
+        <button class="btn ghost" data-play="${a.url}">Play on stream</button></div></div></div>`).join("");
+    $$("#sfxGrid [data-prev]").forEach(b => b.onclick = () => { try{ new Audio(b.dataset.prev).play(); }catch(e){} });
+    $$("#sfxGrid [data-play]").forEach(b => b.onclick = () => fire("play_sfx",{url:b.dataset.play}));
+
+    const rot = new Set((state.banners.rotation||[]).map(x=>x.id));
+    $("#bannerGrid").innerHTML = assets.filter(a=>a.kind==="banner" && !a.meta?.template).map(a=>`
+      <div class="asset ${rot.has(a.id)?"active":""}"><div class="thumb banner-thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <button class="btn ${rot.has(a.id)?"warn":""}" data-rot="${a.id}">${rot.has(a.id)?"Remove":"Add"}</button>
+        </div></div>`).join("");
+    $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.rot); const list = state.banners.rotation || [];
+      state.banners.rotation = rot.has(a.id) ? list.filter(x=>x.id!==a.id) : [...list, a];
+      push();
+    });
+
+    $("#bgGrid").innerHTML = assets.filter(a=>a.kind==="background").map(a=>`
+      <div class="asset ${state.background?.url===a.url?"active":""}"><div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <button class="btn" data-bg="${a.id}">Set live</button></div></div>`).join("");
+    $$("#bgGrid [data-bg]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.bg);
+      state.background = { url:a.url, name:a.name, crop:a.meta?.crop ?? null }; push();
+    });
+
+    $("#gridStyleGrid").innerHTML = GRIDS.map(([id,label]) => {
+      const on = (state.boardGrid ?? "buttons") === id;
+      return `<div class="asset ${on?"active":""}"><div class="thumb">▦</div>
+        <div class="meta"><div class="name">${label}</div>
+        <button class="btn ${on?"ghost":""}" data-grid="${id}">${on?"Applied":"Apply"}</button></div></div>`;
+    }).join("");
+    $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => { state.boardGrid = b.dataset.grid; push(); });
+    $("#gapRange").value = state.boardGap ?? 0; $("#gapVal").textContent = (state.boardGap ?? 0) + "px";
+
+    const part = (domain, sel, key) => {
+      $(sel).innerHTML = assets.filter(a=>a.kind==="style" && a.meta?.domain===domain).map(s => {
+        const def = s.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
+        const on = state[key] ? state[key].id === s.id : def;
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "🎛"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+          <button class="btn ${on?"ghost":""}" data-part="${key}:${s.id}">${on?"Applied":"Apply"}</button>
+          </div></div>`; }).join("");
+    };
+    part("board_button","#btnStyleGrid","boardButtons");
+    part("board_bg","#bgStyleGrid","boardBg");
+    part("button_anim","#btnAnimGrid","buttonAnim");
+    $$("[data-part]").forEach(b => b.onclick = () => {
+      const [k,id] = b.dataset.part.split(":");
+      const s = assets.find(x=>x.id===id);
+      state[k] = (s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none")) ? null : s;
+      push();
+    });
+
+    /* composer backgrounds: art only, never finished text banners */
+    const arts = assets.filter(a => a.url &&
+      ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background"));
+    $("#compBGs").innerHTML =
+      `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:118px;cursor:pointer">
+        <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
+        <div class="meta"><div class="name">Brand gradient</div></div></div>` +
+      arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" data-cbg="${a.url}"
+        style="width:118px;cursor:pointer"><div class="thumb banner-thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div></div></div>`).join("");
+    $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => { comp.bgUrl = d.dataset.cbg || null; render(); draw(); });
+    draw();
+  }
+  $("#gapRange").oninput = () => $("#gapVal").textContent = $("#gapRange").value + "px";
+  $("#gapRange").onchange = () => { state.boardGap = +$("#gapRange").value; push(); };
+
+  /* ---------- boot + live sync ---------- */
+  (async () => {
+    await loadState(); await loadAssets();
+    $("#status").innerHTML = "<b>connected</b>";
+    sb.channel("pc-"+PC)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
+          p => { if (p.new.id === +PC) { state = p.new.data; render(); } })
+      .subscribe();
+  })();
+
+  /* same self-update trick as the overlay, so operators never see a stale page */
+  (function selfUpdate(){
+    const hash = (s)=>{let h=0;for(let i=0;i<s.length;i++)h=(Math.imul(31,h)+s.charCodeAt(i))|0;return h;};
+    let base = null;
+    const tick = async () => { try {
+      const r = await fetch(`pc.html?cb=${Date.now()}`, { cache:"no-store" });
+      const h = hash(await r.text());
+      if (base === null) base = h; else if (h !== base) location.reload();
+    } catch(e){} };
+    tick(); setInterval(tick, 60000);
+  })();
+})();
+</script>
+</body>
+</html>

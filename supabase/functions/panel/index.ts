@@ -50,7 +50,12 @@ Deno.serve(async (req) => {
   if (isOperator) {
     const n = parseInt(String(body.pc), 10);
     if (!(n >= 1 && n <= 5)) return json({ error: "operator calls must name one PC" }, 400);
-    if (body.action !== "state") return json({ error: "operator scope is limited to state" }, 403);
+    const allowed =
+      body.action === "state" ||
+      /* the banner composer: save a composed strip and register it, nothing else */
+      (body.action === "sign_upload" && /^banners\/composed-[\w.-]+$/.test(String(body.path))) ||
+      (body.action === "asset" && body.asset?.kind === "banner" && !body.asset?.meta?.template);
+    if (!allowed) return json({ error: "operator scope: state and banner composer only" }, 403);
   } else if (!await authorized(body)) {
     return json({ error: "signed out" }, 401);
   }
