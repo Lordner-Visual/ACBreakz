@@ -62,6 +62,31 @@ Deno.serve(async (req) => {
     return json({ error: "signed out" }, 401);
   }
 
+  /* Anything that disappears must also stop being SELECTED, on every PC — otherwise a
+     deleted banner keeps its slot in a rotation and renders as a blank frame. */
+  async function deselectEverywhere(id: string, url?: string | null) {
+    const { data: rows } = await sb.from("stream_state").select("id,data");
+    for (const row of rows ?? []) {
+      const d = row.data ?? {}; let touched = false;
+      if (Array.isArray(d.banners?.rotation)) {
+        const before = d.banners.rotation.length;
+        d.banners.rotation = d.banners.rotation.filter(
+          (b: { id?: string; url?: string }) => b?.id !== id && (!url || b?.url !== url));
+        touched ||= d.banners.rotation.length !== before;
+      }
+      if (d.background && ((d.background.id && d.background.id === id) ||
+          (url && d.background.url === url))) { d.background = null; touched = true; }
+      for (const k of ["animStyle", "boardButtons", "boardBg", "buttonAnim"])
+        if (d[k]?.id === id) { d[k] = null; touched = true; }
+      if (Array.isArray(d.buttonAnims)) {
+        const before = d.buttonAnims.length;
+        d.buttonAnims = d.buttonAnims.filter((a: { id?: string }) => a?.id !== id);
+        touched ||= d.buttonAnims.length !== before;
+      }
+      if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
+    }
+  }
+
   const pcList = (v: unknown) => {
     const n = parseInt(String(v), 10);
     return n >= 1 && n <= 5 ? [n] : [1, 2, 3, 4, 5];   // 'all' or missing -> every PC
@@ -106,6 +131,8 @@ Deno.serve(async (req) => {
         }
         if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
       }
+      /* hiding it from the rotation list must also unselect it on every PC */
+      if (body.meta?.hideRotation) await deselectEverywhere(body.id, cur.url);
       return json({ ok: true, asset: upd });
     }
     case "asset": {
@@ -126,21 +153,7 @@ Deno.serve(async (req) => {
       const meta = { ...a.meta, deleted: true, deletedAt: new Date().toISOString() };
       const { error: uErr } = await sb.from("assets").update({ meta }).eq("id", body.id);
       if (uErr) return json({ error: uErr.message }, 500);
-      /* scrub references from every PC's state */
-      const { data: rows } = await sb.from("stream_state").select("id,data");
-      for (const row of rows ?? []) {
-        let touched = false;
-        const d = row.data ?? {};
-        if (Array.isArray(d.banners?.rotation)) {
-          const before = d.banners.rotation.length;
-          d.banners.rotation = d.banners.rotation.filter((b: { id?: string }) => b?.id !== body.id);
-          touched ||= d.banners.rotation.length !== before;
-        }
-        if (d.background?.url && d.background.url === a.url) { d.background = null; touched = true; }
-        for (const k of ["animStyle", "boardButtons", "boardBg", "buttonAnim"])
-          if (d[k]?.id === body.id) { d[k] = null; touched = true; }
-        if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
-      }
+      await deselectEverywhere(body.id, a.url);
       return json({ ok: true });
     }
     case "restore_asset": {
@@ -167,7 +180,9 @@ Deno.serve(async (req) => {
         .filter(Boolean).map((p: string) => decodeURIComponent(p));
       if (paths.length) await sb.storage.from("media").remove(paths);
       const { error } = await sb.from("assets").delete().eq("id", body.id);
-      return error ? json({ error: error.message }, 500) : json({ ok: true });
+      if (error) return json({ error: error.message }, 500);
+      await deselectEverywhere(body.id, a.url);   // a purged asset must not stay selected
+      return json({ ok: true });
     }
     case "empty_trash": {
       const { data: rows } = await sb.from("assets").select("*").eq("meta->>deleted", "true");
@@ -179,6 +194,7 @@ Deno.serve(async (req) => {
             if (p) paths.push(decodeURIComponent(p));
           }
       if (paths.length) await sb.storage.from("media").remove(paths);
+      for (const a of rows ?? []) await deselectEverywhere(a.id, a.url);
       const { error } = await sb.from("assets").delete().eq("meta->>deleted", "true");
       return error ? json({ error: error.message }, 500)
                    : json({ ok: true, purged: (rows ?? []).length });

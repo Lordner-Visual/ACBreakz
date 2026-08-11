@@ -438,6 +438,13 @@
       } else {
         b.innerHTML = `<img src="${a.url}" style="${cropCss(a.meta)}">`;
       }
+      /* a deleted file would otherwise sit here as a blank frame — skip straight on */
+      const media = b.querySelector("img,video");
+      if (media) media.onerror = () => {
+        console.warn("[acbz] banner missing, skipping:", a.name);
+        b.remove();
+        if (this.list.length > 1) this.next();
+      };
       banEl.appendChild(b);
       requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add("live")));
       while (banEl.children.length > 2) banEl.firstChild.remove();
