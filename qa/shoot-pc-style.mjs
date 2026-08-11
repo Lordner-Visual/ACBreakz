@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 import { readFileSync } from "fs";
 
 const HOSTED = "https://lordner-visual.github.io/ACBreakz";
-const PC = 2;
+const PC = Number(process.argv[2]) || 5;   // pick an idle PC; state is restored after
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
   .filter(l => l.includes("=") && !l.startsWith("#"))
   .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
@@ -92,6 +92,7 @@ const clickAnim = (re) => op.evaluate((s) => {
   c.querySelector("[data-anim]").click();
 }, re.source);
 
+await clickAnim(/No Button Animation/); await op.waitForTimeout(1500);   // clear whatever was selected
 await clickAnim(/Edge Glow/); await op.waitForTimeout(1500);
 await clickAnim(/Glitch Pulse/); await op.waitForTimeout(1500);
 r = await until(boardCls, (c) => /anim-glow/.test(c) && /anim-glitch/.test(c));
