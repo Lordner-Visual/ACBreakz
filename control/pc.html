@@ -66,6 +66,7 @@
   .asset .btn{padding:6px 10px;font-size:12px;margin-top:6px}
   .tag{font-size:10px;color:#7E97AB}
   .gone{font-size:11px;color:var(--danger);padding:6px;text-align:center}
+  .thumb .shape{width:34px;height:34px;background:linear-gradient(160deg,#12444F,#0D3540)}
   .banner-thumb{height:34px !important}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
     border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
@@ -327,6 +328,20 @@
   };
   const GRIDS = [["buttons","Buttons"],["checker","Checker board"],["checkerbare","Checker · no edge"],
     ["honeycomb","Honeycomb"],["logos","NFL logos only"],["rect84","8 × 4 rectangles"],["slant","Slanted"]];
+  /* same shape previews as the master panel */
+  const GRID_PREVIEW = {
+    buttons:"border-radius:5px;border:2px solid var(--copper)",
+    checker:"border:1px solid var(--copper)",
+    checkerbare:"border:1px solid rgba(255,255,255,.12)",
+    honeycomb:"clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);background:var(--copper)",
+    logos:"border:none;background:" +
+      "radial-gradient(circle 5px at 28% 30%, var(--gold) 96%, transparent)," +
+      "radial-gradient(circle 5px at 72% 30%, var(--volt) 96%, transparent)," +
+      "radial-gradient(circle 5px at 28% 72%, var(--bone) 96%, transparent)," +
+      "radial-gradient(circle 5px at 72% 72%, var(--copper) 96%, transparent)",
+    rect84:"border-radius:3px;border:2px solid var(--copper)",
+    slant:"clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%);background:var(--copper)",
+  };
 
   function render(){
     const hl = state.board.highlighted || {};
@@ -395,7 +410,7 @@
 
     $("#gridStyleGrid").innerHTML = GRIDS.map(([id,label]) => {
       const on = (state.boardGrid ?? "buttons") === id;
-      return `<div class="asset ${on?"active":""}"><div class="thumb">▦</div>
+      return `<div class="asset ${on?"active":""}"><div class="thumb"><div class="shape" style="${GRID_PREVIEW[id]}"></div></div>
         <div class="meta"><div class="name">${label}</div>
         <button class="btn ${on?"ghost":""}" data-grid="${id}">${on?"Applied":"Apply"}</button></div></div>`;
     }).join("");
