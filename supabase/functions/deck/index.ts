@@ -27,7 +27,10 @@ async function getState(pc: number) {
   const { data } = await sb.from("stream_state").select("data").eq("id", pc).single();
   return data?.data ?? {};
 }
-async function setState(pc: number, state: unknown) {
+async function setState(pc: number, state: Record<string, unknown>) {
+  /* bump the in-data clock too: the panels use it to tell real changes from their own
+     echo — without it a deck write looks stale and gets overwritten by the next push */
+  state.updatedAt = Date.now();
   await sb.from("stream_state").update({ data: state, updated_at: new Date() }).eq("id", pc);
 }
 async function fire(type: string, payload: Record<string, unknown>) {
