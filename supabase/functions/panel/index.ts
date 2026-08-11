@@ -92,6 +92,30 @@ Deno.serve(async (req) => {
     return n >= 1 && n <= 5 ? [n] : [1, 2, 3, 4, 5];   // 'all' or missing -> every PC
   };
 
+  /* "File into any section" makes a NEW ROW POINTING AT THE SAME FILE, so a storage
+     object can have several owners. Purging must only remove files that no surviving
+     row still references — v9 lost two AI clips this way (the filed copy went blank
+     when the original was purged). */
+  const storagePath = (u: unknown): string | null => {
+    if (typeof u !== "string") return null;
+    const p = u.split("/storage/v1/object/public/media/")[1];
+    return p ? decodeURIComponent(p) : null;
+  };
+  type AssetLike = { id?: string; url?: string | null; meta?: Record<string, unknown> | null };
+  const fileRefs = (a: AssetLike): string[] =>
+    [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url, a.meta?.poster, a.meta?.sfxUrl]
+      .map(storagePath).filter((p): p is string => !!p);
+  async function unreferencedFiles(purging: AssetLike[]): Promise<string[]> {
+    const purgingIds = new Set(purging.map((a) => a.id));
+    const { data: rows } = await sb.from("assets").select("id,url,meta");
+    const inUse = new Set<string>();
+    for (const r of rows ?? []) if (!purgingIds.has(r.id)) fileRefs(r).forEach((p) => inUse.add(p));
+    const out = new Set<string>();
+    for (const a of purging)
+      for (const p of fileRefs(a)) if (!inUse.has(p)) out.add(p);
+    return [...out];
+  }
+
   switch (body.action) {
     case "state": {
       if (!body.data || typeof body.data !== "object") return json({ error: "data required" }, 400);
@@ -173,11 +197,8 @@ Deno.serve(async (req) => {
       const { data: a, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
       if (gErr || !a) return json({ error: gErr?.message ?? "asset not found" }, 404);
       if (a.meta?.builtin) return json({ error: "built-in styles cannot be deleted" }, 400);
-      /* now really remove the files this asset owns */
-      const paths = [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url, a.meta?.poster]
-        .filter((u: unknown): u is string => typeof u === "string")
-        .map((u: string) => u.split("/storage/v1/object/public/media/")[1])
-        .filter(Boolean).map((p: string) => decodeURIComponent(p));
+      /* remove only the files no OTHER row still points at */
+      const paths = await unreferencedFiles([a]);
       if (paths.length) await sb.storage.from("media").remove(paths);
       const { error } = await sb.from("assets").delete().eq("id", body.id);
       if (error) return json({ error: error.message }, 500);
@@ -186,13 +207,7 @@ Deno.serve(async (req) => {
     }
     case "empty_trash": {
       const { data: rows } = await sb.from("assets").select("*").eq("meta->>deleted", "true");
-      const paths: string[] = [];
-      for (const a of rows ?? [])
-        for (const u of [a.url, a.meta?.base_url, a.meta?.button_url, a.meta?.bg_url, a.meta?.poster])
-          if (typeof u === "string") {
-            const p = u.split("/storage/v1/object/public/media/")[1];
-            if (p) paths.push(decodeURIComponent(p));
-          }
+      const paths = await unreferencedFiles(rows ?? []);
       if (paths.length) await sb.storage.from("media").remove(paths);
       for (const a of rows ?? []) await deselectEverywhere(a.id, a.url);
       const { error } = await sb.from("assets").delete().eq("meta->>deleted", "true");
