@@ -61,7 +61,8 @@
   .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
     background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
   .team.hl{border-color:var(--volt);box-shadow:0 0 12px rgba(53,167,255,.55)}
-  .team.hl::after{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
+  /* ::before so the star can coexist with the OUT badge on an eliminated-but-highlighted team */
+  .team.hl::before{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
   .gridcard .shape{width:34px;height:34px;background:linear-gradient(160deg,#12444F,#0D3540)}
   /* asset grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:8px}
@@ -720,20 +721,17 @@
     d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
     d.onclick = () => {
       if (hlMode) {                                   // highlight mode: scope button animations
+        /* highlight is independent of elimination: starring an eliminated team keeps it
+           OFF the board (only the elimination tap brings it back) but remembers the star,
+           so its animation reappears the moment the team is restored */
         state.board.highlighted ??= {};
         if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
-        else {
-          /* starring a team that's off the board brings it back too */
-          if (state.board.picked[abbr]) { delete state.board.picked[abbr];
-            fireEvent("team_restore", { team: abbr }); }
-          state.board.highlighted[abbr] = true;
-        }
+        else state.board.highlighted[abbr] = true;
         return pushState();
       }
       if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
       else {
-        state.board.picked[abbr] = true;
-        if (state.board.highlighted) delete state.board.highlighted[abbr];  // eliminated => unhighlighted
+        state.board.picked[abbr] = true;              // the star (if any) survives elimination
         const st = state.animStyle;
         /* linked sound wins; explicit null = No SoundFX; otherwise the default sfx */
         const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
@@ -1163,9 +1161,10 @@
     const hlMap = state.board.highlighted || {};
     $$("#ctlBoard .team").forEach(d => {
       d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]);
-      d.classList.toggle("hl", !!hlMap[d.dataset.abbr] && !state.board.picked[d.dataset.abbr]);
+      /* the star shows even on eliminated teams — the highlight is remembered */
+      d.classList.toggle("hl", !!hlMap[d.dataset.abbr]);
     });
-    const hlCount = Object.keys(hlMap).filter(a => !state.board.picked[a]).length;
+    const hlCount = Object.keys(hlMap).length;
     $("#hlHint").textContent = hlMode
       ? "Highlight mode — tap teams to star them. Button animations play ONLY on starred teams."
       : (hlCount

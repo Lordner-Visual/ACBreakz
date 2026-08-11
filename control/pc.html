@@ -54,7 +54,8 @@
   .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
     background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
   .team.hl{border-color:var(--volt);box-shadow:0 0 12px rgba(53,167,255,.55)}
-  .team.hl::after{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
+  /* ::before so the star can coexist with the OUT badge on an eliminated-but-highlighted team */
+  .team.hl::before{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:8px}
   .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
   .asset.active{border-color:var(--gold);box-shadow:0 0 10px rgba(217,164,65,.4)}
@@ -246,16 +247,15 @@
     d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
     d.onclick = () => {
       if (hlMode) {
+        /* highlight is independent of elimination: starring an eliminated team keeps it
+           OFF the board (only the elimination tap brings it back) but remembers the star */
         if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
-        else { if (state.board.picked[abbr]) { delete state.board.picked[abbr];
-                 fire("team_restore",{team:abbr}); }
-               state.board.highlighted[abbr] = true; }
+        else state.board.highlighted[abbr] = true;
         return push();
       }
       if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fire("team_restore",{team:abbr}); }
       else {
-        state.board.picked[abbr] = true;
-        delete state.board.highlighted[abbr];
+        state.board.picked[abbr] = true;              // the star (if any) survives elimination
         const st = state.animStyle;
         const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
         const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
@@ -365,9 +365,10 @@
     const hl = state.board.highlighted || {};
     $$("#ctlBoard .team").forEach(d => {
       d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]);
-      d.classList.toggle("hl", !!hl[d.dataset.abbr] && !state.board.picked[d.dataset.abbr]);
+      /* the star shows even on eliminated teams — the highlight is remembered */
+      d.classList.toggle("hl", !!hl[d.dataset.abbr]);
     });
-    const n = Object.keys(hl).filter(a => !state.board.picked[a]).length;
+    const n = Object.keys(hl).length;
     $("#hlHint").textContent = hlMode
       ? "Highlight mode — tap teams to star them. Button animations play only on starred teams."
       : (n ? `${n} team${n===1?"":"s"} highlighted.` : "Tap a team to eliminate it; tap again to bring it back.");

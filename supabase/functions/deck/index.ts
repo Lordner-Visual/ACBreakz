@@ -74,7 +74,8 @@ Deno.serve(async (req) => {
         } else {                                           // out it goes, with the FX
           removed = true;
           state.board.picked[team] = true;
-          if (state.board.highlighted) delete state.board.highlighted[team];
+          /* a highlighted team KEEPS its star while eliminated (the overlay hides the
+             animation via picked); it lights back up when the team is restored */
           const style = state.animStyle;
           const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
           const payload: Record<string, unknown> = { team, pc, sfxUrl };
@@ -100,8 +101,7 @@ Deno.serve(async (req) => {
       for (const pc of pcs) {
         const state = await getState(pc);
         state.board ??= { picked: {} }; state.board.picked ??= {};
-        state.board.picked[team] = true;
-        if (state.board.highlighted) delete state.board.highlighted[team]; // eliminated => unhighlighted
+        state.board.picked[team] = true;               // the star (if any) survives elimination
         const style = state.animStyle;
         /* linked SFX wins (explicit null = "No SoundFX"); fall back to the default sound */
         const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
@@ -174,14 +174,11 @@ Deno.serve(async (req) => {
         const on = action === "highlight" ? true
           : action === "unhighlight" ? false
           : !state.board.highlighted[team];
-        if (on) {
-          /* highlighting a team that's off the board brings it back, then stars it */
-          if (state.board.picked?.[team]) {
-            delete state.board.picked[team];
-            await fire("team_restore", { team, pc });
-          }
-          state.board.highlighted[team] = true;
-        } else delete state.board.highlighted[team];
+        /* highlight is independent of elimination: it never restores a picked team
+           (only team_toggle/team_restore do), it just remembers the star — hidden
+           while the team is out, showing again the moment it returns */
+        if (on) state.board.highlighted[team] = true;
+        else delete state.board.highlighted[team];
         await setState(pc, state);
       }
       return json({ ok: true, team, pcs });
