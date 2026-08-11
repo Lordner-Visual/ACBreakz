@@ -76,6 +76,24 @@
   .asset .btn{padding:6px 10px;font-size:12px}
   .tag{font-size:10px;color:#7E97AB}
   .gone{font-size:11px;color:var(--danger);padding:6px;text-align:center}
+  /* mini board button used by builtin-style swatches; fx-* animate the overlay's real effects */
+  .swatchwrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#04101B}
+  .minibtn{width:44px;height:44px;border-radius:7px;border:5px solid transparent;
+    background-image:radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
+      linear-gradient(145deg,#E8C07A 0%,#C08A45 17%,#8A5A26 52%,#6B3F17 76%,#B27A3E 100%);
+    background-origin:padding-box,border-box;background-clip:padding-box,border-box}
+  .fx-glow{animation:pvglow 2.6s ease-in-out infinite}
+  @keyframes pvglow{0%,100%{box-shadow:inset 0 0 0 2px rgba(217,164,65,.12),0 0 4px 0 rgba(217,164,65,.12)}
+    50%{box-shadow:inset 0 0 0 2px var(--gold),0 0 14px 3px var(--gold)}}
+  .fx-glitch{animation:pvglitch 3.2s steps(1,end) infinite}
+  @keyframes pvglitch{0%,90%{transform:none;filter:none}
+    91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
+    93%{transform:translateX(3px);filter:hue-rotate(-60deg)}
+    95%{transform:translateX(-1px)}97%{transform:none;filter:none}}
+  .fx-pop{animation:pvpop 2.4s cubic-bezier(.22,1.4,.3,1) infinite}
+  @keyframes pvpop{0%,50%,100%{transform:scale(1);filter:none}
+    58%{transform:scale(1.35);filter:brightness(1.6)}66%{transform:scale(1.22)}
+    80%{transform:scale(.92)}88%{transform:scale(1)}}
   .link{font-size:10px;color:var(--gold)}
   .banner-thumb{height:34px !important}
   /* modals */
@@ -1124,11 +1142,11 @@
       if (a.meta?.builtin && a.meta?.domain === "board_bg")
         return `<div style="width:100%;height:100%;background:radial-gradient(120% 160% at 50% -20%, #123a5c 0%, #0B1E33 45%, #071527 100%)"></div>`;
       if (a.meta?.builtin && a.meta?.domain === "board_button")
-        return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#04101B">
-          <div style="width:44px;height:44px;border-radius:7px;border:5px solid transparent;
-            background-image:radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
-              linear-gradient(145deg,#E8C07A 0%,#C08A45 17%,#8A5A26 52%,#6B3F17 76%,#B27A3E 100%);
-            background-origin:padding-box,border-box;background-clip:padding-box,border-box"></div></div>`;
+        return `<div class="swatchwrap"><div class="minibtn"></div></div>`;
+      /* builtin button animations preview their actual effect on a mini button */
+      if (a.meta?.builtin && a.meta?.domain === "button_anim")
+        return `<div class="swatchwrap"><div class="minibtn${
+          a.meta.effect && a.meta.effect !== "none" ? " fx-" + a.meta.effect : ""}"></div></div>`;
       return "";
     }
     if (/\.(wav|mp3|ogg|m4a)(\?|$)/i.test(u)) return `<div style="font-size:24px">🔊</div>`;
