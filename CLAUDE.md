@@ -68,9 +68,11 @@ function tileFor(grid,gap){const c=GRID_CFG[grid]??GRID_CFG.buttons;
 const partsChanged=applyBoardParts(s); /*set .on/.hl classes*/ 
 if(partsChanged||hlChanged) restartEffects();   // ONE restart path for every change
 function restartEffects(){const act=AMBIENT.map(e=>"anim-"+e).filter(c=>boardEl.classList.contains(c));
- act.forEach(c=>boardEl.classList.remove(c)); paintClips(true); void boardEl.offsetWidth;
- act.forEach(c=>boardEl.classList.add(c));
- boardEl.querySelectorAll("video.vfx").forEach(v=>{v.currentTime=0;v.play().catch(()=>{})});}
+ act.forEach(c=>boardEl.classList.remove(c)); void boardEl.offsetWidth;
+ act.forEach(c=>boardEl.classList.add(c)); paintClips(true);}
+// paintClips(restart): existing <video> with same src => seek currentTime=0 + play(); only a
+// NEW clip/cell builds an element (muted loop autoplay preload:auto — autoplay is what starts
+// it; nothing else will). Board-bg looper rebuilt ONLY when bg url/crop sig changes.
 // effects render ONLY on .cell.hl; "none" builtin = empty selection, loops conceptually persist
 
 // panel fn: deselectEverywhere(id,url) — run on delete/purge/empty_trash/hideRotation:
@@ -98,7 +100,8 @@ Settings:{url,urlFile:"No file...",requestType:"0",contentType:"",data:"",dataFi
 - **VP9 alpha is side-channel**: ffprobe says `yuv420p` even with alpha. Decode `-c:v libvpx-vp9` (input opt), encode `-pix_fmt yuva420p -auto-alt-ref 0`, fade `fade=t=out:…:alpha=1`. M3 lost alpha this way (black bg bug). Current stingers `animations/v2/`, cropped one-shots `animations/v4/`; old flat files unreferenced.
 - **API Ninja**: empty-string file fields → NullReference in `LoadHeadersAndUserData` → EVERY request dies (⚠). Must be `"No file..."`. `autorunMinutes:"0"` = fire-every-0-min crash loop; empty = off. Multi Action ✓ ≠ plugin success. Its plugin manifest is ENCRYPTED — read `PropertyInspector/*.html/js`, the DLL strings, or diff a hand-made exported button (fastest, do this FIRST next time).
 - **Stream Deck**: profiles live in `ProfilesV3` (not V2). Import DUPLICATES (delete old first). PowerShell/.NET zip writes backslash entries → silent import failure. `PageIndex` 1-based. `system.open` = files only; URLs need `system.website` `{openInBrowser:true,path}`. Icons are per-key press-state only (can't track board; accepted cosmetic drift). Icon art: `streamdeck/icons/*`.
-- **Echo clock**: ANY stream_state writer that doesn't bump `data.updatedAt` gets its change overwritten by the next panel push (deck bug caused "changes wipe highlights"). NEVER add a writer without bumping it.
+- **Echo clock**: ANY stream_state writer that doesn't bump `data.updatedAt` gets its change overwritten by the next panel push (deck bug caused "changes wipe highlights"). NEVER add a writer without bumping it. Residual race: a deck write followed <~1s later by a panel control click gets resurrected by the panel's stale copy (realtime adoption hadn't landed) — in QA scripts do panel writes first, deck writes after, 1.2-1.5s between panel clicks.
+- **Restart ≠ rebuild**: to restart a playing `<video>`, SEEK it (`currentTime=0;play()`). Removing/recreating the element drops to readyState 0 → blank frame until re-buffer + one refetch per cell per change (v10 bug: "any change kills the button animations" — only bit the AI-clip path, CSS builtins restart free, so v9's acceptance missed it). New elements need `autoplay:true` — no blanket play() loop exists anymore. QA that frame-samples races the CDN cache and can pass on broken code; assert on element identity (dataset tags surviving) + refetch counts instead.
 - **Deletion**: every removal path (delete/purge/empty_trash/hideRotation) MUST `deselectEverywhere` or OBS shows blank frames. Rotator also skips missing files via `onerror`.
 - **Audio**: keep `Audio` refs in a Set until ended (GC aborts request); only `layer=fx`/`all` plays sound — "sound but no stinger" ⇒ fx source missing in OBS.
 - **fal.ai**: FAL key starts lowercase `c` (phone auto-capitalize bit us). Queue poll URLs MUST come from submit response (nested model ids break constructed URLs). Effect gens need "isolated on pure black, no text" + negative_prompt; a global brand prefix hijacks them (now opt-in `brand:true`). stable-audio/Kling take 1-5min — always queue via submit/poll, never inline.
@@ -111,7 +114,11 @@ Settings:{url,urlFile:"No file...",requestType:"0",contentType:"",data:"",dataFi
 
 ## 5. IMMEDIATE BACKLOG
 
-Just landed (verified 7/7): highlight-sync — `restartEffects()` single path + deck `updatedAt` bump. Nothing mid-flight. Next, in order:
+Just landed (25484bb, live acceptance `qa/shoot-v10-sync.mjs` 30/30 vs 10 fails pre-fix): clip button animations survive every settings change — paintClips seeks instead of rebuilding, board-bg looper keyed to its own signature. Nothing mid-flight.
+
+⚠ Storage anomaly 2026-08-11: `media/button_anim/ai-1786423308227.mp4` (asset `Btn anim: Electricity arcing around rim`, row 7ce3c90e… still live, NOT trashed) vanished from the bucket ~05:35Z — served 200 at 05:31Z, 400/NoSuchKey since; nothing in repo deletes storage. PC1's saved state selects it → highlighted teams show no clip. Await user: trash the dead row (free) or regenerate (~$0.25 Kling std).
+
+Next, in order:
 
 1. **Port new Board Style controls to `control/pc.html`**: it still has single-select `buttonAnim` in its `part()` renderer and NO boardSize/logoSize/fxIntensity sliders. Inputs: state keys `buttonAnims[]`, `boardSize`, `logoSize`, `fxIntensity` (shapes above); mirror master's `#btnAnimGrid` multi-select + 4 sliders, minus delete buttons. Output: operator can adjust all four + multi-select effects for their own PC only; verify with a Playwright script asserting slider→overlay `--fxi`/tile width on that PC and no `[data-del]` present.
 2. User will upload `Spin 3 Pick 1` and `PYT` animations (exact names) — deck keys already wired, currently 404 "animation not found".
