@@ -147,7 +147,10 @@ Deno.serve(async (req) => {
       if (!body.id) return json({ error: "id required" }, 400);
       const { data: a, error: gErr } = await sb.from("assets").select("*").eq("id", body.id).single();
       if (gErr || !a) return json({ error: gErr?.message ?? "asset not found" }, 404);
-      const meta = { ...a.meta }; delete meta.deleted; delete meta.deletedAt;
+      /* restoring brings it back to every list it belongs to */
+      const meta = { ...a.meta };
+      delete meta.deleted; delete meta.deletedAt;
+      delete meta.hideComposer; delete meta.hideRotation;
       const { data: upd, error } = await sb.from("assets")
         .update({ meta }).eq("id", body.id).select().single();
       return error ? json({ error: error.message }, 500) : json({ ok: true, asset: upd });

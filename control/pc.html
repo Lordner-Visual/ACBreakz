@@ -341,10 +341,11 @@
     $$("#sfxGrid [data-play]").forEach(b => b.onclick = () => fire("play_sfx",{url:b.dataset.play}));
 
     const rot = new Set((state.banners.rotation||[]).map(x=>x.id));
-    $("#bannerGrid").innerHTML = assets.filter(a=>a.kind==="banner" && !a.meta?.template).map(a=>`
+    $("#bannerGrid").innerHTML = assets
+      .filter(a=>a.kind==="banner" && !a.meta?.template && !a.meta?.hideRotation).map(a=>`
       <div class="asset ${rot.has(a.id)?"active":""}"><div class="thumb banner-thumb">${thumb(a)}</div>
         <div class="meta"><div class="name">${esc(a.name)}</div>
-          <button class="btn ${rot.has(a.id)?"warn":""}" data-rot="${a.id}">${rot.has(a.id)?"Remove":"Add"}</button>
+          <button class="btn ${rot.has(a.id)?"warn":""}" data-rot="${a.id}">${rot.has(a.id)?"Deselect":"Select"}</button>
         </div></div>`).join("");
     $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.rot); const list = state.banners.rotation || [];
@@ -390,7 +391,7 @@
     });
 
     /* composer backgrounds: art only, never finished text banners */
-    const arts = assets.filter(a => a.url &&
+    const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
       ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background"));
     $("#compBGs").innerHTML =
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:118px;cursor:pointer">

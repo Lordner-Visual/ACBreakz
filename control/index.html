@@ -524,6 +524,47 @@
     });
   }
 
+  /* ---------- per-list delete ----------
+     Composer backgrounds and the banner rotation are separate lists that can show the
+     same asset. Deleting in one hides it there only; once it is gone from every list it
+     still belongs to, the asset itself moves to the trash. */
+  const inComposer = (a) => !!a.url &&
+    ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background");
+  const inRotation = (a) => a.kind === "banner" && !a.meta?.template;
+
+  function wireHides(){
+    $$("[data-hide]").forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      if (b.dataset.armed !== "1") {
+        b.dataset.armed = "1"; b._label = b.textContent;
+        b.textContent = "Are you sure?"; b.classList.add("danger");
+        clearTimeout(b._t); b._t = setTimeout(() => {
+          b.dataset.armed = "0"; b.textContent = b._label; b.classList.remove("danger");
+        }, 5000);
+        return;
+      }
+      clearTimeout(b._t);
+      const [ctx, id] = b.dataset.hide.split(":");
+      const a = assets.find(x => x.id === id); if (!a) return;
+      /* would it still be visible in the other list after this? */
+      const stillElsewhere = ctx === "composer"
+        ? (inRotation(a) && !a.meta?.hideRotation)
+        : (inComposer(a) && !a.meta?.hideComposer);
+      b.disabled = true; b.textContent = "Deleting…";
+      const { error } = stillElsewhere
+        ? await panelCall({ action:"update_asset", id,
+            meta: ctx === "composer" ? { hideComposer:true } : { hideRotation:true } })
+        : await panelCall({ action:"delete_asset", id });          // gone everywhere -> trash
+      if (error) return toast("Delete failed: " + error.message);
+      if (ctx === "rotation") {                                     // drop it from the rotation
+        state.banners.rotation = (state.banners.rotation || []).filter(x => x.id !== id);
+        await pushState();
+      }
+      await loadAssets(); await loadState(); renderAll();
+      toast(stillElsewhere ? "Removed from this list" : "Moved to trash");
+    });
+  }
+
   /* ---------- SoundFX link popup ---------- */
   let sfxTargetId = null, previewAudio = null;
   function openSfxPicker(asset){
@@ -676,7 +717,7 @@
   function renderCompBGs(){
     /* composer backgrounds = art you can put text ON: uploaded/AI banner art and
        backgrounds. Composed text banners are finished pieces — rotation only. */
-    const arts = assets.filter(a => a.url &&
+    const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
       ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background"));
     $("#compBGs").innerHTML =
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
@@ -685,10 +726,11 @@
       arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" style="width:120px">
         <div class="thumb banner-thumb" data-cbg="${a.url}" style="cursor:pointer">${thumb(a)}</div>
         <div class="meta"><div class="name">${esc(a.name)}</div>
-          <div class="row">${delBtn(a)}</div></div></div>`).join("");
+          <div class="row"><button class="btn warn" data-hide="composer:${a.id}">Delete</button></div>
+        </div></div>`).join("");
     $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => {
       comp.bgUrl = d.dataset.cbg || null; renderCompBGs(); drawComposer(); });
-    wireDeletes();
+    wireDeletes(); wireHides();
   }
   $("#compText").oninput = drawComposer;
   $("#compSave").onclick = () => {
@@ -951,15 +993,16 @@
     /* banners (templates stay out of rotation) */
     const rotIds = new Set((state.banners.rotation||[]).map(x=>x.id));
     $("#bannerGrid").innerHTML = assets
-      .filter(a=>a.kind==="banner" && !a.meta?.template).map(a=>`
+      .filter(a=>a.kind==="banner" && !a.meta?.template && !a.meta?.hideRotation).map(a=>`
       <div class="asset ${rotIds.has(a.id)?"active":""}">
         <div class="thumb banner-thumb">${thumb(a)}</div>
         <div class="meta"><div class="name">${esc(a.name)}</div>
           <div class="row">
             <button class="btn ${rotIds.has(a.id)?"warn":""}" data-rot="${a.id}">
-              ${rotIds.has(a.id)?"Remove":"Add"}</button>
+              ${rotIds.has(a.id)?"Deselect":"Select"}</button>
             ${a.url ? `<button class="btn ghost" data-rf="${a.id}">Reframe</button>` : ""}
-            ${delBtn(a)}<span class="tag">${C.bannerSeconds(a)}s</span>
+            <button class="btn warn" data-hide="rotation:${a.id}">Delete</button>
+            <span class="tag">${C.bannerSeconds(a)}s</span>
           </div></div></div>`).join("");
     $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.rot);
@@ -1016,7 +1059,7 @@
       e.stopPropagation(); openReframe(assets.find(x=>x.id===b.dataset.rf)); });
     $$("[data-sfx]").forEach(b => b.onclick = (e) => {
       e.stopPropagation(); openSfxPicker(assets.find(x=>x.id===b.dataset.sfx)); });
-    wireDeletes();
+    wireDeletes(); wireHides();
     /* trash */
     $("#trashGrid").innerHTML = trash.length ? trash.map(a => `
       <div class="asset"><div class="thumb">${thumb(a) || "🗑"}</div>
