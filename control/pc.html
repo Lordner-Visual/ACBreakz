@@ -486,9 +486,13 @@
     setS("#logoRange","#logoVal","logoSize",100,"%");
     setS("#fxRange","#fxVal","fxIntensity",100,"%");
 
-    /* composer backgrounds: art only, never finished text banners */
+    /* Composer backgrounds: banner art only, never finished text banners and never
+       streamer backgrounds. MUST match inComposer() in control/index.html — anything
+       listed here that the master panel does not list is undeletable, because these
+       dashboards have no delete. A master delete sets hideComposer on the shared asset
+       row, so it takes effect here automatically. */
     const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
-      ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background"));
+      a.kind === "banner" && a.meta?.type !== "text");
     $("#compBGs").innerHTML =
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:118px;cursor:pointer">
         <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>

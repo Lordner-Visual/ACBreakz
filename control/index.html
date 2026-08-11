@@ -632,8 +632,11 @@
      Composer backgrounds and the banner rotation are separate lists that can show the
      same asset. Deleting in one hides it there only; once it is gone from every list it
      still belongs to, the asset itself moves to the trash. */
-  const inComposer = (a) => !!a.url &&
-    ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background");
+  /* THE composer-membership rule. control/pc.html must use the identical predicate, or
+     the operator dashboards list art the master panel cannot see — and therefore cannot
+     delete (streamer backgrounds lingered on every PC this way). Backgrounds are a
+     separate library with their own tab; the composer is banner art only. */
+  const inComposer = (a) => !!a.url && a.kind === "banner" && a.meta?.type !== "text";
   const inRotation = (a) => a.kind === "banner" && !a.meta?.template;
 
   function wireHides(){
@@ -829,9 +832,7 @@
   function renderCompBGs(){
     /* composer backgrounds = art you can put text ON: uploaded/AI banner art and
        backgrounds. Composed text banners are finished pieces — rotation only. */
-    /* banner art only — streamer backgrounds are a separate library with its own tab */
-    const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
-      a.kind === "banner" && a.meta?.type !== "text");
+    const arts = assets.filter(a => inComposer(a) && !a.meta?.hideComposer);
     $("#compBGs").innerHTML =
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
          <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
