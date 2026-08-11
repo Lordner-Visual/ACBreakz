@@ -178,6 +178,9 @@
   #fxVideo.boxed{inset:auto;left:207px;top:800px;width:667px;height:413px;object-fit:contain}
   #fxImg{position:absolute;left:207px;top:800px;width:667px;height:413px;display:none;
     z-index:20;object-fit:contain;opacity:0}
+  /* "fill the section": cover the whole lower camera region instead of the small box */
+  #fxImg.full{left:0;top:645px;width:1080px;height:1275px;object-fit:cover}
+  #fxVideo.full{inset:auto;left:0;top:645px;width:1080px;height:1275px;object-fit:cover}
   #fxImg.go{animation:still 3s ease-out forwards}
   @keyframes still{0%{opacity:0;transform:scale(.82)}12%{opacity:1}
     85%{opacity:1;transform:scale(1.02)}100%{opacity:0;transform:scale(1.04)}}
@@ -494,8 +497,9 @@
   fxV.addEventListener("timeupdate", () => {   // safety fade even if the file lacks one
     if (fxV.duration && fxV.duration - fxV.currentTime < 0.35) fxV.style.opacity = "0";
   });
-  function playVideo(url, boxed, done){
-    fxV.classList.toggle("boxed", !!boxed);
+  function playVideo(url, boxed, done, full){
+    fxV.classList.toggle("boxed", !!boxed && !full);
+    fxV.classList.toggle("full", !!full);
     fxV.style.opacity = "1"; fxV.src = url; fxV.style.display = "block";
     fxV.onended = fxV.onerror = () => {
       fxV.style.display = "none"; fxV.removeAttribute("src"); fxV.style.opacity = "1"; done();
@@ -515,22 +519,25 @@
     const job = fxQ.shift();
     const done = () => { fxBusy = false; pump(); };
     sfx(job.sfxUrl);
+    const full = job.fit === "full";
     if (job.styleUrl && job.logoOverlay) {          // v2 style: one base + team logo on top
       if (job.styleImage) {
         const im = $("#fxImg"); im.src = job.styleUrl; im.style.display = "block";
+        im.classList.toggle("full", full);
         im.classList.remove("go"); void im.offsetWidth; im.classList.add("go");
         setTimeout(() => { im.style.display = "none"; im.classList.remove("go"); }, 3050);
         logoPop(job.team, false, 2900, done);
       } else {
-        playVideo(job.styleUrl, true, done);
+        playVideo(job.styleUrl, true, done, full);
         logoPop(job.team, false, 2900, null);
       }
-    } else if (job.url && job.image) {              // one-shot AI still in the box
+    } else if (job.url && job.image) {              // one-shot AI still
       const im = $("#fxImg"); im.src = job.url; im.style.display = "block";
+      im.classList.toggle("full", full);
       im.classList.remove("go"); void im.offsetWidth; im.classList.add("go");
       setTimeout(() => { im.style.display = "none"; im.classList.remove("go"); done(); }, 3050);
     } else if (job.url) {                           // video: boxed one-shot or full-canvas stinger
-      playVideo(job.url, !!job.boxed, done);
+      playVideo(job.url, !!job.boxed, done, full);
     } else if (job.team) {                          // CSS fallback burst
       const t = C.TEAMS[job.team]; const b = $("#burst");
       $("#flash").classList.remove("go"); void $("#flash").offsetWidth; $("#flash").classList.add("go");
@@ -578,7 +585,7 @@
     if (p.pc && Number(p.pc) !== PC) return;        // v2: not for this PC
     switch (ev.type) {
       case "team_pick":
-        runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl,
+        runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl, fit: p.styleFit,
                 styleUrl: p.styleUrl, styleImage: p.styleImage, logoOverlay: p.logoOverlay });
         setTimeout(() => { cells[p.team]?.classList.add("on","slam");
           triggerButtonAnim(p.team);
@@ -587,7 +594,8 @@
         break;
       case "team_restore": cells[p.team]?.classList.remove("on"); break;
       case "board_reset": C.ORDER.forEach(a => cells[a].classList.remove("on")); break;
-      case "play_animation": runFx({ url: p.url, boxed: p.boxed, image: p.image, sfxUrl: p.sfxUrl }); break;
+      case "play_animation":
+        runFx({ url: p.url, boxed: p.boxed, image: p.image, sfxUrl: p.sfxUrl, fit: p.fit }); break;
       case "play_sfx": sfx(p.url); break;
       case "banner_skip": rotator.next(); break;
     }

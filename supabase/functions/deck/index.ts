@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
           if (style && style.meta?.per_team !== true && (style.url || style.meta?.base_url)) {
             payload.styleUrl = style.url ?? style.meta.base_url;
             payload.styleImage = style.meta?.image === true;
+            payload.styleFit = style.meta?.fit ?? "box";
             payload.logoOverlay = true;
           } else {
             const anim = await findAsset("animation", undefined, team);
@@ -137,9 +138,10 @@ Deno.serve(async (req) => {
     case "play": {
       const a = await findAsset("animation", g("name"));
       if (!a) return json({ error: "animation not found" }, 404);
-      const boxed = a.meta?.group !== "team";
+      const fit = a.meta?.fit;
+      const boxed = fit === "full" ? false : a.meta?.group !== "team";
       for (const pc of pcs)
-        await fire("play_animation", { url: a.url, name: a.name, boxed,
+        await fire("play_animation", { url: a.url, name: a.name, boxed, fit,
           image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null, pc });
       return json({ ok: true, name: a.name, pcs });
     }

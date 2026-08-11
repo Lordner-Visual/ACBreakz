@@ -323,6 +323,23 @@
     <input type="text" id="aiRefPrompt" placeholder="…or describe the new version you want" style="flex:1;min-width:240px">
     <button class="btn" id="aiRefGo">Generate</button>
   </div>
+  <h2>Add it to a section</h2>
+  <div class="row">
+    <select id="aiAddKind">
+      <option value="team_style">Team animation style</option>
+      <option value="oneshot">One-shot animation</option>
+      <option value="background">Streamer background</option>
+      <option value="banner">Banner art (composer)</option>
+      <option value="board_bg">Board background</option>
+      <option value="board_button">Button style</option>
+      <option value="button_anim">Button animation</option>
+    </select>
+    <select id="aiAddFit">
+      <option value="full">Fill the section (crop to fit)</option>
+      <option value="box">Keep inside the animation box</option>
+    </select>
+    <button class="btn gold" id="aiAddBtn">Add</button>
+  </div>
   <div class="row" style="margin-top:10px"><button class="btn ghost" id="aiRefClose">Close</button>
     <span class="tag" id="aiRefMsg"></span></div>
 </div></div>
@@ -354,8 +371,13 @@
   <div class="row"><span class="tag" style="width:60px">Up–Down</span>
     <input type="range" id="rfY" min="0" max="100" value="50" style="flex:1"></div>
   <div class="row"><span class="tag" style="width:60px">Zoom</span>
-    <input type="range" id="rfZ" min="100" max="300" step="5" value="100" style="flex:1">
+    <input type="range" id="rfZ" min="100" max="600" step="5" value="100" style="flex:1">
     <span class="tag" id="rfZVal" style="width:44px">100%</span></div>
+  <div class="row"><span class="tag" style="width:60px">Fit</span>
+    <select id="rfFit" style="flex:1">
+      <option value="full">Fill the section (crop the overflow)</option>
+      <option value="box">Keep inside the animation box</option>
+    </select></div>
   <div class="row" style="margin-top:10px">
     <button class="btn gold" id="rfSave">Save crop</button>
     <button class="btn ghost" id="rfCancel">Cancel</button>
@@ -699,7 +721,8 @@
         const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
         if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url)) {
           fireEvent("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
-            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl});
+            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl,
+            styleFit: st.meta?.fit ?? "box"});
         } else {
           const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
           fireEvent("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl});
@@ -1011,6 +1034,33 @@
   $("#aiRefClose").onclick = () => { $("#aiRefine").classList.remove("on");
     $("#aiRefPreview").innerHTML = ""; };
 
+  /* file an existing generation into any section — a new row pointing at the same file,
+     so the original stays where it is */
+  const ADD_TARGETS = {
+    team_style:   (u,n,fit) => ({ kind:"style", name:"Style: "+n, url:null,
+                    meta:{ domain:"team_anim", base_url:u, per_team:false, fit,
+                           image:!/\.(webm|mp4)(\?|$)/i.test(u) } }),
+    oneshot:      (u,n,fit) => ({ kind:"animation", name:n, url:u,
+                    meta:{ group:"oneshot", fit, image:!/\.(webm|mp4)(\?|$)/i.test(u) } }),
+    background:   (u,n,fit) => ({ kind:"background", name:n, url:u, meta:{ type:"ai", fit } }),
+    banner:       (u,n,fit) => ({ kind:"banner", name:n, url:u, meta:{ type:"ai", template:true, fit } }),
+    board_bg:     (u,n,fit) => ({ kind:"style", name:"Board: "+n, url:u, meta:{ domain:"board_bg", fit } }),
+    board_button: (u,n,fit) => ({ kind:"style", name:"Buttons: "+n, url:u, meta:{ domain:"board_button", fit } }),
+    button_anim:  (u,n,fit) => ({ kind:"style", name:"Btn anim: "+n, url:u,
+                    meta:{ domain:"button_anim", mode:"ambient", fit } }),
+  };
+  $("#aiAddBtn").onclick = async () => {
+    if (!aiRef) return;
+    const url = refUrlOf(aiRef); if (!url) return toast("That asset has no file");
+    const b = $("#aiAddBtn"); busy(b, true);
+    const make = ADD_TARGETS[$("#aiAddKind").value];
+    const saved = await saveAsset(make(url, aiRef.name.replace(/^AI:\s*/, ""), $("#aiAddFit").value));
+    busy(b, false);
+    if (saved) { await loadAssets();
+      $("#aiRefMsg").textContent = "added — find it in that tab";
+      toast("Added to " + $("#aiAddKind").selectedOptions[0].textContent); }
+  };
+
   /* ---------- reframe editor ---------- */
   let rfAsset = null;
   /* preview box matches the shape the asset is actually shown in */
@@ -1028,6 +1078,7 @@
     const crop = a.meta?.crop ?? {x:50,y:50,z:100};
     $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50; $("#rfZ").value = crop.z ?? 100;
     $("#rfZVal").textContent = ($("#rfZ").value) + "%";
+    $("#rfFit").value = a.meta?.fit ?? "full";
     $("#rfPreview").style.height = Math.round(rfShape(a) * 520) + "px";
     const u = rfUrl(a);
     $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(u)
@@ -1046,7 +1097,8 @@
   $("#rfSave").onclick = async () => {
     if (!rfAsset) return;
     const ok = await updateAsset(rfAsset.id,
-      { crop:{ x:+$("#rfX").value, y:+$("#rfY").value, z:+$("#rfZ").value } });
+      { crop:{ x:+$("#rfX").value, y:+$("#rfY").value, z:+$("#rfZ").value },
+        fit: $("#rfFit").value });
     if (!ok) return;
     $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML="";
     await loadState(); renderAll();
@@ -1128,8 +1180,8 @@
         </div></div>`).join("");
     $$("#oneshotGrid [data-play]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.play);
-      fireEvent("play_animation",{url:a.url, boxed:true, image:a.meta?.image===true,
-        sfxUrl:a.meta?.sfxUrl ?? null});
+      fireEvent("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
+        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null});
     });
 
     /* sound effects */

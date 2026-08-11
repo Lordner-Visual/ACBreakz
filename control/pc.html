@@ -226,7 +226,8 @@
         const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
         if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url))
           fire("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
-            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl});
+            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl,
+            styleFit: st.meta?.fit ?? "box"});
         else {
           const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
           fire("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl});
@@ -328,8 +329,8 @@
           <button class="btn" data-anim="${a.id}">Play</button></div></div>`).join("");
     $$("#oneshotGrid [data-anim]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.anim);
-      fire("play_animation",{url:a.url, boxed:true, image:a.meta?.image===true,
-        sfxUrl:a.meta?.sfxUrl ?? null});
+      fire("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
+        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null});
       toast("Playing " + a.name);
     });
 
