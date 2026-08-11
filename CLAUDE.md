@@ -121,5 +121,4 @@ Dead assets awaiting user decision: `Btn anim: Electricity arcing around rim` (r
 Next, in order:
 
 1. User will upload `Spin 3 Pick 1` and `PYT` animations (exact names) — deck keys already wired, currently 404 "animation not found".
-2. Unreproduced user report: on the PC1 machine, pc.html shows NO thumbnails at all (fresh Chromium renders 57/60 — only the dead files + false-positive missed). If it persists, get the device/browser before chasing further.
-3. Later: make repo private (removes OP_KEY exposure; no code change), rotate PANEL_PASSWORD (currently trivial), optionally clean duplicate "AC Breakz copy" profiles in ProfilesV3.
+2. Later: make repo private (removes OP_KEY exposure; no code change), rotate PANEL_PASSWORD (currently trivial), optionally clean duplicate "AC Breakz copy" profiles in ProfilesV3.
