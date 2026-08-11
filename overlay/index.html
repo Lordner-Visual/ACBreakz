@@ -277,7 +277,7 @@
     const byHeight = (SAFE_H - (c.rows - 1) * gap) / c.rows;
     return Math.max(12, Math.floor(Math.min(MAX_TILE, byWidth, byHeight)));
   }
-  let partsKey = null, btnAnims = [], fxClips = [], lastHlKey = null;
+  let partsKey = null, boardBgSig = null, btnAnims = [], fxClips = [], lastHlKey = null;
   function applyBoardParts(s) {
     const btn = s?.boardButtons, bg = s?.boardBg;
     /* one or many button animations may be active at once */
@@ -307,14 +307,20 @@
     boardEl.style.setProperty("--fxi", fxi);
     boardEl.classList.toggle("has-btnstyle", !!btn?.url);
 
-    /* background: still image or looping video behind the grid */
-    clearLoopers(boardEl);
-    boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
-    if (bg?.url && /\.(webm|mp4)(\?|$)/i.test(bg.url)) {
-      boardEl.style.backgroundImage = "";
-      boardEl.insertBefore(makeLoop(bg.url, bg.meta ?? bg, 0), boardEl.firstChild);
-    } else {
-      boardEl.style.backgroundImage = bg?.url ? `url("${bg.url}")` : "";
+    /* Background: still image or looping video behind the grid. Rebuilding this on every
+       unrelated change (intensity, grid, spacing) restarted the clip from black, so only
+       touch it when the background itself actually changed. */
+    const bgSig = bg?.url ? bg.url + "|" + JSON.stringify(bg.meta?.crop ?? bg.crop ?? null) : "";
+    if (bgSig !== boardBgSig) {
+      boardBgSig = bgSig;
+      clearLoopers(boardEl);
+      boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
+      if (bg?.url && /\.(webm|mp4)(\?|$)/i.test(bg.url)) {
+        boardEl.style.backgroundImage = "";
+        boardEl.insertBefore(makeLoop(bg.url, bg.meta ?? bg, 0), boardEl.firstChild);
+      } else {
+        boardEl.style.backgroundImage = bg?.url ? `url("${bg.url}")` : "";
+      }
     }
 
     /* buttons: texture on every cell */
@@ -333,18 +339,29 @@
     return true;                       // caller restarts everything once, in sync
   }
 
-  /* keep a looping clip on every highlighted cell (and only those) */
-  function paintClips(rebuild) {
+  /* Keep a looping clip on every highlighted cell (and only those).
+     restart=true re-syncs the clips by SEEKING them, never by rebuilding them: a fresh
+     <video> starts at readyState 0 and shows nothing until the file has buffered again,
+     which is what made every settings change look like the effects had stopped for good.
+     Elements are only created when the clip changes or a cell is newly highlighted. */
+  function paintClips(restart) {
+    const url = fxClips[0] ?? null;
     for (const abbr of C.ORDER) {
       const cell = cells[abbr];
-      const want = fxClips.length && cell.classList.contains("hl");
+      const want = !!url && cell.classList.contains("hl");
       const have = cell.querySelector("video.vfx");
       if (!want) { if (have) { cell.classList.remove("fx-video"); have.remove(); } continue; }
-      if (have && have.dataset.src === fxClips[0] && !rebuild) continue;
+      if (have && have.dataset.src === url) {          // already buffered — just re-sync it
+        if (restart) { try { have.currentTime = 0; } catch (e) {} have.play().catch(() => {}); }
+        continue;
+      }
       have?.remove();
+      /* autoplay (not a bare play() call) so a freshly built clip starts the moment it
+         has data — nothing else in this path would ever start it */
       const v = Object.assign(document.createElement("video"),
-        { src: fxClips[0], muted: true, loop: true, playsInline: true, className: "vfx" });
-      v.dataset.src = fxClips[0];
+        { src: url, muted: true, loop: true, autoplay: true, playsInline: true,
+          preload: "auto", className: "vfx" });
+      v.dataset.src = url;
       cell.appendChild(v); cell.classList.add("fx-video");
     }
   }
@@ -355,12 +372,9 @@
   function restartEffects() {
     const active = AMBIENT.map(e => "anim-" + e).filter(c => boardEl.classList.contains(c));
     active.forEach(c => boardEl.classList.remove(c));
-    paintClips(true);                       // fresh clip elements, none playing yet
     void boardEl.offsetWidth;               // reflow while nothing is animating
     active.forEach(c => boardEl.classList.add(c));
-    boardEl.querySelectorAll("video.vfx").forEach(v => {
-      try { v.currentTime = 0; v.play().catch(() => {}); } catch (e) {}
-    });
+    paintClips(true);                       // clips seek back to 0 on the same tick
   }
   /* trigger-mode effects fire on the single cell that was just hit
      (suppressed when highlight mode is on and this team isn't highlighted) */
