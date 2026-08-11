@@ -155,7 +155,6 @@ function buildProfile(pc) {
       /* row-2 animations with no art of their own fall back to Stash or Pass */
       "2,1": "anim-default", "3,1": "anim-default",
       "0,2": "Teams", "1,2": "Highlight",
-      "0,3": "blank", "1,3": "Highlight-Off",
     };
     const art = (name) => {
       const src = join(ICONS, "main", `${name}.png`);
@@ -193,8 +192,6 @@ function buildProfile(pc) {
     /* row 3: page jumps — PageIndex is 1-based (main = 1) — with their resets beneath */
     A[pos(0, 2)] = pageGoto(2, "TEAMS");
     A[pos(1, 2)] = pageGoto(3, "HIGH\nLIGHTS");
-    A[pos(0, 3)] = apiNinja(deckUrl("action=board_reset", pc), "RESET\nBOARD");
-    A[pos(1, 3)] = apiNinja(deckUrl("action=highlight_clear", pc), "RESET\nHIGHLIGHTS");
     /* OBS recording sits under the control key, right-hand column */
     A[pos(7, 1)] = obsSimple("com.elgato.obsstudio.record", "Record", "RECORD");
     A[pos(7, 2)] = obsSimple("com.elgato.obsstudio.replaybuffer", "Replay Buffer", "START\nREPLAY");

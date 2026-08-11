@@ -35,17 +35,16 @@ for (let pc = 1; pc <= 5; pc++) {
   const head = `PC${pc}`;
   if (pc === 1) {
     ok(`${head} zip uses forward slashes`, !names.some(n => n.includes("\\")));
-    /* 4 scenes + 4 animations + 2 page jumps + 2 resets + 3 OBS + dashboard */
-    ok(`${head} main page has all 16 keys`, Object.keys(main).length === 16);
+    /* 4 scenes + 4 animations + 2 page jumps + 3 OBS + dashboard */
+    ok(`${head} main page has all 14 keys`, Object.keys(main).length === 14);
+    ok(`${head} no reset keys on the deck`,
+      !/board_reset|highlight_clear/.test(JSON.stringify(Object.values(main))));
     ok(`${head} scene row is Cloud N + Archived 1-3`,
       ["0,0","1,0","2,0","3,0"].every(p => main[p]?.UUID === "com.elgato.obsstudio.scene"));
     ok(`${head} record + replay sit under the control key (column 7)`,
       main["7,1"]?.UUID === "com.elgato.obsstudio.record" &&
       main["7,2"]?.UUID === "com.elgato.obsstudio.replaybuffer" &&
       main["7,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
-    ok(`${head} resets sit under TEAMS and HIGHLIGHTS`,
-      /action=board_reset/.test(main["0,3"]?.Settings?.url ?? "") &&
-      /action=highlight_clear/.test(main["1,3"]?.Settings?.url ?? ""));
     /* two-state keys: normal art, then X'd (teams) / glowing (highlights) */
     const twoState = (page, alt) => Object.values(page).every(k =>
       k.States?.length === 2 &&
@@ -87,9 +86,9 @@ for (let pc = 1; pc <= 5; pc++) {
       ninjas.every(a => a.Plugin.Version === "1.5.1"));
   }
   /* the point of five profiles: each one only ever talks to its own PC */
-  /* 4 animations + 2 resets + (32 teams + 32 highlights) x 2 switch states = 134 */
+  /* 4 animations + (32 teams + 32 highlights) x 2 switch states = 132 */
   ok(`${head} every request is scoped to pc=${pc} (${urls.length} urls)`,
-    urls.length === 134 && urls.every(u => u.endsWith(`&pc=${pc}`)));
+    urls.length === 132 && urls.every(u => u.endsWith(`&pc=${pc}`)));
   ok(`${head} profile name`, JSON.parse(await zip.file(
       names.find(n => n.endsWith(".sdProfile/manifest.json"))).async("string")).Name
       === `ACBreakz Cloud PC${pc}`);
