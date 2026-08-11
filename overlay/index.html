@@ -290,7 +290,7 @@
     const fxi = Math.max(0.3, Math.min(2.5, Number(s?.fxIntensity ?? 100) / 100));
     const key = [btn?.url, bg?.url, grid, gap, size, logo, fxi,
       anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
-    if (key === partsKey) return; partsKey = key;
+    if (key === partsKey) return false; partsKey = key;
 
     /* grid shape + spacing (buttons touch at gap 0, and are square unless it's 8x4) */
     GRIDS.forEach(g => boardEl.classList.remove("grid-" + g));
@@ -330,24 +330,37 @@
     }
     /* AI-generated clips loop continuously over each highlighted button */
     fxClips = anims.filter(a => a.url && /\.(webm|mp4)(\?|$)/i.test(a.url)).map(a => a.url);
-    paintClips();
+    return true;                       // caller restarts everything once, in sync
   }
 
   /* keep a looping clip on every highlighted cell (and only those) */
-  function paintClips() {
+  function paintClips(rebuild) {
     for (const abbr of C.ORDER) {
       const cell = cells[abbr];
       const want = fxClips.length && cell.classList.contains("hl");
       const have = cell.querySelector("video.vfx");
       if (!want) { if (have) { cell.classList.remove("fx-video"); have.remove(); } continue; }
-      if (have && have.dataset.src === fxClips[0]) continue;
+      if (have && have.dataset.src === fxClips[0] && !rebuild) continue;
       have?.remove();
       const v = Object.assign(document.createElement("video"),
-        { src: fxClips[0], autoplay: true, muted: true, loop: true, playsInline: true,
-          className: "vfx" });
+        { src: fxClips[0], muted: true, loop: true, playsInline: true, className: "vfx" });
       v.dataset.src = fxClips[0];
       cell.appendChild(v); cell.classList.add("fx-video");
     }
+  }
+
+  /* Stop everything and start it again on one clock, so every highlighted button is in
+     step. Runs after ANY change; the effects themselves only disappear when a team is
+     unhighlighted or eliminated. */
+  function restartEffects() {
+    const active = AMBIENT.map(e => "anim-" + e).filter(c => boardEl.classList.contains(c));
+    active.forEach(c => boardEl.classList.remove(c));
+    paintClips(true);                       // fresh clip elements, none playing yet
+    void boardEl.offsetWidth;               // reflow while nothing is animating
+    active.forEach(c => boardEl.classList.add(c));
+    boardEl.querySelectorAll("video.vfx").forEach(v => {
+      try { v.currentTime = 0; v.play().catch(() => {}); } catch (e) {}
+    });
   }
   /* trigger-mode effects fire on the single cell that was just hit
      (suppressed when highlight mode is on and this team isn't highlighted) */
@@ -559,22 +572,18 @@
   function applyState(s) {
     if (!s) return;
     setBackground(s.background);
-    applyBoardParts(s);
+    const partsChanged = applyBoardParts(s);
     const picked = s.board?.picked || {}, hl = s.board?.highlighted || {};
     for (const abbr of C.ORDER) {
       cells[abbr].classList.toggle("on", !!picked[abbr]);
       cells[abbr].classList.toggle("hl", !!hl[abbr] && !picked[abbr]);
     }
-    /* when the highlighted set changes, restart the ambient effect so every
-       highlighted button animates on one shared clock instead of drifting */
+    /* Any change at all — intensity, grid, which effect, who is highlighted — restarts
+       every effect together so the highlighted buttons stay in step. */
     const hlKey = C.ORDER.filter(a => hl[a] && !picked[a]).join(",");
-    if (hlKey !== lastHlKey) {
-      lastHlKey = hlKey;
-      const active = AMBIENT.map(e => "anim-" + e).filter(c => boardEl.classList.contains(c));
-      if (active.length) { active.forEach(c => boardEl.classList.remove(c));
-        void boardEl.offsetWidth; active.forEach(c => boardEl.classList.add(c)); }
-      paintClips();                       // clips follow the highlighted set
-    }
+    const hlChanged = hlKey !== lastHlKey;
+    lastHlKey = hlKey;
+    if (partsChanged || hlChanged) restartEffects();
     rotator.setList(s.banners?.rotation || []);
   }
   const seen = new Set();
