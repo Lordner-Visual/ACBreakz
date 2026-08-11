@@ -65,6 +65,7 @@
   .asset .meta .name{font-weight:700;color:#DCE8F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .asset .btn{padding:6px 10px;font-size:12px;margin-top:6px}
   .tag{font-size:10px;color:#7E97AB}
+  .gone{font-size:11px;color:var(--danger);padding:6px;text-align:center}
   .banner-thumb{height:34px !important}
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
     border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
@@ -131,9 +132,24 @@
   <h2>Grid style</h2>
   <div class="grid" id="gridStyleGrid"></div>
   <div class="row" style="margin-top:10px;max-width:520px">
+    <span class="tag" style="width:110px">Button size</span>
+    <input type="range" id="sizeRange" min="40" max="100" step="1" value="100" style="flex:1">
+    <span class="tag" id="sizeVal" style="width:44px">100%</span>
+  </div>
+  <div class="row" style="max-width:520px">
     <span class="tag" style="width:110px">Button spacing</span>
     <input type="range" id="gapRange" min="0" max="20" step="1" value="0" style="flex:1">
     <span class="tag" id="gapVal" style="width:44px">0px</span>
+  </div>
+  <div class="row" style="max-width:520px">
+    <span class="tag" style="width:110px">Logo size</span>
+    <input type="range" id="logoRange" min="60" max="160" step="1" value="100" style="flex:1">
+    <span class="tag" id="logoVal" style="width:44px">100%</span>
+  </div>
+  <div class="row" style="max-width:520px">
+    <span class="tag" style="width:110px">Effect intensity</span>
+    <input type="range" id="fxRange" min="30" max="250" step="5" value="100" style="flex:1">
+    <span class="tag" id="fxVal" style="width:44px">100%</span>
   </div>
   <h2>Button style</h2><div class="grid" id="btnStyleGrid"></div>
   <h2>Board background</h2><div class="grid" id="bgStyleGrid"></div>
@@ -287,13 +303,27 @@
   };
 
   /* ---------- render ---------- */
+  /* a dead file (deleted from storage) shows a visible chip instead of silent black */
+  const MISS = `onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'⚠ file missing',className:'gone'}))"`;
   const thumb = (a) => {
     const u = a.meta?.poster ?? a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
     if (a.meta?.type==="text" && !a.url) return `<div style="font-size:11px;padding:6px">${esc(a.meta.text)}</div>`;
-    if (!u) return "";
+    if (!u) {
+      /* the CSS-default builtins get a swatch of what they actually look like */
+      if (a.meta?.builtin && a.meta?.domain === "board_bg")
+        return `<div style="width:100%;height:100%;background:radial-gradient(120% 160% at 50% -20%, #123a5c 0%, #0B1E33 45%, #071527 100%)"></div>`;
+      if (a.meta?.builtin && a.meta?.domain === "board_button")
+        return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#04101B">
+          <div style="width:44px;height:44px;border-radius:7px;border:5px solid transparent;
+            background-image:radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
+              linear-gradient(145deg,#E8C07A 0%,#C08A45 17%,#8A5A26 52%,#6B3F17 76%,#B27A3E 100%);
+            background-origin:padding-box,border-box;background-clip:padding-box,border-box"></div></div>`;
+      return "";
+    }
+    if (/\.(wav|mp3|ogg|m4a)(\?|$)/i.test(u)) return `<div style="font-size:24px">🔊</div>`;
     return /\.(webm|mp4)(\?|$)/i.test(u)
-      ? `<video src="${u}#t=1.2" muted playsinline preload="metadata"></video>`
-      : `<img src="${u}" loading="lazy">`;
+      ? `<video src="${u}#t=1.2" muted playsinline preload="metadata" ${MISS}></video>`
+      : `<img src="${u}" loading="lazy" ${MISS}>`;
   };
   const GRIDS = [["buttons","Buttons"],["checker","Checker board"],["checkerbare","Checker · no edge"],
     ["honeycomb","Honeycomb"],["logos","NFL logos only"],["rect84","8 × 4 rectangles"],["slant","Slanted"]];
@@ -383,13 +413,44 @@
     };
     part("board_button","#btnStyleGrid","boardButtons");
     part("board_bg","#bgStyleGrid","boardBg");
-    part("button_anim","#btnAnimGrid","buttonAnim");
     $$("[data-part]").forEach(b => b.onclick = () => {
       const [k,id] = b.dataset.part.split(":");
       const s = assets.find(x=>x.id===id);
       state[k] = (s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none")) ? null : s;
       push();
     });
+
+    /* button animations are multi-select: any number can run at once (mirrors master) */
+    const picked = (Array.isArray(state.buttonAnims) ? state.buttonAnims
+                   : state.buttonAnim ? [state.buttonAnim] : []).filter(Boolean);
+    const pickedIds = new Set(picked.map(x => x.id));
+    $("#btnAnimGrid").innerHTML = assets
+      .filter(a => a.kind==="style" && a.meta?.domain==="button_anim")
+      .map(s => {
+        const isNone = s.meta?.effect === "none";
+        const on = isNone ? pickedIds.size === 0 : pickedIds.has(s.id);
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "✨"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <button class="btn ${on?"ghost":""}" data-anim="${s.id}">
+              ${isNone ? (on?"Active":"Turn all off") : (on?"Selected":"Select")}</button>
+          </div></div>`; }).join("");
+    $$("#btnAnimGrid [data-anim]").forEach(b => b.onclick = () => {
+      const s = assets.find(x=>x.id===b.dataset.anim);
+      if (s?.meta?.effect === "none") state.buttonAnims = [];
+      else {
+        const list = picked.filter(x => x.id !== s.id);
+        state.buttonAnims = pickedIds.has(s.id) ? list : [...list, s];
+      }
+      delete state.buttonAnim;                  // superseded by the list
+      push();
+    });
+
+    /* sliders reflect the live state */
+    const setS = (id, label, key, dflt, unit) => {
+      $(id).value = state[key] ?? dflt; $(label).textContent = $(id).value + unit; };
+    setS("#sizeRange","#sizeVal","boardSize",100,"%");
+    setS("#logoRange","#logoVal","logoSize",100,"%");
+    setS("#fxRange","#fxVal","fxIntensity",100,"%");
 
     /* composer backgrounds: art only, never finished text banners */
     const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
@@ -404,8 +465,14 @@
     $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => { comp.bgUrl = d.dataset.cbg || null; render(); draw(); });
     draw();
   }
-  $("#gapRange").oninput = () => $("#gapVal").textContent = $("#gapRange").value + "px";
-  $("#gapRange").onchange = () => { state.boardGap = +$("#gapRange").value; push(); };
+  const slider = (id, label, key, unit) => {
+    $(id).oninput = () => $(label).textContent = $(id).value + unit;
+    $(id).onchange = () => { state[key] = +$(id).value; push(); };
+  };
+  slider("#gapRange",  "#gapVal",  "boardGap",    "px");
+  slider("#sizeRange", "#sizeVal", "boardSize",   "%");
+  slider("#logoRange", "#logoVal", "logoSize",    "%");
+  slider("#fxRange",   "#fxVal",   "fxIntensity", "%");
 
   /* ---------- boot + live sync ---------- */
   (async () => {
