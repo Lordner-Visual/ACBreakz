@@ -41,9 +41,9 @@
   #layer-hud{inset:0;display:none}
   /* Tiles live inside the WhatNot-safe area measured from the original board art:
      x 111..968 (858 wide), tiles 53x53 square, 16 x 2. Never wider than this. */
-  #board{--gap:0px;--tile:53px;--cols:16;--rows:2;
+  #board{--gap:0px;--tile:53px;--cols:16;--rows:2;--fxi:1;--logofrac:.18;
     --radius:calc(var(--tile) * .14);--bezel:calc(var(--tile) * .1);
-    --logopad:calc(var(--tile) * .18);
+    --logopad:calc(var(--tile) * var(--logofrac));
     left:0;top:480px;width:1080px;height:165px;overflow:hidden;
     background:
       radial-gradient(140% 220% at 50% -60%, rgba(53,167,255,.18), transparent 55%),
@@ -127,23 +127,25 @@
   .cell .vfx{position:absolute;inset:-14%;width:128%;height:128%;object-fit:cover;
     z-index:5;pointer-events:none;mix-blend-mode:screen;opacity:0;
     transition:opacity .28s linear}
-  .cell.fx-video .vfx{opacity:1}
+  .cell.fx-video .vfx{opacity:calc(.55 + .45 * var(--fxi))}
   /* AMBIENT: effects play ONLY on highlighted teams, all on the same clock so the
      highlighted buttons pulse together. Nothing highlighted = nothing animates. */
   #board.anim-glow .cell.hl::after{content:"";position:absolute;inset:0;border-radius:8px;
-    z-index:4;pointer-events:none;box-shadow:inset 0 0 0 2px var(--gold), 0 0 14px 2px var(--gold);
-    animation:bglow 2.6s ease-in-out infinite}
-  @keyframes bglow{0%,100%{opacity:.12}50%{opacity:.85}}
+    z-index:4;pointer-events:none;
+    box-shadow:inset 0 0 0 calc(2px * var(--fxi)) var(--gold),
+               0 0 calc(14px * var(--fxi)) calc(2px * var(--fxi)) var(--gold);
+    animation:bglow calc(2.6s / var(--fxi)) ease-in-out infinite}
+  @keyframes bglow{0%,100%{opacity:calc(.12 * var(--fxi))}50%{opacity:calc(.85 * var(--fxi))}}
   #board.anim-fire .cell.hl::after{content:"";position:absolute;inset:-2px;border-radius:10px;
     z-index:4;pointer-events:none;
     background:linear-gradient(0deg,rgba(255,140,20,.85),rgba(255,60,0,.25) 45%,transparent 70%);
-    filter:blur(3px);animation:bfire 1.5s ease-in-out infinite alternate}
-  @keyframes bfire{0%{opacity:.35;transform:translateY(2px) scaleY(.96)}
-    100%{opacity:.9;transform:translateY(-2px) scaleY(1.04)}}
+    filter:blur(3px);animation:bfire calc(1.5s / var(--fxi)) ease-in-out infinite alternate}
+  @keyframes bfire{0%{opacity:calc(.35 * var(--fxi));transform:translateY(2px) scaleY(.96)}
+    100%{opacity:calc(.9 * var(--fxi));transform:translateY(calc(-2px * var(--fxi))) scaleY(calc(1 + .04 * var(--fxi)))}}
   #board.anim-lightning .cell.hl::after{content:"";position:absolute;inset:-1px;border-radius:10px;
-    z-index:4;pointer-events:none;border:2px solid var(--volt);
-    box-shadow:0 0 12px var(--volt),inset 0 0 8px var(--volt);opacity:0;
-    animation:blight 3.4s linear infinite}
+    z-index:4;pointer-events:none;border:calc(2px * var(--fxi)) solid var(--volt);
+    box-shadow:0 0 calc(12px * var(--fxi)) var(--volt),inset 0 0 calc(8px * var(--fxi)) var(--volt);
+    opacity:0;animation:blight calc(3.4s / var(--fxi)) linear infinite}
   @keyframes blight{0%,86%{opacity:0}88%{opacity:1}90%{opacity:.15}92%{opacity:1}96%{opacity:0}}
   #board.anim-glitch .cell.hl{animation:bglitch 3.2s steps(1,end) infinite}
   @keyframes bglitch{0%,90%{transform:none;filter:none}
@@ -272,12 +274,19 @@
     const byHeight = (SAFE_H - (c.rows - 1) * gap) / c.rows;
     return Math.max(12, Math.floor(Math.min(MAX_TILE, byWidth, byHeight)));
   }
-  let partsKey = null, btnAnim = null, lastHlKey = null;
+  let partsKey = null, btnAnims = [], fxClips = [], lastHlKey = null;
   function applyBoardParts(s) {
-    const btn = s?.boardButtons, bg = s?.boardBg, anim = s?.buttonAnim;
+    const btn = s?.boardButtons, bg = s?.boardBg;
+    /* one or many button animations may be active at once */
+    const anims = (Array.isArray(s?.buttonAnims) ? s.buttonAnims
+                  : s?.buttonAnim ? [s.buttonAnim] : []).filter(Boolean);
     const grid = GRIDS.includes(s?.boardGrid) ? s.boardGrid : "buttons";
     const gap = Math.max(0, Math.min(20, Number(s?.boardGap ?? 0)));
-    const key = [btn?.url, bg?.url, anim?.id, anim?.meta?.effect, anim?.url, grid, gap].join("|");
+    const size = Math.max(40, Math.min(100, Number(s?.boardSize ?? 100)));
+    const logo = Math.max(60, Math.min(160, Number(s?.logoSize ?? 100)));
+    const fxi = Math.max(0.3, Math.min(2.5, Number(s?.fxIntensity ?? 100) / 100));
+    const key = [btn?.url, bg?.url, grid, gap, size, logo, fxi,
+      anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
     if (key === partsKey) return; partsKey = key;
 
     /* grid shape + spacing (buttons touch at gap 0, and are square unless it's 8x4) */
@@ -287,7 +296,12 @@
     boardEl.style.setProperty("--gap", gap + "px");
     boardEl.style.setProperty("--cols", cfg.cols);
     boardEl.style.setProperty("--rows", cfg.rows);
-    boardEl.style.setProperty("--tile", cfg.stretch ? "auto" : tileFor(grid, gap) + "px");
+    /* size is a percentage of the biggest tile that still fits the safe area */
+    boardEl.style.setProperty("--tile",
+      cfg.stretch ? "auto" : Math.max(10, Math.round(tileFor(grid, gap) * size / 100)) + "px");
+    /* logo scale lives in the padding around it, so the button frame never changes */
+    boardEl.style.setProperty("--logofrac", (0.30 - (logo / 100) * 0.145).toFixed(3));
+    boardEl.style.setProperty("--fxi", fxi);
     boardEl.classList.toggle("has-btnstyle", !!btn?.url);
 
     /* background: still image or looping video behind the grid */
@@ -304,31 +318,42 @@
     for (const abbr of C.ORDER)
       cells[abbr].style.backgroundImage = btn?.url ? `url("${btn.url}")` : "";
 
-    /* button animation: ambient classes apply to all cells on one shared clock */
+    /* button animations: every selected ambient effect runs at once, on one clock */
     AMBIENT.forEach(e => boardEl.classList.remove("anim-" + e));
-    btnAnim = anim ?? null;
-    const eff = anim?.meta?.effect;
-    if (eff && AMBIENT.includes(eff) && anim?.meta?.mode !== "trigger")
-      boardEl.classList.add("anim-" + eff);
+    btnAnims = anims;
+    for (const a of anims) {
+      const eff = a?.meta?.effect;
+      if (eff && AMBIENT.includes(eff)) boardEl.classList.add("anim-" + eff);
+    }
+    /* AI-generated clips loop continuously over each highlighted button */
+    fxClips = anims.filter(a => a.url && /\.(webm|mp4)(\?|$)/i.test(a.url)).map(a => a.url);
+    paintClips();
+  }
+
+  /* keep a looping clip on every highlighted cell (and only those) */
+  function paintClips() {
+    for (const abbr of C.ORDER) {
+      const cell = cells[abbr];
+      const want = fxClips.length && cell.classList.contains("hl");
+      const have = cell.querySelector("video.vfx");
+      if (!want) { if (have) { cell.classList.remove("fx-video"); have.remove(); } continue; }
+      if (have && have.dataset.src === fxClips[0]) continue;
+      have?.remove();
+      const v = Object.assign(document.createElement("video"),
+        { src: fxClips[0], autoplay: true, muted: true, loop: true, playsInline: true,
+          className: "vfx" });
+      v.dataset.src = fxClips[0];
+      cell.appendChild(v); cell.classList.add("fx-video");
+    }
   }
   /* trigger-mode effects fire on the single cell that was just hit
      (suppressed when highlight mode is on and this team isn't highlighted) */
   function triggerButtonAnim(abbr) {
-    const cell = cells[abbr]; if (!cell || !btnAnim) return;
+    const cell = cells[abbr]; if (!cell || !btnAnims.length) return;
     if (!cell.classList.contains("hl")) return;   // effects only on highlighted teams
-    const m = btnAnim.meta ?? {};
-    if (m.effect === "none") return;
-    if (btnAnim.url && /\.(webm|mp4)(\?|$)/i.test(btnAnim.url)) {   // AI-generated clip
-      cell.querySelectorAll("video.vfx").forEach(n => n.remove());
-      const v = Object.assign(document.createElement("video"),
-        {src:btnAnim.url, autoplay:true, muted:true, playsInline:true, className:"vfx"});
-      cell.appendChild(v); cell.classList.add("fx-video");
-      const stop = () => { cell.classList.remove("fx-video");        // fade out, then drop
-        setTimeout(() => v.remove(), 320); };
-      v.onended = v.onerror = stop; setTimeout(stop, 4000);
-      return;
-    }
-    if (m.mode === "trigger" || m.effect === "pop") {
+    const m = btnAnims.find(a => a.meta?.mode === "trigger" || a.meta?.effect === "pop")?.meta;
+    if (!m || m.effect === "none") return;
+    {
       cell.classList.remove("fx-pop"); void cell.offsetWidth; cell.classList.add("fx-pop");
       for (let i = 0; i < 10; i++) {                                 // dust puff on the slam
         const d = document.createElement("span"); d.className = "dust";
@@ -531,9 +556,10 @@
     const hlKey = C.ORDER.filter(a => hl[a] && !picked[a]).join(",");
     if (hlKey !== lastHlKey) {
       lastHlKey = hlKey;
-      const active = AMBIENT.map(e => "anim-" + e).find(c => boardEl.classList.contains(c));
-      if (active) { boardEl.classList.remove(active); void boardEl.offsetWidth;
-        boardEl.classList.add(active); }
+      const active = AMBIENT.map(e => "anim-" + e).filter(c => boardEl.classList.contains(c));
+      if (active.length) { active.forEach(c => boardEl.classList.remove(c));
+        void boardEl.offsetWidth; active.forEach(c => boardEl.classList.add(c)); }
+      paintClips();                       // clips follow the highlighted set
     }
     rotator.setList(s.banners?.rotation || []);
   }

@@ -124,6 +124,7 @@
   <button data-tab="banners">Banners</button>
   <button data-tab="bgs">Backgrounds</button>
   <button data-tab="style">Board Style</button>
+  <button data-tab="ai">AI</button>
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
@@ -234,11 +235,28 @@
 <section id="tab-style">
   <h2>Grid style — the chosen button style applies to whichever grid you pick</h2>
   <div class="grid" id="gridStyleGrid"></div>
-  <div class="row" style="margin-top:10px;max-width:520px">
+  <div class="row" style="margin-top:10px;max-width:560px">
+    <span class="tag" style="width:110px">Button size</span>
+    <input type="range" id="sizeRange" min="40" max="100" step="1" value="100" style="flex:1">
+    <span class="tag" id="sizeVal" style="width:52px">100%</span>
+  </div>
+  <div class="row" style="max-width:560px">
     <span class="tag" style="width:110px">Button spacing</span>
     <input type="range" id="gapRange" min="0" max="20" step="1" value="0" style="flex:1">
-    <span class="tag" id="gapVal" style="width:44px">0px</span>
+    <span class="tag" id="gapVal" style="width:52px">0px</span>
   </div>
+  <div class="row" style="max-width:560px">
+    <span class="tag" style="width:110px">Logo size</span>
+    <input type="range" id="logoRange" min="60" max="160" step="1" value="100" style="flex:1">
+    <span class="tag" id="logoVal" style="width:52px">100%</span>
+  </div>
+  <div class="row" style="max-width:560px">
+    <span class="tag" style="width:110px">Effect intensity</span>
+    <input type="range" id="fxRange" min="30" max="250" step="5" value="100" style="flex:1">
+    <span class="tag" id="fxVal" style="width:52px">100%</span>
+  </div>
+  <div class="row"><span class="tag">100% button size is already the largest that fits inside the
+    WhatNot-safe width — the slider takes them down from there.</span></div>
   <h2>Button style — mix and match with any background</h2>
   <div class="grid" id="btnStyleGrid"></div>
   <h2>Board background</h2>
@@ -264,6 +282,50 @@
     </div>
   </div>
 </section>
+
+<section id="tab-ai">
+  <h2>Generate — every category in one place. Prompts are used exactly as written.</h2>
+  <div class="row">
+    <select id="aiKind">
+      <option value="background">Background image</option>
+      <option value="background_anim">Background animation</option>
+      <option value="banner">Banner art</option>
+      <option value="board_bg">Board background image</option>
+      <option value="board_bg_anim">Board background animation</option>
+      <option value="board_button">Button style</option>
+      <option value="button_anim">Button animation</option>
+      <option value="oneshot">One-shot animation</option>
+      <option value="team_style">Team animation style</option>
+      <option value="sfx">Sound effect</option>
+    </select>
+    <select id="aiQuality" title="Video model quality">
+      <option value="standard">Video: Standard</option>
+      <option value="best">Video: Best</option>
+    </select>
+    <input type="text" id="aiPrompt" placeholder="Describe exactly what you want" style="flex:1;min-width:240px">
+    <button class="btn gold" id="aiGenBtn">Generate</button>
+  </div>
+  <div class="row"><span class="tag">image ≈$0.03 · sound ≈$0.05 · video ≈$0.25 standard / ≈$1.40 best.
+    Looping clips are 5s; one-shots may run to 10s.</span></div>
+
+  <h2>Everything AI has made — click one to build on it</h2>
+  <div class="grid" id="aiGrid"></div>
+</section>
+
+<div class="modal" id="aiRefine"><div class="box">
+  <h2 style="margin-top:0">Build on <span id="aiRefName" style="color:var(--gold)"></span></h2>
+  <div id="aiRefPreview" style="max-height:220px;overflow:hidden;border-radius:8px;background:#04101B"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn gold" id="aiAnimate">Animate — looping video of it</button>
+    <button class="btn" id="aiBrandify">Brandify — redo in AC Breakz style</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <input type="text" id="aiRefPrompt" placeholder="…or describe the new version you want" style="flex:1;min-width:240px">
+    <button class="btn" id="aiRefGo">Generate</button>
+  </div>
+  <div class="row" style="margin-top:10px"><button class="btn ghost" id="aiRefClose">Close</button>
+    <span class="tag" id="aiRefMsg"></span></div>
+</div></div>
 
 <section id="tab-settings">
   <h2>This device</h2>
@@ -677,8 +739,14 @@
     rect84:"border-radius:3px;border:2px solid var(--copper)",
     slant:"clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%);background:var(--copper)",
   };
-  $("#gapRange").oninput = () => $("#gapVal").textContent = $("#gapRange").value + "px";
-  $("#gapRange").onchange = () => { state.boardGap = +$("#gapRange").value; pushState(); };
+  const slider = (id, label, key, unit) => {
+    $(id).oninput = () => $(label).textContent = $(id).value + unit;
+    $(id).onchange = () => { state[key] = +$(id).value; pushState(); };
+  };
+  slider("#gapRange",  "#gapVal",  "boardGap",    "px");
+  slider("#sizeRange", "#sizeVal", "boardSize",   "%");
+  slider("#logoRange", "#logoVal", "logoSize",    "%");
+  slider("#fxRange",   "#fxVal",   "fxIntensity", "%");
 
   /* ---------- banner composer ---------- */
   const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
@@ -717,8 +785,9 @@
   function renderCompBGs(){
     /* composer backgrounds = art you can put text ON: uploaded/AI banner art and
        backgrounds. Composed text banners are finished pieces — rotation only. */
+    /* banner art only — streamer backgrounds are a separate library with its own tab */
     const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
-      ((a.kind === "banner" && a.meta?.type !== "text") || a.kind === "background"));
+      a.kind === "banner" && a.meta?.type !== "text");
     $("#compBGs").innerHTML =
       `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
          <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
@@ -849,12 +918,98 @@
         quality:$("#styleGenQuality").value,
         as:{ kind:"style", name:"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } }, b);
     else
+      /* button effects run continuously, so they are always ambient */
       d = await gen({ kind:"button_anim", prompt:p + ", effect over a small square button, glowing energy",
         quality:$("#styleGenQuality").value,
-        as:{ kind:"style", name:"Btn anim: "+p.slice(0,30), meta:{ domain:"button_anim", mode:"trigger" } } }, b);
+        as:{ kind:"style", name:"Btn anim: "+p.slice(0,30), meta:{ domain:"button_anim", mode:"ambient" } } }, b);
     busy(b, false);
     if (d) { toast("Style created — Apply it on its card"); loadAssets(); }
   };
+
+  /* ---------- AI tab: every category, plus building on an existing generation ----- */
+  /* one description per category so the other tabs and this one stay in step */
+  const AI_KINDS = {
+    background:      { kind:"background" },
+    background_anim: { kind:"background_anim", video:true,
+                       as:{ kind:"background", name:(p)=>"AI clip: "+p.slice(0,34) } },
+    banner:          { kind:"banner", as:{ meta:{ template:true } } },
+    board_bg:        { kind:"board_bg",
+                       as:{ kind:"style", name:(p)=>"Board: "+p.slice(0,32), meta:{ domain:"board_bg" } } },
+    board_bg_anim:   { kind:"board_bg_anim", video:true,
+                       as:{ kind:"style", name:(p)=>"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } },
+    board_button:    { kind:"board_button",
+                       suffix:", one single empty square button with its own bezel, hollow centre, no logo or text",
+                       as:{ kind:"style", name:(p)=>"Buttons: "+p.slice(0,32), meta:{ domain:"board_button" } } },
+    button_anim:     { kind:"button_anim", video:true,
+                       as:{ kind:"style", name:(p)=>"Btn anim: "+p.slice(0,30),
+                            meta:{ domain:"button_anim", mode:"ambient" } } },
+    oneshot:         { kind:"animation_still",
+                       as:{ kind:"animation", name:(p)=>"AI: "+p.slice(0,40),
+                            meta:{ group:"oneshot", image:true } } },
+    team_style:      { kind:"animation_still", noRow:true, team:true },
+    sfx:             { kind:"sfx", as:{ kind:"sfx", name:(p)=>"AI: "+p.slice(0,40), meta:{} } },
+  };
+  const buildAs = (spec, p) => spec.as ? {
+    ...spec.as,
+    name: typeof spec.as.name === "function" ? spec.as.name(p) : spec.as.name,
+  } : null;
+
+  async function aiGenerate(kindKey, prompt, btn, extra = {}) {
+    const spec = AI_KINDS[kindKey]; if (!spec) return null;
+    const body = { kind: spec.kind, prompt: prompt + (spec.suffix ?? ""),
+      quality: $("#aiQuality")?.value ?? "standard", ...extra };
+    if (spec.video) body.longer = false;
+    if (spec.noRow) body.no_row = true; else body.as = buildAs(spec, prompt);
+    const d = await gen(body, btn);
+    if (d && spec.team)                    // team styles are a style row pointing at the art
+      await saveAsset({ kind:"style", name:"Style: "+prompt.slice(0,36), url:null,
+        meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt } });
+    return d;
+  }
+
+  $("#aiGenBtn").onclick = async () => {
+    const p = $("#aiPrompt").value.trim(); if (!p) return toast("Describe it first");
+    const b = $("#aiGenBtn"); busy(b, true);
+    const d = await aiGenerate($("#aiKind").value, p, b);
+    busy(b, false);
+    if (d) { toast("Generated"); await loadAssets(); }
+  };
+
+  /* refine an existing generation */
+  let aiRef = null;
+  function openRefine(a){
+    aiRef = a;
+    $("#aiRefName").textContent = a.name;
+    $("#aiRefMsg").textContent = "";
+    $("#aiRefPrompt").value = "";
+    const u = a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+    $("#aiRefPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(u ?? "")
+      ? `<video src="${u}" muted autoplay loop playsinline style="width:100%"></video>`
+      : `<img src="${u}" style="width:100%">`;
+    /* Animate only makes sense from a still */
+    $("#aiAnimate").disabled = /\.(webm|mp4)(\?|$)/i.test(u ?? "");
+    $("#aiRefine").classList.add("on");
+  }
+  const refUrlOf = (a) => a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+  async function refine(kindKey, prompt, btn, brand){
+    if (!aiRef) return;
+    $("#aiRefMsg").textContent = "working…";
+    const d = await aiGenerate(kindKey, prompt, btn, { ref_url: refUrlOf(aiRef), brand: !!brand });
+    $("#aiRefMsg").textContent = d ? "done — it is in the list below" : "failed";
+    if (d) await loadAssets();
+  }
+  $("#aiAnimate").onclick = () => refine("background_anim",
+    (aiRef?.meta?.prompt ?? aiRef?.name ?? "this image") + ", bring it to life with gentle motion",
+    $("#aiAnimate"), false);
+  $("#aiBrandify").onclick = () => refine(
+    aiRef?.kind === "style" ? "board_bg" : (aiRef?.kind ?? "background"),
+    aiRef?.meta?.prompt ?? aiRef?.name ?? "this image", $("#aiBrandify"), true);
+  $("#aiRefGo").onclick = () => {
+    const p = $("#aiRefPrompt").value.trim(); if (!p) return toast("Describe the new version");
+    refine(aiRef?.kind === "style" ? "board_bg" : (aiRef?.kind ?? "background"), p, $("#aiRefGo"), false);
+  };
+  $("#aiRefClose").onclick = () => { $("#aiRefine").classList.remove("on");
+    $("#aiRefPreview").innerHTML = ""; };
 
   /* ---------- reframe editor ---------- */
   let rfAsset = null;
@@ -1043,7 +1198,39 @@
     };
     part("board_button", "#btnStyleGrid", "boardButtons", {icon:"🟨"});
     part("board_bg",     "#bgStyleGrid",  "boardBg",      {icon:"🎞"});
-    part("button_anim",  "#btnAnimGrid",  "buttonAnim",   {icon:"✨"});
+
+    /* button animations are multi-select: any number can run at once */
+    const picked = (Array.isArray(state.buttonAnims) ? state.buttonAnims
+                   : state.buttonAnim ? [state.buttonAnim] : []).filter(Boolean);
+    const pickedIds = new Set(picked.map(x => x.id));
+    $("#btnAnimGrid").innerHTML = assets
+      .filter(a => a.kind==="style" && a.meta?.domain==="button_anim")
+      .map(s => {
+        const isNone = s.meta?.effect === "none";
+        const on = isNone ? pickedIds.size === 0 : pickedIds.has(s.id);
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "✨"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <div class="row"><button class="btn ${on?"ghost":""}" data-anim="${s.id}">
+              ${isNone ? (on?"Active":"Turn all off") : (on?"Selected":"Select")}</button>${delBtn(s)}</div>
+          </div></div>`; }).join("");
+    $$("#btnAnimGrid [data-anim]").forEach(b => b.onclick = () => {
+      const s = assets.find(x=>x.id===b.dataset.anim);
+      if (s?.meta?.effect === "none") state.buttonAnims = [];
+      else {
+        const list = picked.filter(x => x.id !== s.id);
+        state.buttonAnims = pickedIds.has(s.id) ? list : [...list, s];
+      }
+      delete state.buttonAnim;                  // superseded by the list
+      pushState();
+    });
+
+    /* sliders reflect the live state */
+    const setS = (id, label, key, dflt, unit) => {
+      $(id).value = state[key] ?? dflt; $(label).textContent = ($(id).value) + unit; };
+    setS("#gapRange","#gapVal","boardGap",0,"px");
+    setS("#sizeRange","#sizeVal","boardSize",100,"%");
+    setS("#logoRange","#logoVal","logoSize",100,"%");
+    setS("#fxRange","#fxVal","fxIntensity",100,"%");
     $$("[data-part]").forEach(b => b.onclick = () => {
       const [k, id] = b.dataset.part.split(":");
       const s = assets.find(x=>x.id===id);
@@ -1059,6 +1246,18 @@
       e.stopPropagation(); openReframe(assets.find(x=>x.id===b.dataset.rf)); });
     $$("[data-sfx]").forEach(b => b.onclick = (e) => {
       e.stopPropagation(); openSfxPicker(assets.find(x=>x.id===b.dataset.sfx)); });
+    /* AI gallery — anything AI has produced, whatever library it landed in */
+    const made = assets.filter(a => a.meta?.type === "ai" || a.meta?.prompt);
+    $("#aiGrid").innerHTML = made.length ? made.map(a => `
+      <div class="asset"><div class="thumb" data-ai="${a.id}" style="cursor:pointer">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-ai="${a.id}">Build on it</button>${delBtn(a)}</div>
+          <div class="row"><span class="tag">${a.kind}${a.meta?.domain ? " · "+a.meta.domain : ""}</span></div>
+        </div></div>`).join("")
+      : `<span class="tag">Nothing generated yet.</span>`;
+    $$("#aiGrid [data-ai]").forEach(b => b.onclick = () =>
+      openRefine(assets.find(x => x.id === b.dataset.ai)));
+
     wireDeletes(); wireHides();
     /* trash */
     $("#trashGrid").innerHTML = trash.length ? trash.map(a => `

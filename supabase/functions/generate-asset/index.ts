@@ -52,36 +52,58 @@ const CORS = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json", ...CORS } });
 
-function modelFor(kind: string, quality?: string) {
+function modelFor(kind: string, quality?: string, refUrl?: string) {
   if (AUDIO_KINDS.has(kind)) return "fal-ai/stable-audio";
-  if (VIDEO_KINDS.has(kind))
+  if (VIDEO_KINDS.has(kind)) {
+    /* a reference image turns this into image-to-video (used by "Animate") */
+    if (refUrl) return quality === "best"
+      ? "fal-ai/kling-video/v2/master/image-to-video"
+      : "fal-ai/kling-video/v1.6/standard/image-to-video";
     return quality === "best"
       ? "fal-ai/kling-video/v2/master/text-to-video"
       : "fal-ai/kling-video/v1.6/standard/text-to-video";
-  return "fal-ai/flux/dev";
+  }
+  return refUrl ? "fal-ai/flux/dev/image-to-image" : "fal-ai/flux/dev";
 }
 const NO_TEXT = "text, letters, words, captions, subtitles, watermark, logo, signage, " +
   "people, hands, faces, blurry, low quality, distorted";
 
-function payloadFor(kind: string, prompt: string) {
+/* The prompt is used as written. Branding is only applied when the caller asks for it
+   (the AI tab's "Brandify"), never automatically. */
+function payloadFor(kind: string, prompt: string, opts: {
+  brand?: boolean; refUrl?: string; loop?: boolean; longer?: boolean;
+} = {}) {
+  const p0 = (opts.brand ? BRAND : "") + prompt;
+
   if (AUDIO_KINDS.has(kind))
-    return { prompt: prompt + ", clean punchy broadcast sound effect, no music bed", seconds_total: 5 };
+    return { prompt: p0 + ", clean punchy broadcast sound effect, no music bed", seconds_total: 5 };
 
   if (VIDEO_KINDS.has(kind)) {
-    /* Effect overlays must be an ISOLATED effect on black so they can be blended over a
-       button — the brand scene prompt would turn them into branded hero objects. */
+    /* Effect overlays must be an ISOLATED effect on black so they can be blended
+       over a button. Looping clips stay at 5s (well under the 7s ceiling); one-shots
+       may run to 10s and do not need to loop. */
     const isEffect = kind === "button_anim";
+    const loop = opts.loop !== false && !opts.longer;
     const p = isEffect
-      ? `${prompt}. Isolated visual effect on a pure solid black background. ` +
+      ? `${p0}. Isolated visual effect on a pure solid black background. ` +
         "Only the effect is visible, no objects, no scene, no surface, no text. " +
-        "Centered, macro, high contrast glow, seamless loop, locked-off camera."
-      : `${BRAND}${prompt}. Wide establishing plate, seamless loop, locked-off camera, ` +
-        "no text anywhere in frame.";
-    return { prompt: p, negative_prompt: NO_TEXT,
-             duration: "5", aspect_ratio: ASPECT[kind] ?? "16:9" };
+        "Centered, macro, high contrast glow, locked-off camera."
+      : `${p0}. Locked-off camera, no text anywhere in frame.`;
+    return {
+      prompt: p + (loop ? " Seamless perfect loop: the last frame matches the first exactly." : ""),
+      negative_prompt: NO_TEXT,
+      duration: opts.longer ? "10" : "5",
+      aspect_ratio: ASPECT[kind] ?? "16:9",
+      ...(opts.refUrl ? { image_url: opts.refUrl } : {}),
+    };
   }
-  return { prompt: BRAND + prompt, image_size: SIZES[kind] ?? SIZES.background,
-           num_inference_steps: 28, num_images: 1 };
+  return {
+    prompt: p0,
+    ...(opts.refUrl
+      ? { image_url: opts.refUrl, strength: 0.65 }
+      : { image_size: SIZES[kind] ?? SIZES.background }),
+    num_inference_steps: 28, num_images: 1,
+  };
 }
 const pickUrl = (out: Record<string, any>) =>
   out?.images?.[0]?.url ?? out?.video?.url ?? out?.video_url ??
@@ -123,7 +145,8 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const { kind = "background", prompt = "", key = "", no_row = false, as = null,
-          mode = "inline", quality = "standard", request_id = "", model: modelIn = "" } = body;
+          mode = "inline", quality = "standard", request_id = "", model: modelIn = "",
+          brand = false, ref_url = "", longer = false } = body;
   if (!await authorized({ key, token: body.token })) return json({ error: "signed out" }, 401);
   if (!FAL_KEY) return json({ error: "FAL_KEY not configured" }, 500);
 
@@ -152,8 +175,8 @@ Deno.serve(async (req) => {
   }
 
   if (!String(prompt).trim()) return json({ error: "prompt required" }, 400);
-  const model = modelFor(kind, quality);
-  const payload = payloadFor(kind, prompt);
+  const model = modelFor(kind, quality, ref_url);
+  const payload = payloadFor(kind, prompt, { brand, refUrl: ref_url, longer });
 
   /* ---- submit to the queue (slow kinds) ---- */
   if (mode === "submit") {
