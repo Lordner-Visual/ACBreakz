@@ -547,13 +547,27 @@
     LS.setItem("acbz-state", JSON.stringify(state)); bus.postMessage({kind:"state",data:state});
     renderAll();
   }
+  /* One write in flight at a time, with pending edits coalesced. Firing patches
+     concurrently lets two writes to the SAME key land out of order, so a rapid
+     series of adjustments could settle on an earlier value. Merging into `pending`
+     also collapses a burst into a single request. */
+  let inFlight = null, pending = null;
   async function patchState(patch){
     Object.assign(state, patch); renderAll();        // optimistic, so the UI stays snappy
     if (!cloud) return pushState();
-    const {data, error} = await panelCall({action:"patch", pc:PC, clientId:CLIENT_ID, patch});
-    if (error) return toast("Save failed: "+error.message);
-    const doc = data?.docs?.[String(pcRow())];
-    if (doc) { state = doc; renderAll(); }           // adopt the authoritative document
+    pending = { ...(pending ?? {}), ...patch };
+    if (inFlight) return inFlight;                   // the running drain will pick it up
+    return (inFlight = drainPatches().finally(() => { inFlight = null; }));
+  }
+  async function drainPatches(){
+    while (pending) {
+      const patch = pending; pending = null;
+      const {data, error} = await panelCall({action:"patch", pc:PC, clientId:CLIENT_ID, patch});
+      if (error) { toast("Save failed: "+error.message); return; }
+      const doc = data?.docs?.[String(pcRow())];
+      /* don't adopt if the operator has already queued a newer edit */
+      if (doc && !pending) { state = doc; renderAll(); }
+    }
   }
   async function boardCall(boardAction, team){
     if (!cloud) return pushState();

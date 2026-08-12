@@ -218,12 +218,24 @@
      `board` and revert a Stream Deck press, and board taps go through the same
      locked SQL action the deck uses, so the two can never race. */
   const CLIENT_ID = (crypto.randomUUID?.() ?? String(Math.random()).slice(2));
+  /* One write in flight at a time, with pending edits coalesced — concurrent
+     patches to the SAME key can land out of order, so a rapid series of
+     adjustments could settle on an earlier value. */
+  let inFlight = null, pending = null;
   async function patchState(patch){
     Object.assign(state, patch); render();          // optimistic
-    const {data, error} = await call({ action:"patch", clientId:CLIENT_ID, patch });
-    if (error) return toast("Save failed: " + error.message);
-    const doc = data?.docs?.[PC];
-    if (doc) { state = doc; render(); }
+    pending = { ...(pending ?? {}), ...patch };
+    if (inFlight) return inFlight;
+    return (inFlight = drainPatches().finally(() => { inFlight = null; }));
+  }
+  async function drainPatches(){
+    while (pending) {
+      const patch = pending; pending = null;
+      const {data, error} = await call({ action:"patch", clientId:CLIENT_ID, patch });
+      if (error) { toast("Save failed: " + error.message); return; }
+      const doc = data?.docs?.[PC];
+      if (doc && !pending) { state = doc; render(); }   // don't clobber a queued edit
+    }
   }
   async function boardCall(boardAction, team){
     const {data, error} = await call({ action:"board", clientId:CLIENT_ID, boardAction, team });
