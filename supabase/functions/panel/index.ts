@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     const n = parseInt(String(body.pc), 10);
     if (!(n >= 1 && n <= 5)) return json({ error: "operator calls must name one PC" }, 400);
     const allowed =
-      body.action === "state" ||
+      body.action === "state" || body.action === "patch" || body.action === "board" ||
       /* FX triggers (stingers, sounds, one-shots) for its own PC */
       body.action === "event" ||
       /* the banner composer: save a composed strip and register it, nothing else */
@@ -117,14 +117,49 @@ Deno.serve(async (req) => {
   }
 
   switch (body.action) {
+    /* V11 — three ways to write state, all of them atomic and field-scoped.
+       `patch` and `board` are what the panels use now. `state` is the legacy
+       whole-document write: it can no longer carry `board` unless explicitly
+       forced (QA snapshot restore), so a page running old code, or one whose
+       in-memory copy is stale, can never revert a Stream Deck press again. */
+    case "patch": {
+      if (!body.patch || typeof body.patch !== "object") return json({ error: "patch required" }, 400);
+      const { data, error } = await sb.rpc("state_patch", {
+        p_pcs: pcList(body.pc), p_patch: body.patch, p_writer: body.clientId ?? null });
+      return error ? json({ error: error.message }, 400) : json({ ok: true, docs: data });
+    }
+    case "board": {
+      const act = String(body.boardAction ?? "");
+      const team = String(body.team ?? "").toLowerCase() || null;
+      /* resolve the FX assets BEFORE the RPC — it holds a row lock and must not do I/O */
+      let fx: Record<string, unknown> = {};
+      if (act === "team_toggle" || act === "team_pick") {
+        const [{ data: dflt }, { data: anim }] = await Promise.all([
+          sb.from("assets").select("url").eq("kind", "sfx").eq("meta->>default", "true").limit(1),
+          team ? sb.from("assets").select("url").eq("kind", "animation")
+                   .eq("meta->>team", team).order("created_at", { ascending: false }).limit(1)
+               : Promise.resolve({ data: [] }),
+        ]);
+        let sfxUrl = dflt?.[0]?.url ?? null;
+        if (!sfxUrl) {
+          const { data: newest } = await sb.from("assets").select("url")
+            .eq("kind", "sfx").order("created_at", { ascending: false }).limit(1);
+          sfxUrl = newest?.[0]?.url ?? null;
+        }
+        fx = { defaultSfxUrl: sfxUrl, teamAnimUrl: anim?.[0]?.url ?? null };
+      }
+      const { data, error } = await sb.rpc("board_action", {
+        p_pcs: pcList(body.pc), p_action: act, p_team: team,
+        p_fx: fx, p_writer: body.clientId ?? null, p_return_data: true });
+      return error ? json({ error: error.message }, 400)
+                   : json({ ok: true, results: data?.results ?? [] });
+    }
     case "state": {
       if (!body.data || typeof body.data !== "object") return json({ error: "data required" }, 400);
-      for (const pc of pcList(body.pc)) {
-        const { error } = await sb.from("stream_state")
-          .update({ data: body.data, updated_at: new Date() }).eq("id", pc);
-        if (error) return json({ error: error.message }, 500);
-      }
-      return json({ ok: true });
+      const { data, error } = await sb.rpc("state_replace", {
+        p_pcs: pcList(body.pc), p_doc: body.data,
+        p_writer: body.clientId ?? null, p_force: body.force === true });
+      return error ? json({ error: error.message }, 500) : json({ ok: true, docs: data });
     }
     case "event": {
       if (!body.type) return json({ error: "type required" }, 400);

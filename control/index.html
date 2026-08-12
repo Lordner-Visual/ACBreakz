@@ -535,13 +535,33 @@
     state.banners ??= {rotation:[]};
     state.boardGrid ??= "buttons"; state.boardGap ??= 0;
   }
-  let lastPushedAt = 0;
-  async function pushState(){
-    state.updatedAt = lastPushedAt = Date.now();
-    if (cloud) { const {error} = await panelCall({action:"state", pc:PC, data:state});
-      if (error) toast("State save failed: "+error.message); }
-    else { LS.setItem("acbz-state", JSON.stringify(state)); bus.postMessage({kind:"state",data:state}); }
+  /* V11 — writes are field-scoped and atomic.
+     `patchState` sends ONLY the keys it changed, so a banner or slider change can
+     never ship a stale `board` and revert a Stream Deck press. Board taps go through
+     `boardCall`, the same locked SQL function the deck uses, so the two can never
+     race. CLIENT_ID replaces the old timestamp echo-guard: comparing clocks across
+     machines dropped legitimate concurrent writes. */
+  const CLIENT_ID = (crypto.randomUUID?.() ?? String(Math.random()).slice(2));
+  async function pushState(){                       // whole-doc write — preview mode only
+    state.updatedAt = Date.now();
+    LS.setItem("acbz-state", JSON.stringify(state)); bus.postMessage({kind:"state",data:state});
     renderAll();
+  }
+  async function patchState(patch){
+    Object.assign(state, patch); renderAll();        // optimistic, so the UI stays snappy
+    if (!cloud) return pushState();
+    const {data, error} = await panelCall({action:"patch", pc:PC, clientId:CLIENT_ID, patch});
+    if (error) return toast("Save failed: "+error.message);
+    const doc = data?.docs?.[String(pcRow())];
+    if (doc) { state = doc; renderAll(); }           // adopt the authoritative document
+  }
+  async function boardCall(boardAction, team){
+    if (!cloud) return pushState();
+    const {data, error} = await panelCall({action:"board", pc:PC, clientId:CLIENT_ID,
+                                           boardAction, team});
+    if (error) return toast("Board action failed: "+error.message);
+    const r = (data?.results ?? []).find(x => Number(x.pc) === pcRow()) ?? data?.results?.[0];
+    if (r?.data) { state = r.data; renderAll(); }
   }
   async function fireEvent(type, payload){
     const ev = { id: crypto.randomUUID(), type, payload, created_at:new Date().toISOString() };
@@ -664,8 +684,8 @@
         : await panelCall({ action:"delete_asset", id });          // gone everywhere -> trash
       if (error) return toast("Delete failed: " + error.message);
       if (ctx === "rotation") {                                     // drop it from the rotation
-        state.banners.rotation = (state.banners.rotation || []).filter(x => x.id !== id);
-        await pushState();
+        await patchState({banners: {...state.banners,
+          rotation: (state.banners.rotation || []).filter(x => x.id !== id)}});
       }
       await loadAssets(); await loadState(); renderAll();
       toast(stillElsewhere ? "Removed from this list" : "Moved to trash");
@@ -702,7 +722,7 @@
       const updated = await updateAsset(sfxTargetId, meta);
       if (!updated) return;
       /* keep a live-selected team style in sync so picks use the new sound immediately */
-      if (state.animStyle?.id === sfxTargetId) { state.animStyle = updated; await pushState(); }
+      if (state.animStyle?.id === sfxTargetId) await patchState({animStyle: updated});
       renderAll(); openSfxPicker(assets.find(a => a.id === sfxTargetId) ?? target);
       toast("Sound linked");
     });
@@ -716,7 +736,7 @@
   $("#hlModeBtn").onclick = () => { hlMode = !hlMode;
     $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
     $("#hlModeBtn").classList.toggle("gold", hlMode); renderAll(); };
-  $("#hlClearBtn").onclick = () => { state.board.highlighted = {}; pushState(); };
+  $("#hlClearBtn").onclick = () => boardCall("highlight_clear");
   C.ORDER.forEach(abbr => {
     const t = C.TEAMS[abbr];
     const d = document.createElement("div");
@@ -727,33 +747,17 @@
         /* highlight is independent of elimination: starring an eliminated team keeps it
            OFF the board (only the elimination tap brings it back) but remembers the star,
            so its animation reappears the moment the team is restored */
-        state.board.highlighted ??= {};
-        if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
-        else state.board.highlighted[abbr] = true;
-        return pushState();
+        return boardCall("highlight_toggle", abbr);
       }
-      if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fireEvent("team_restore",{team:abbr}); }
-      else {
-        state.board.picked[abbr] = true;              // the star (if any) survives elimination
-        const st = state.animStyle;
-        /* linked sound wins; explicit null = No SoundFX; otherwise the default sfx */
-        const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
-        const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
-        if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url)) {
-          fireEvent("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
-            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl,
-            styleFit: st.meta?.fit ?? "box"});
-        } else {
-          const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
-          fireEvent("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl});
-        }
-      }
-      pushState();
+      /* board_action() resolves the stinger + sound and fires the event inside the
+         same transaction as the state change, so it can never play for an
+         elimination that did not record */
+      boardCall("team_toggle", abbr);
     };
     boardEl.appendChild(d);
   });
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
-    state.board.picked = {}; fireEvent("board_reset",{}); pushState(); };
+    boardCall("board_reset"); };
 
   $("#emptyTrash").onclick = async () => {
     if (!trash.length) return toast("Trash is already empty");
@@ -788,7 +792,7 @@
   };
   const slider = (id, label, key, unit) => {
     $(id).oninput = () => $(label).textContent = $(id).value + unit;
-    $(id).onchange = () => { state[key] = +$(id).value; pushState(); };
+    $(id).onchange = () => patchState({[key]: +$(id).value});
   };
   slider("#gapRange",  "#gapVal",  "boardGap",    "px");
   slider("#sizeRange", "#sizeVal", "boardSize",   "%");
@@ -1183,7 +1187,7 @@
           <div class="row"><span class="tag">${g.hint}</span></div>
         </div></div>`; }).join("");
     $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => {
-      state.boardGrid = b.dataset.grid; pushState(); });
+      patchState({boardGrid: b.dataset.grid}); });
     $("#gapRange").value = state.boardGap ?? 0;
     $("#gapVal").textContent = (state.boardGap ?? 0) + "px";
 
@@ -1202,7 +1206,7 @@
           <div class="row">${sfxLabel(s)}</div>
         </div></div>`; }).join("");
     $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
-      state.animStyle = assets.find(x=>x.id===b.dataset.style); pushState(); });
+      patchState({animStyle: assets.find(x=>x.id===b.dataset.style)}); });
 
     /* one-shot animations */
     $("#oneshotGrid").innerHTML = assets
@@ -1251,8 +1255,8 @@
     $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.rot);
       const rot = state.banners.rotation || [];
-      state.banners.rotation = rotIds.has(a.id) ? rot.filter(x=>x.id!==a.id) : [...rot, a];
-      pushState();
+      patchState({banners: {...state.banners,
+        rotation: rotIds.has(a.id) ? rot.filter(x=>x.id!==a.id) : [...rot, a]}});
     });
 
     /* backgrounds */
@@ -1265,7 +1269,7 @@
         </div></div>`).join("");
     $$("#bgGrid [data-bg]").forEach(d => d.onclick = () => {
       const a = assets.find(x=>x.id===d.dataset.bg);
-      state.background = { url:a.url, name:a.name, crop:a.meta?.crop ?? null }; pushState();
+      patchState({background: { url:a.url, name:a.name, crop:a.meta?.crop ?? null }});
     });
 
     /* board style: three independent pickers */
@@ -1304,13 +1308,12 @@
           </div></div>`; }).join("");
     $$("#btnAnimGrid [data-anim]").forEach(b => b.onclick = () => {
       const s = assets.find(x=>x.id===b.dataset.anim);
-      if (s?.meta?.effect === "none") state.buttonAnims = [];
-      else {
-        const list = picked.filter(x => x.id !== s.id);
-        state.buttonAnims = pickedIds.has(s.id) ? list : [...list, s];
-      }
+      let next;
+      if (s?.meta?.effect === "none") next = [];
+      else { const list = picked.filter(x => x.id !== s.id);
+             next = pickedIds.has(s.id) ? list : [...list, s]; }
       delete state.buttonAnim;                  // superseded by the list
-      pushState();
+      patchState({buttonAnims: next, buttonAnim: null});
     });
 
     /* sliders reflect the live state */
@@ -1326,8 +1329,7 @@
       /* "no effect" builtins (Gold Buttons, Navy Glass Board, No Button Animation)
          mean "use the CSS default" and store as null; builtin EFFECTS still store. */
       const isDefault = s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
-      state[k] = isDefault ? null : s;
-      pushState();
+      patchState({[k]: isDefault ? null : s});
     });
 
     /* shared wiring */
@@ -1389,9 +1391,13 @@
         .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
             p => {
               if (p.new.id !== pcRow()) return;
-              /* ignore the echo of our own write — adopting it would clobber a change
-                 the operator made in the moment between push and echo */
-              if (p.new.data?.updatedAt && p.new.data.updatedAt <= lastPushedAt) return;
+              /* Suppress only OUR OWN echo, by identity. The old guard compared
+                 updatedAt against our last push — a clock from another machine —
+                 so it silently dropped legitimate concurrent writes (a Stream Deck
+                 press landing mid-edit) and we then re-pushed our stale copy over
+                 the top. Writes are field-scoped patches now, so adopting a foreign
+                 update can no longer lose a local change. */
+              if (p.new.data?.lastWriter === CLIENT_ID) return;
               state = p.new.data; renderAll();
             })
         .subscribe();

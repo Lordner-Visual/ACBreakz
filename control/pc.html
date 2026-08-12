@@ -214,11 +214,22 @@
     state.board ??= {}; state.board.picked ??= {}; state.board.highlighted ??= {};
     state.banners ??= {rotation:[]}; state.boardGrid ??= "buttons"; state.boardGap ??= 0;
   }
-  async function push(){
-    state.updatedAt = Date.now();
-    const {error} = await call({ action:"state", data: state });
-    if (error) toast("Save failed: " + error.message);
-    render();
+  /* V11 — field-scoped atomic writes. A slider change must never ship a stale
+     `board` and revert a Stream Deck press, and board taps go through the same
+     locked SQL action the deck uses, so the two can never race. */
+  const CLIENT_ID = (crypto.randomUUID?.() ?? String(Math.random()).slice(2));
+  async function patchState(patch){
+    Object.assign(state, patch); render();          // optimistic
+    const {data, error} = await call({ action:"patch", clientId:CLIENT_ID, patch });
+    if (error) return toast("Save failed: " + error.message);
+    const doc = data?.docs?.[PC];
+    if (doc) { state = doc; render(); }
+  }
+  async function boardCall(boardAction, team){
+    const {data, error} = await call({ action:"board", clientId:CLIENT_ID, boardAction, team });
+    if (error) return toast("Board action failed: " + error.message);
+    const r = (data?.results ?? [])[0];
+    if (r?.data) { state = r.data; render(); }
   }
   async function loadAssets(){
     const {data} = await sb.from("assets").select("*").order("created_at",{ascending:false});
@@ -231,9 +242,9 @@
   $("#hlModeBtn").onclick = () => { hlMode = !hlMode;
     $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
     $("#hlModeBtn").classList.toggle("gold", hlMode); render(); };
-  $("#hlClearBtn").onclick = () => { state.board.highlighted = {}; push(); };
+  $("#hlClearBtn").onclick = () => boardCall("highlight_clear");
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
-    state.board.picked = {}; fire("board_reset",{}); push(); };
+    boardCall("board_reset"); };
 
   async function fire(type, payload){
     /* events are per-PC too; the deck endpoint owns event writes, so mirror it in state */
@@ -249,26 +260,11 @@
       if (hlMode) {
         /* highlight is independent of elimination: starring an eliminated team keeps it
            OFF the board (only the elimination tap brings it back) but remembers the star */
-        if (state.board.highlighted[abbr]) delete state.board.highlighted[abbr];
-        else state.board.highlighted[abbr] = true;
-        return push();
+        return boardCall("highlight_toggle", abbr);
       }
-      if (state.board.picked[abbr]) { delete state.board.picked[abbr]; fire("team_restore",{team:abbr}); }
-      else {
-        state.board.picked[abbr] = true;              // the star (if any) survives elimination
-        const st = state.animStyle;
-        const def = assets.find(a => a.kind==="sfx" && a.meta?.default) || assets.find(a=>a.kind==="sfx");
-        const sfxUrl = st?.meta && "sfxUrl" in st.meta ? st.meta.sfxUrl : (def?.url ?? null);
-        if (st && st.meta?.per_team !== true && (st.url || st.meta?.base_url))
-          fire("team_pick",{team:abbr, styleUrl: st.url ?? st.meta.base_url,
-            styleImage: st.meta?.image === true, logoOverlay:true, sfxUrl,
-            styleFit: st.meta?.fit ?? "box"});
-        else {
-          const anim = assets.find(a => a.kind==="animation" && a.meta?.team===abbr);
-          fire("team_pick",{team:abbr, animUrl:anim?.url||null, sfxUrl});
-        }
-      }
-      push();
+      /* board_action() resolves the stinger + sound and fires the event in the
+         same transaction as the state change */
+      boardCall("team_toggle", abbr);
     };
     $("#ctlBoard").appendChild(d);
   });
@@ -383,7 +379,7 @@
             <div class="tag">${s.meta && "sfxName" in s.meta ? "🔊 "+esc(s.meta.sfxName) : "default sound"}</div>
           </div></div>`; }).join("");
     $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
-      state.animStyle = assets.find(x=>x.id===b.dataset.style); push(); });
+      patchState({animStyle: assets.find(x=>x.id===b.dataset.style)}); });
 
     /* one-shots: play on this stream */
     $("#oneshotGrid").innerHTML = assets
@@ -414,8 +410,8 @@
         </div></div>`).join("");
     $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.rot); const list = state.banners.rotation || [];
-      state.banners.rotation = rot.has(a.id) ? list.filter(x=>x.id!==a.id) : [...list, a];
-      push();
+      patchState({banners: {...state.banners,
+        rotation: rot.has(a.id) ? list.filter(x=>x.id!==a.id) : [...list, a]}});
     });
 
     $("#bgGrid").innerHTML = assets.filter(a=>a.kind==="background").map(a=>`
@@ -424,7 +420,7 @@
           <button class="btn" data-bg="${a.id}">Set live</button></div></div>`).join("");
     $$("#bgGrid [data-bg]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.bg);
-      state.background = { url:a.url, name:a.name, crop:a.meta?.crop ?? null }; push();
+      patchState({background: { url:a.url, name:a.name, crop:a.meta?.crop ?? null }});
     });
 
     $("#gridStyleGrid").innerHTML = GRIDS.map(([id,label]) => {
@@ -433,7 +429,7 @@
         <div class="meta"><div class="name">${label}</div>
         <button class="btn ${on?"ghost":""}" data-grid="${id}">${on?"Applied":"Apply"}</button></div></div>`;
     }).join("");
-    $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => { state.boardGrid = b.dataset.grid; push(); });
+    $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => patchState({boardGrid: b.dataset.grid}));
     $("#gapRange").value = state.boardGap ?? 0; $("#gapVal").textContent = (state.boardGap ?? 0) + "px";
 
     const part = (domain, sel, key) => {
@@ -450,8 +446,7 @@
     $$("[data-part]").forEach(b => b.onclick = () => {
       const [k,id] = b.dataset.part.split(":");
       const s = assets.find(x=>x.id===id);
-      state[k] = (s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none")) ? null : s;
-      push();
+      patchState({[k]: (s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none")) ? null : s});
     });
 
     /* button animations are multi-select: any number can run at once (mirrors master) */
@@ -470,13 +465,12 @@
           </div></div>`; }).join("");
     $$("#btnAnimGrid [data-anim]").forEach(b => b.onclick = () => {
       const s = assets.find(x=>x.id===b.dataset.anim);
-      if (s?.meta?.effect === "none") state.buttonAnims = [];
-      else {
-        const list = picked.filter(x => x.id !== s.id);
-        state.buttonAnims = pickedIds.has(s.id) ? list : [...list, s];
-      }
+      let next;
+      if (s?.meta?.effect === "none") next = [];
+      else { const list = picked.filter(x => x.id !== s.id);
+             next = pickedIds.has(s.id) ? list : [...list, s]; }
       delete state.buttonAnim;                  // superseded by the list
-      push();
+      patchState({buttonAnims: next, buttonAnim: null});
     });
 
     /* sliders reflect the live state */
@@ -505,7 +499,7 @@
   }
   const slider = (id, label, key, unit) => {
     $(id).oninput = () => $(label).textContent = $(id).value + unit;
-    $(id).onchange = () => { state[key] = +$(id).value; push(); };
+    $(id).onchange = () => patchState({[key]: +$(id).value});
   };
   slider("#gapRange",  "#gapVal",  "boardGap",    "px");
   slider("#sizeRange", "#sizeVal", "boardSize",   "%");
@@ -518,7 +512,9 @@
     $("#status").innerHTML = "<b>connected</b>";
     sb.channel("pc-"+PC)
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
-          p => { if (p.new.id === +PC) { state = p.new.data; render(); } })
+          p => { if (p.new.id !== +PC) return;
+                 if (p.new.data?.lastWriter === CLIENT_ID) return;   // our own echo
+                 state = p.new.data; render(); })
       .subscribe();
   })();
 

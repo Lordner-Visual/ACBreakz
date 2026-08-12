@@ -3,9 +3,16 @@
 //
 //   GET /deck?key=SECRET&action=team_pick&team=sea[&pc=2]
 //   pc=1..5 targets one PC's stream; omit pc to hit ALL PCs.
-//   Actions: team_pick, team_restore, board_reset, play, banner_skip,
-//            set_background. (board_mode / board_visible retired in v2 —
-//            the board is always eliminate-style and always visible.)
+//   Actions: team_toggle, team_pick, team_restore, board_reset, play,
+//            banner_skip, set_background, highlight*, highlight_clear.
+//            (board_mode / board_visible retired in v2.)
+//
+// V11: every board mutation goes through the board_action() SQL function, which
+// takes `select ... for update` on the row. Read-modify-write in JS here was a
+// lost-update race — measured 1 of 12 simultaneous presses surviving, while all
+// 12 stingers still fired because the event insert was a separate write. The RPC
+// makes state + event one transaction and only fires on a real transition.
+// NEVER go back to getState/setState for anything under data.board.
 //
 // Deploy:  supabase functions deploy deck --no-verify-jwt
 // ============================================================
@@ -23,25 +30,38 @@ const json = (b: unknown, s = 200) =>
     headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
   });
 
-async function getState(pc: number) {
-  const { data } = await sb.from("stream_state").select("data").eq("id", pc).single();
-  return data?.data ?? {};
-}
-async function setState(pc: number, state: Record<string, unknown>) {
-  /* bump the in-data clock too: the panels use it to tell real changes from their own
-     echo — without it a deck write looks stale and gets overwritten by the next push */
-  state.updatedAt = Date.now();
-  await sb.from("stream_state").update({ data: state, updated_at: new Date() }).eq("id", pc);
-}
-async function fire(type: string, payload: Record<string, unknown>) {
-  await sb.from("events").insert({ type, payload });
-}
 async function findAsset(kind: string, name?: string, team?: string) {
   let q = sb.from("assets").select("*").eq("kind", kind).order("created_at", { ascending: false });
   if (team) q = q.eq("meta->>team", team);
   if (name) q = q.ilike("name", `%${name}%`);
   const { data } = await q.limit(1);
   return data?.[0] ?? null;
+}
+/* The panels prefer an sfx flagged default and fall back to the newest; the deck
+   used to just take the newest. One rule now, resolved here. */
+async function defaultSfxUrl() {
+  const { data } = await sb.from("assets").select("url,meta")
+    .eq("kind", "sfx").eq("meta->>default", "true").limit(1);
+  if (data?.[0]?.url) return data[0].url;
+  return (await findAsset("sfx"))?.url ?? null;
+}
+
+/* Resolve everything the FX event might need BEFORE calling the RPC — the RPC
+   holds a row lock, and no I/O may happen inside that critical section. */
+async function boardCall(pcs: number[], action: string, team?: string) {
+  const needsFx = action === "team_toggle" || action === "team_pick";
+  const [sfx, anim] = needsFx
+    ? await Promise.all([defaultSfxUrl(), team ? findAsset("animation", undefined, team) : null])
+    : [null, null];
+  const { data, error } = await sb.rpc("board_action", {
+    p_pcs: pcs,
+    p_action: action,
+    p_team: team ?? null,
+    p_fx: { defaultSfxUrl: sfx, teamAnimUrl: anim?.url ?? null },
+    p_writer: "deck",
+    p_return_data: false,
+  });
+  return { data, error };
 }
 
 Deno.serve(async (req) => {
@@ -55,141 +75,60 @@ Deno.serve(async (req) => {
   const action = g("action");
   const pcRaw = parseInt(g("pc") ?? "", 10);
   const pcs = pcRaw >= 1 && pcRaw <= 5 ? [pcRaw] : [1, 2, 3, 4, 5];
-  const scoped = pcs.length === 1;
+  const team = (g("team") ?? "").toLowerCase();
+
+  /* Board actions all share one atomic path. `state` is the token a Stream Deck
+     key can paint its icon from: out|in for the board, hl|off for highlights. */
+  const BOARD = ["team_toggle", "team_pick", "team_restore", "board_reset",
+                 "highlight", "unhighlight", "highlight_toggle", "highlight_clear"];
+  if (action && BOARD.includes(action)) {
+    const needsTeam = action !== "board_reset" && action !== "highlight_clear";
+    if (needsTeam && !team) return json({ error: "team required" }, 400);
+    const { data, error } = await boardCall(pcs, action, needsTeam ? team : undefined);
+    if (error) return json({ error: error.message }, 500);
+    const results = (data?.results ?? []) as Array<Record<string, unknown>>;
+    const mine = results.find((r) => Number(r.pc) === pcs[0]) ?? results[0] ?? {};
+    /* one bare token for the deck's icon matcher; JSON for everything else */
+    if (g("fmt") === "text") {
+      return new Response(String(mine.state ?? ""), {
+        headers: { "content-type": "text/plain", "access-control-allow-origin": "*" },
+      });
+    }
+    return json({
+      ok: true, team: needsTeam ? team : undefined, pcs,
+      state: mine.state, changed: mine.changed,
+      /* kept for compatibility with existing scripts */
+      action: action === "team_toggle" ? (mine.picked ? "removed" : "restored") : undefined,
+      results,
+    });
+  }
 
   switch (action) {
-    /* team_toggle: the SERVER decides from the live board, so a Stream Deck key can
-       never fall out of sync the way a stateful toggle button does. */
-    case "team_toggle": {
-      const team = (g("team") ?? "").toLowerCase();
-      if (!team) return json({ error: "team required" }, 400);
-      const defSfx = await findAsset("sfx");
-      let removed = false;
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        state.board ??= { picked: {} }; state.board.picked ??= {};
-        if (state.board.picked[team]) {                    // already out -> put it back
-          delete state.board.picked[team];
-          await fire("team_restore", { team, pc });
-        } else {                                           // out it goes, with the FX
-          removed = true;
-          state.board.picked[team] = true;
-          /* a highlighted team KEEPS its star while eliminated (the overlay hides the
-             animation via picked); it lights back up when the team is restored */
-          const style = state.animStyle;
-          const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
-          const payload: Record<string, unknown> = { team, pc, sfxUrl };
-          if (style && style.meta?.per_team !== true && (style.url || style.meta?.base_url)) {
-            payload.styleUrl = style.url ?? style.meta.base_url;
-            payload.styleImage = style.meta?.image === true;
-            payload.styleFit = style.meta?.fit ?? "box";
-            payload.logoOverlay = true;
-          } else {
-            const anim = await findAsset("animation", undefined, team);
-            payload.animUrl = anim?.url ?? null;
-          }
-          await fire("team_pick", payload);
-        }
-        await setState(pc, state);
-      }
-      return json({ ok: true, team, action: removed ? "removed" : "restored", pcs });
-    }
-    case "team_pick": {
-      const team = (g("team") ?? "").toLowerCase();
-      if (!team) return json({ error: "team required" }, 400);
-      const defSfx = await findAsset("sfx");
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        state.board ??= { picked: {} }; state.board.picked ??= {};
-        state.board.picked[team] = true;               // the star (if any) survives elimination
-        const style = state.animStyle;
-        /* linked SFX wins (explicit null = "No SoundFX"); fall back to the default sound */
-        const sfxUrl = style?.meta && "sfxUrl" in style.meta ? style.meta.sfxUrl : (defSfx?.url ?? null);
-        const payload: Record<string, unknown> = { team, pc, sfxUrl };
-        if (style && style.meta?.per_team !== true && (style.url || style.meta?.base_url)) {
-          payload.styleUrl = style.url ?? style.meta.base_url;   // one base + logo overlay
-          payload.styleImage = style.meta?.image === true;
-          payload.logoOverlay = true;
-        } else {
-          const anim = await findAsset("animation", undefined, team);
-          payload.animUrl = anim?.url ?? null;                   // classic per-team stinger
-        }
-        await fire("team_pick", payload);
-        await setState(pc, state);
-      }
-      return json({ ok: true, team, pcs });
-    }
-    case "team_restore": {
-      const team = (g("team") ?? "").toLowerCase();
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        if (state.board?.picked) delete state.board.picked[team];
-        await fire("team_restore", { team, pc });
-        await setState(pc, state);
-      }
-      return json({ ok: true, pcs });
-    }
-    case "board_reset": {
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        state.board ??= {}; state.board.picked = {};
-        await fire("board_reset", { pc });
-        await setState(pc, state);
-      }
-      return json({ ok: true, pcs });
-    }
     case "play": {
       const a = await findAsset("animation", g("name"));
       if (!a) return json({ error: "animation not found" }, 404);
       const fit = a.meta?.fit;
       const boxed = fit === "full" ? false : a.meta?.group !== "team";
-      for (const pc of pcs)
-        await fire("play_animation", { url: a.url, name: a.name, boxed, fit,
-          image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null, pc });
+      const rows = pcs.map((pc) => ({ type: "play_animation", payload: {
+        url: a.url, name: a.name, boxed, fit,
+        image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null, pc } }));
+      await sb.from("events").insert(rows);
       return json({ ok: true, name: a.name, pcs });
     }
     case "banner_skip": {
-      for (const pc of pcs) await fire("banner_skip", { pc });
+      await sb.from("events").insert(pcs.map((pc) => ({ type: "banner_skip", payload: { pc } })));
       return json({ ok: true, pcs });
     }
     case "set_background": {
       const a = await findAsset("background", g("name"));
       if (!a) return json({ error: "background not found" }, 404);
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        state.background = { url: a.url, name: a.name, crop: a.meta?.crop ?? null };
-        await setState(pc, state);
-      }
+      const { error } = await sb.rpc("state_patch", {
+        p_pcs: pcs,
+        p_patch: { background: { url: a.url, name: a.name, crop: a.meta?.crop ?? null } },
+        p_writer: "deck",
+      });
+      if (error) return json({ error: error.message }, 500);
       return json({ ok: true, name: a.name, pcs });
-    }
-    /* ---- highlights: button animations play only on highlighted teams ---- */
-    case "highlight":
-    case "unhighlight":
-    case "highlight_toggle": {
-      const team = (g("team") ?? "").toLowerCase();
-      if (!team) return json({ error: "team required" }, 400);
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        state.board ??= {}; state.board.highlighted ??= {};
-        const on = action === "highlight" ? true
-          : action === "unhighlight" ? false
-          : !state.board.highlighted[team];
-        /* highlight is independent of elimination: it never restores a picked team
-           (only team_toggle/team_restore do), it just remembers the star — hidden
-           while the team is out, showing again the moment it returns */
-        if (on) state.board.highlighted[team] = true;
-        else delete state.board.highlighted[team];
-        await setState(pc, state);
-      }
-      return json({ ok: true, team, pcs });
-    }
-    case "highlight_clear": {
-      for (const pc of pcs) {
-        const state = await getState(pc);
-        state.board ??= {}; state.board.highlighted = {};
-        await setState(pc, state);
-      }
-      return json({ ok: true, pcs });
     }
     case "board_mode":
     case "board_visible":
