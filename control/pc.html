@@ -514,6 +514,12 @@
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
           p => { if (p.new.id !== +PC) return;
                  if (p.new.data?.lastWriter === CLIENT_ID) return;   // our own echo
+                 /* Realtime can deliver an older document after a newer one. Every
+                    updatedAt now comes from ONE clock (Postgres clock_timestamp in
+                    state_stamp), so comparing them is a real causal order — which is
+                    exactly what the old browser-vs-edge comparison could never be. */
+                 if (p.new.data?.updatedAt && state?.updatedAt
+                     && p.new.data.updatedAt < state.updatedAt) return;
                  state = p.new.data; render(); })
       .subscribe();
   })();
