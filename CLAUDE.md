@@ -38,14 +38,14 @@ Local only: `.env`, `media-staging/`, `streamdeck/*.local.*`. ffmpeg at `%LOCALA
   boardButtons|boardBg:assetRow|null, // null = CSS default (Gold/Navy)
   buttonAnims:[assetRow…],            // multi-select; legacy buttonAnim single may linger
   boardGrid:"buttons|checker|checkerbare|honeycomb|logos|rect84|slant",
-  boardGap:0-20, boardSize:40-100, logoSize:60-160, fxIntensity:30-250,
-  loopFx:{url,name,boxed,fit,image,sfxUrl}|null,   // deck play_loop toggle; survives reload
+  boardGap:0-20, boardSize:40-150, logoSize:60-200, fxIntensity:30-250,
+  loopFx:{url,name,boxed,fit,image,sfxUrl,crop}|null,  // deck play_loop toggle; survives reload
   updatedAt:ms, lastWriter:"deck"|clientId|"server" }   // both stamped SERVER-SIDE by state_stamp()
 ```
 **assets** (kind ∈ background|banner|animation|sfx|logo|style; url; meta jsonb):
 `{type:upload|ai|text, text, prompt, team:abbr, group:team|oneshot, image:bool, domain:team_anim|board_button|board_bg|button_anim, base_url,button_url,bg_url,poster, effect:none|glow|fire|lightning|glitch|pop, mode:ambient|trigger, per_team, builtin, sfxUrl,sfxName ("sfxUrl" in meta = linked; null = No SoundFX beats default), crop:{x,y,z(100-600)}, fit:"full"|"box", template, hideComposer, hideRotation, deleted, deletedAt}`
 
-**events** payload: `{pc?, team, animUrl|styleUrl+styleImage+styleFit+logoOverlay, sfxUrl, url, boxed, fit, image}`; overlay ignores age>20s or `payload.pc !== DEVICE`.
+**events** payload: `{pc?, team, animUrl|styleUrl+styleImage+styleFit+styleCrop+logoOverlay, sfxUrl, url, boxed, fit, image, crop}`; overlay ignores age>20s or `payload.pc !== DEVICE`.
 
 **/deck** GET `?key=DECK_KEY&action=X[&pc=N]` (no pc = all 5; deployed `--no-verify-jwt`): `team_toggle` (server reads board → pick|restore; THE deck key action), `team_pick`, `team_restore`, `board_reset`, `highlight|unhighlight|highlight_toggle|highlight_clear` (highlight NEVER restores a team — independent of elimination), `play&name=` (ilike; boxed unless meta.fit==="full"), `play_loop&name=` (TOGGLE via loop_fx_toggle() row lock → data.loopFx; same clip stops it, a different clip switches), `banner_skip`, `set_background&name=`. `board_mode|board_visible` = retired no-ops.
 
@@ -63,7 +63,9 @@ const SAFE_W=858, SAFE_H=141, MAX_TILE=53;      // x111..968 inside 1080×165 ba
 function tileFor(grid,gap){const c=GRID_CFG[grid]??GRID_CFG.buttons;
  const byW=(SAFE_W-(c.cols-1)*gap)/(c.cols+(c.slack??0)), byH=(SAFE_H-(c.rows-1)*gap)/c.rows;
  return Math.max(12,Math.floor(Math.min(MAX_TILE,byW,byH)));}
-// boardSize% scales DOWN from that max; logo via --logofrac=(0.30-(logo/100)*0.145); fxi=fxIntensity/100
+// boardSize% scales that max (>100 reclaims --padx so nothing crops to ~127%)
+// logofrac: logo<=100 -> 0.30-(logo/100)*0.145 ; logo>100 -> 0.155-(logo-100)*0.0051 (goes NEGATIVE = spill)
+// fxi=fxIntensity/100 drives brightness/size ONLY — never an animation duration
 
 // overlay: sync engine — applyBoardParts returns changed:bool; applyState:
 const partsChanged=applyBoardParts(s); /*set .on/.hl classes*/ 
