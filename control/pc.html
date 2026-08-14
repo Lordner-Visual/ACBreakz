@@ -120,6 +120,10 @@
   <h2>NFL team animation style — one style plays for every team on this PC</h2>
   <div class="grid" id="styleGrid"></div>
   <h2>One-shot animations — play one on this stream</h2>
+  <div class="row">
+    <button class="btn warn" id="loopStopBtn" style="display:none">■ Stop looping animation</button>
+    <span class="tag" id="loopNow"></span>
+  </div>
   <div class="grid" id="oneshotGrid"></div>
 </section>
 
@@ -255,6 +259,7 @@
     $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
     $("#hlModeBtn").classList.toggle("gold", hlMode); render(); };
   $("#hlClearBtn").onclick = () => boardCall("highlight_clear");
+  $("#loopStopBtn").onclick = () => patchState({loopFx: null});
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
     boardCall("board_reset"); };
 
@@ -299,7 +304,6 @@
     const sc = ctx.createLinearGradient(0,0,0,H);
     sc.addColorStop(0,"rgba(4,10,18,.36)"); sc.addColorStop(1,"rgba(4,10,18,.62)");
     ctx.fillStyle=sc; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#B87333"; ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3);
     const text = ($("#compText").value.trim() || "YOUR BANNER TEXT").toUpperCase();
     let size = 44; ctx.textAlign="center"; ctx.textBaseline="middle";
     do { ctx.font = `700 ${size}px "Arial Black","Segoe UI",sans-serif`; size -= 2; }
@@ -405,6 +409,10 @@
         fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null});
       toast("Playing " + a.name);
     });
+    /* a Stream Deck key can leave a clip looping forever — the operator must be able
+       to stop it without the deck */
+    $("#loopStopBtn").style.display = state.loopFx?.url ? "" : "none";
+    $("#loopNow").textContent = state.loopFx?.url ? `Looping: ${state.loopFx.name ?? ""}` : "";
 
     $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`
       <div class="asset"><div class="thumb">🔊</div><div class="meta"><div class="name">${esc(a.name)}</div>

@@ -166,6 +166,8 @@
   <div class="row">
     <label class="up btn gold">Upload animation (.webm)
       <input type="file" accept="video/webm,video/mp4" data-kind="animation" data-group="oneshot"></label>
+    <button class="btn warn" id="loopStopBtn" style="display:none">■ Stop looping animation</button>
+    <span class="tag" id="loopNow"></span>
   </div>
   <div class="grid" id="oneshotGrid"></div>
   <div class="aibar">
@@ -277,6 +279,16 @@
   </div>
   <div class="row"><span class="tag">100% button size is already the largest that fits inside the
     WhatNot-safe width — the slider takes them down from there.</span></div>
+  <div class="row" style="margin-top:14px">
+    <label class="up btn gold">Upload style file
+      <input type="file" id="styleUpInput" accept="image/*,video/webm,video/mp4"></label>
+    <select id="styleUpKind">
+      <option value="board_button">→ Button style (image)</option>
+      <option value="board_bg">→ Board background (image or video)</option>
+      <option value="button_anim">→ Button animation (video)</option>
+    </select>
+    <span class="tag" id="styleUpHint"></span>
+  </div>
   <h2>Button style — mix and match with any background</h2>
   <div class="grid" id="btnStyleGrid"></div>
   <h2>Board background</h2>
@@ -626,24 +638,60 @@
     if (error) return { error };
     return { url: sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl };
   }
-  async function uploadFile(file, kind, extraMeta){
+  /* opts lets a style upload split the three things `kind` used to conflate: the
+     storage prefix, the asset kind, and the display name. */
+  async function uploadFile(file, kind, extraMeta, opts = {}){
+    const prefix = opts.pathPrefix ?? kind, assetKind = opts.assetKind ?? kind;
+    const name = opts.name ?? file.name;
     if (cloud) {
-      const path = `${kind}/${Date.now()}-${file.name.replace(/[^\w.\-]/g,"_")}`;
+      const path = `${prefix}/${Date.now()}-${file.name.replace(/[^\w.\-]/g,"_")}`;
       const {url, error} = await uploadToStorage(path, file, file.type || undefined);
       if (error) return toast("Upload failed: "+error.message);
-      await saveAsset({ kind, name:file.name, url, meta:{type:"upload", ...(extraMeta||{})} });
+      await saveAsset({ kind:assetKind, name, url, meta:{type:"upload", ...(extraMeta||{})} });
       toast("Uploaded & saved to the shared library");
     } else {
       if (file.size > 4*1024*1024) return toast("Preview mode caps uploads at 4MB");
       const r = new FileReader();
-      r.onload = () => saveAsset({ kind, name:file.name, url:r.result, meta:{type:"upload", ...(extraMeta||{})} });
+      r.onload = () => saveAsset({ kind:assetKind, name, url:r.result, meta:{type:"upload", ...(extraMeta||{})} });
       r.readAsDataURL(file);
     }
   }
-  $$("label.up input").forEach(inp => inp.onchange = e => {
+  /* [data-kind] only — the Board Style uploader is wired separately below */
+  $$("label.up input[data-kind]").forEach(inp => inp.onchange = e => {
     const extra = e.target.dataset.group ? { group: e.target.dataset.group } : null;
     [...e.target.files].forEach(f => uploadFile(f, e.target.dataset.kind, extra)); e.target.value="";
   });
+
+  /* ---------- Board Style uploader: one button, the dropdown picks the section ----------
+     Each domain accepts what the OVERLAY can actually render — a video filed as a
+     button style, or a still filed as a button animation, would save happily and then
+     never appear on stream. */
+  const STYLE_UP = {
+    board_button: { name:"Buttons: ",  accept:"image/*", video:false,
+                    hint:"Image only — painted as each button's texture." },
+    board_bg:     { name:"Board: ",    accept:"image/*,video/webm,video/mp4", video:null,
+                    hint:"Image or video — video loops behind the board." },
+    button_anim:  { name:"Btn anim: ", accept:"video/webm,video/mp4", video:true,
+                    meta:{ mode:"ambient" },
+                    hint:"Video only — loops over every highlighted team's button." },
+  };
+  const styleSel = $("#styleUpKind");
+  const syncStyleUp = () => {
+    const c = STYLE_UP[styleSel.value];
+    $("#styleUpInput").accept = c.accept; $("#styleUpHint").textContent = c.hint;
+  };
+  styleSel.onchange = syncStyleUp; syncStyleUp();
+  $("#styleUpInput").onchange = async (e) => {
+    const domain = styleSel.value, c = STYLE_UP[domain];
+    for (const f of [...e.target.files]) {
+      const isVideo = /\.(webm|mp4)$/i.test(f.name) || /^video\//.test(f.type);
+      if (c.video === true && !isVideo) { toast(`${f.name}: button animations must be .webm or .mp4`); continue; }
+      if (c.video === false && isVideo)  { toast(`${f.name}: button styles must be an image`); continue; }
+      await uploadFile(f, "style", { domain, ...(c.meta ?? {}) },
+        { pathPrefix: domain, name: c.name + f.name.replace(/\.[^.]+$/, "") });
+    }
+    e.target.value = "";
+  };
 
   /* ---------- two-step delete ("Are you sure?") ---------- */
   function wireDeletes(){
@@ -772,6 +820,7 @@
   });
   $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
     boardCall("board_reset"); };
+  $("#loopStopBtn").onclick = () => patchState({loopFx: null});
 
   $("#emptyTrash").onclick = async () => {
     if (!trash.length) return toast("Trash is already empty");
@@ -835,7 +884,6 @@
     const scrim = ctx.createLinearGradient(0,0,0,H);
     scrim.addColorStop(0,"rgba(4,10,18,.36)"); scrim.addColorStop(1,"rgba(4,10,18,.62)");
     ctx.fillStyle = scrim; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle = "#B87333"; ctx.fillRect(0,0,W,3); ctx.fillRect(0,H-3,W,3);
     const text = ($("#compText").value.trim() || "YOUR BANNER TEXT").toUpperCase();
     let size = 44; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     do { ctx.font = `700 ${size}px "Arial Black","Segoe UI",sans-serif`; size -= 2; }
@@ -1238,6 +1286,10 @@
       fireEvent("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
         fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null});
     });
+    /* a Stream Deck key can leave a clip looping forever — always give the panel a
+       way to stop it, so a lost or mis-pressed deck key can't strand an animation */
+    $("#loopStopBtn").style.display = state.loopFx?.url ? "" : "none";
+    $("#loopNow").textContent = state.loopFx?.url ? `Looping: ${state.loopFx.name ?? ""}` : "";
 
     /* sound effects */
     $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`

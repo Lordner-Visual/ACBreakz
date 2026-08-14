@@ -115,6 +115,30 @@ Deno.serve(async (req) => {
       await sb.from("events").insert(rows);
       return json({ ok: true, name: a.name, pcs });
     }
+    /* Same clip, but as a TOGGLE that loops until pressed again. Lives in state,
+       not in an event: events are dropped after 20s and replay nothing, so an
+       overlay reload would silently lose a running loop. */
+    case "play_loop": {
+      const a = await findAsset("animation", g("name"));
+      if (!a) return json({ error: "animation not found" }, 404);
+      const fit = a.meta?.fit ?? null;
+      const boxed = fit === "full" ? false : a.meta?.group !== "team";
+      const { data, error } = await sb.rpc("loop_fx_toggle", {
+        p_pcs: pcs,
+        p_fx: { url: a.url, name: a.name, boxed, fit,
+                image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null },
+        p_writer: "deck",
+      });
+      if (error) return json({ error: error.message }, 500);
+      const mine = (data?.results ?? []).find((r: { pc: number }) => Number(r.pc) === pcs[0])
+                 ?? (data?.results ?? [])[0] ?? {};
+      if (g("fmt") === "text") {
+        return new Response(String(mine.state ?? ""), {
+          headers: { "content-type": "text/plain", "access-control-allow-origin": "*" },
+        });
+      }
+      return json({ ok: true, name: a.name, pcs, looping: mine.looping, state: mine.state });
+    }
     case "banner_skip": {
       await sb.from("events").insert(pcs.map((pc) => ({ type: "banner_skip", payload: { pc } })));
       return json({ ok: true, pcs });

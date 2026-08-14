@@ -83,17 +83,17 @@ const obsSimple = (uuid, name, title) => ({
   UUID: uuid,
 });
 
-/* A request that hops back to the main page. Two states so the key can show a second
-   icon after it fires (X'd when removed, glowing when highlighted). Both states run the
-   same server-authoritative toggle, so the ACTION is always right even if the icon and
-   the board drift apart (e.g. after Reset Board). */
-const requestThenHome = (url, title, imageRel, imageRel2) => {
+/* A team / highlight key. Two states so the key can show a second icon after it fires
+   (X'd when removed, glowing when highlighted). Both states run the same
+   server-authoritative toggle, so the ACTION is always right even if the icon and the
+   board drift apart (e.g. after Reset Board).
+   The key deliberately STAYS on its page — eliminating several teams in a row is the
+   common case, and a second Stream Deck drives page navigation. */
+const teamKey = (url, title, imageRel, imageRel2) => {
   const step = () => {
     const req = apiNinja(url);
     req.Settings.isInMultiAction = true;
-    const back = pageGoto(1, "");
-    back.Settings.isInMultiAction = true;
-    return { Actions: [ req, back ] };
+    return { Actions: [ req ] };
   };
   return {
     ActionID: randomUUID(), Actions: [ step(), step() ],
@@ -187,7 +187,10 @@ function buildProfile(pc) {
     [["Stash or Pass","Stash\nor Pass"], ["Spin 2 Pick 1","Spin 2\nPick 1"],
      ["Spin 3 Pick 1","Spin 3\nPick 1"], ["PYT","PYT"]]
       .forEach(([name, title], i) => {
-        A[pos(i, 1)] = apiNinja(deckUrl(`action=play&name=${name}`, pc), title);
+        /* play_loop is a toggle: press to start the clip looping on stream, press
+           again to fade it out. Single-state key — the icon never claims a state
+           the server has not confirmed. */
+        A[pos(i, 1)] = apiNinja(deckUrl(`action=play_loop&name=${name}`, pc), title);
       });
     /* row 3: page jumps — PageIndex is 1-based (main = 1) — with their resets beneath */
     A[pos(0, 2)] = pageGoto(2, "TEAMS");
@@ -215,7 +218,7 @@ function buildProfile(pc) {
           return rel;
         };
         A[pos(i % COLS, Math.floor(i / COLS))] =
-          requestThenHome(deckUrl(`action=${action}&team=${abbr}`, pc), name,
+          teamKey(deckUrl(`action=${action}&team=${abbr}`, pc), name,
             put("normal", ""), put(altSet, "-" + altSet));
       });
       return A;

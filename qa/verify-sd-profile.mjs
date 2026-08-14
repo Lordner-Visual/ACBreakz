@@ -67,10 +67,12 @@ for (let pc = 1; pc <= 5; pc++) {
     ok(`${head} nested multi-action steps carry isInMultiAction`,
       Object.values(teams).every(k =>
         k.Actions?.[0]?.Actions?.every(s => s.Settings?.isInMultiAction === true)));
-    ok(`${head} team keys hop back to main (page 1)`,
-      Object.values(teams).every(k =>
-        k.Actions[0].Actions.some(s => s.UUID === "com.elgato.streamdeck.page.goto" &&
-          s.Settings.PageIndex === 1)));
+    /* team + highlight keys deliberately STAY on their page — a second deck drives
+       navigation, and eliminating several teams in a row is the common case */
+    ok(`${head} team + highlight keys do NOT navigate away`,
+      [...Object.values(teams), ...Object.values(highs)].every(k =>
+        k.Actions.every(step => step.Actions.every(
+          s => s.UUID !== "com.elgato.streamdeck.page.goto"))));
     ok(`${head} teams + highlights pages are 32 keys each`,
       Object.keys(teams).length === 32 && Object.keys(highs).length === 32);
     ok(`${head} animation row includes Spin 3 Pick 1 and PYT`,
