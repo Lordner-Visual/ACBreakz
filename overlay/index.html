@@ -429,13 +429,13 @@
   /* reframe: pan (x/y %) + zoom (z %, 100 = fit) — used by banners and backgrounds */
   const cropCss = (m) => {
     const c = m?.crop; if (!c) return "";
-    const z = Math.max(1, Math.min(4, (c.z ?? 100) / 100));
+    const z = Math.max(1, Math.min(6, (c.z ?? 100) / 100));   // 600% — matches #rfZ
     return `object-position:${c.x ?? 50}% ${c.y ?? 50}%;transform:scale(${z});`;
   };
   const applyCrop = (node, m) => {
     const c = m?.crop; if (!node) return;
     node.style.objectPosition = c ? `${c.x ?? 50}% ${c.y ?? 50}%` : "";
-    node.style.transform = c?.z ? `scale(${Math.max(1, Math.min(4, c.z / 100))})` : "";
+    node.style.transform = c?.z ? `scale(${Math.max(1, Math.min(6, c.z / 100))})` : "";
   };
 
   /* Seamless looper: AI clips rarely loop cleanly, so run two copies of the file and
@@ -639,7 +639,7 @@
         (cover ? "cover" : "contain");
       wrap.appendChild(im);
     } else {
-      wrap = makeLoop(fx.url, null, 18);   // two copies crossfaded at the seam
+      wrap = makeLoop(fx.url, fx, 18);     // two copies crossfaded at the seam; fx carries .crop
       wrap.querySelectorAll("video").forEach(v => { v.style.objectFit = cover ? "cover" : "contain"; });
     }
     wrap.classList.add("fxloop");

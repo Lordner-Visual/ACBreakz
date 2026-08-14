@@ -126,7 +126,8 @@ Deno.serve(async (req) => {
       const { data, error } = await sb.rpc("loop_fx_toggle", {
         p_pcs: pcs,
         p_fx: { url: a.url, name: a.name, boxed, fit,
-                image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null },
+                image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null,
+                crop: a.meta?.crop ?? null },   // makeLoop applies this
         p_writer: "deck",
       });
       if (error) return json({ error: error.message }, 500);

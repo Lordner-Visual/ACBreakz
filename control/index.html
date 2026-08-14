@@ -1166,7 +1166,7 @@
     const crop = a.meta?.crop ?? {x:50,y:50,z:100};
     $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50; $("#rfZ").value = crop.z ?? 100;
     $("#rfZVal").textContent = ($("#rfZ").value) + "%";
-    $("#rfFit").value = a.meta?.fit ?? "full";
+    $("#rfFit").value = a.meta?.fit ?? "box";   // missing fit renders boxed — do not flip it on save
     $("#rfPreview").style.height = Math.round(rfShape(a) * 520) + "px";
     const u = rfUrl(a);
     $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(u)
