@@ -41,7 +41,7 @@
   #layer-hud{inset:0;display:none}
   /* Tiles live inside the WhatNot-safe area measured from the original board art:
      x 111..968 (858 wide), tiles 53x53 square, 16 x 2. Never wider than this. */
-  #board{--gap:0px;--tile:53px;--cols:16;--rows:2;--fxi:1;--logofrac:.18;
+  #board{--gap:0px;--tile:53px;--cols:16;--rows:2;--fxi:1;--logofrac:.18;--padx:111px;
     --radius:calc(var(--tile) * .14);--bezel:calc(var(--tile) * .1);
     --logopad:calc(var(--tile) * var(--logofrac));
     left:0;top:480px;width:1080px;height:165px;overflow:hidden;
@@ -54,7 +54,7 @@
     grid-template-columns:repeat(var(--cols), var(--tile));
     grid-template-rows:repeat(var(--rows), var(--tile));
     justify-content:center;align-content:center;
-    gap:var(--gap);padding:0 111px}
+    gap:var(--gap);padding:0 var(--padx)}
   /* one wide, feathered light bar sweeping BOTH rows at once (v2) */
   #board::after{content:"";position:absolute;top:-10px;bottom:-10px;left:0;width:430px;
     background:linear-gradient(100deg,
@@ -87,8 +87,16 @@
     object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
     transition:filter .45s ease, opacity .45s ease}
 
+  /* Logo bigger than its button: the cell normally clips its children (button texture,
+     effect video, rounded corners), so spilling needs that clip lifted — but only for
+     the logo. The effect video is pulled back inside so it doesn't bleed too.
+     Grids that use clip-path (honeycomb, slant) still clip, by definition. */
+  #board.logo-spill .cell{overflow:visible}
+  #board.logo-spill .cell .vfx{inset:0;width:100%;height:100%}
+  #board.logo-spill .cell img{z-index:5}
+
   /* ---- v4: a custom button style REPLACES the stock bezel entirely ---- */
-  #board.has-btnstyle{--logopad:calc(var(--tile) * .17)}
+  #board.has-btnstyle{--logopad:calc(var(--tile) * (var(--logofrac) + .015))}
   #board.has-btnstyle .cell{border:none;box-shadow:none;background-color:transparent;
     background-size:100% 100%}
   #board.has-btnstyle .cell::before{display:none}
@@ -98,7 +106,7 @@
   #board.grid-checker{--bezel:calc(var(--tile) * .06)}
   #board.grid-checkerbare{--radius:0px}
   #board.grid-checkerbare .cell{border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
-  #board.grid-honeycomb{--radius:0px;--logopad:calc(var(--tile) * .22)}
+  #board.grid-honeycomb{--radius:0px;--logopad:calc(var(--tile) * (var(--logofrac) + .065))}
   #board.grid-honeycomb .cell{border:none;box-shadow:none;
     clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
   /* interlock the rows by splitting the half-tile offset, so the combined span of both
@@ -106,12 +114,12 @@
   #board.grid-honeycomb .cell:nth-child(-n+16){left:calc(var(--tile) * -.25)}
   #board.grid-honeycomb .cell:nth-child(n+17){left:calc(var(--tile) * .25)}
   #board.grid-honeycomb .cell::before{clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
-  #board.grid-logos{--logopad:1px}
+  #board.grid-logos{--logopad:calc(var(--tile) * (var(--logofrac) - .145))}
   #board.grid-logos .cell{border:none;box-shadow:none;background-image:none !important}
   #board.grid-logos .cell::before{display:none}
   /* the one deliberately non-square grid: wide buttons stretched across the safe area */
   #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);
-    justify-content:stretch;align-content:stretch;padding:12px 111px;
+    justify-content:stretch;align-content:stretch;padding:12px var(--padx);
     --logopad:4px;--radius:6px;--bezel:3px}
   #board.grid-slant{--radius:0px}
   #board.grid-slant .cell{border:none;
@@ -129,24 +137,28 @@
     transition:opacity .28s linear}
   .cell.fx-video .vfx{opacity:calc(.55 + .45 * var(--fxi))}
   /* AMBIENT: effects play ONLY on highlighted teams, all on the same clock so the
-     highlighted buttons pulse together. Nothing highlighted = nothing animates. */
+     highlighted buttons pulse together. Nothing highlighted = nothing animates.
+     fxIntensity controls BRIGHTNESS AND SIZE ONLY — every duration below is a fixed
+     constant. Dividing the duration by --fxi used to make "more intense" also mean
+     "faster", which is not what the slider says it does. */
   #board.anim-glow .cell.hl::after{content:"";position:absolute;inset:0;border-radius:8px;
     z-index:4;pointer-events:none;
     box-shadow:inset 0 0 0 calc(2px * var(--fxi)) var(--gold),
                0 0 calc(14px * var(--fxi)) calc(2px * var(--fxi)) var(--gold);
-    animation:bglow calc(2.6s / var(--fxi)) ease-in-out infinite}
+    animation:bglow 2.6s ease-in-out infinite}
   @keyframes bglow{0%,100%{opacity:calc(.12 * var(--fxi))}50%{opacity:calc(.85 * var(--fxi))}}
   #board.anim-fire .cell.hl::after{content:"";position:absolute;inset:-2px;border-radius:10px;
     z-index:4;pointer-events:none;
     background:linear-gradient(0deg,rgba(255,140,20,.85),rgba(255,60,0,.25) 45%,transparent 70%);
-    filter:blur(3px);animation:bfire calc(1.5s / var(--fxi)) ease-in-out infinite alternate}
+    filter:blur(3px);animation:bfire 1.5s ease-in-out infinite alternate}
   @keyframes bfire{0%{opacity:calc(.35 * var(--fxi));transform:translateY(2px) scaleY(.96)}
     100%{opacity:calc(.9 * var(--fxi));transform:translateY(calc(-2px * var(--fxi))) scaleY(calc(1 + .04 * var(--fxi)))}}
   #board.anim-lightning .cell.hl::after{content:"";position:absolute;inset:-1px;border-radius:10px;
     z-index:4;pointer-events:none;border:calc(2px * var(--fxi)) solid var(--volt);
     box-shadow:0 0 calc(12px * var(--fxi)) var(--volt),inset 0 0 calc(8px * var(--fxi)) var(--volt);
-    opacity:0;animation:blight calc(3.4s / var(--fxi)) linear infinite}
-  @keyframes blight{0%,86%{opacity:0}88%{opacity:1}90%{opacity:.15}92%{opacity:1}96%{opacity:0}}
+    opacity:0;animation:blight 3.4s linear infinite}
+  @keyframes blight{0%,86%{opacity:0}88%{opacity:calc(min(1, .4 + .6 * var(--fxi)))}
+    90%{opacity:calc(.15 * var(--fxi))}92%{opacity:calc(min(1, .4 + .6 * var(--fxi)))}96%{opacity:0}}
   #board.anim-glitch .cell.hl{animation:bglitch 3.2s steps(1,end) infinite}
   @keyframes bglitch{0%,90%{transform:none;filter:none}
     91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
@@ -285,8 +297,8 @@
                   : s?.buttonAnim ? [s.buttonAnim] : []).filter(Boolean);
     const grid = GRIDS.includes(s?.boardGrid) ? s.boardGrid : "buttons";
     const gap = Math.max(0, Math.min(20, Number(s?.boardGap ?? 0)));
-    const size = Math.max(40, Math.min(100, Number(s?.boardSize ?? 100)));
-    const logo = Math.max(60, Math.min(160, Number(s?.logoSize ?? 100)));
+    const size = Math.max(40, Math.min(150, Number(s?.boardSize ?? 100)));
+    const logo = Math.max(60, Math.min(200, Number(s?.logoSize ?? 100)));
     const fxi = Math.max(0.3, Math.min(2.5, Number(s?.fxIntensity ?? 100) / 100));
     const key = [btn?.url, bg?.url, grid, gap, size, logo, fxi,
       anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
@@ -299,11 +311,26 @@
     boardEl.style.setProperty("--gap", gap + "px");
     boardEl.style.setProperty("--cols", cfg.cols);
     boardEl.style.setProperty("--rows", cfg.rows);
-    /* size is a percentage of the biggest tile that still fits the safe area */
-    boardEl.style.setProperty("--tile",
-      cfg.stretch ? "auto" : Math.max(10, Math.round(tileFor(grid, gap) * size / 100)) + "px");
-    /* logo scale lives in the padding around it, so the button frame never changes */
-    boardEl.style.setProperty("--logofrac", (0.30 - (logo / 100) * 0.145).toFixed(3));
+    /* size is a percentage of the biggest tile that still fits the safe area.
+       Above 100% the row is wider than the safe area, so give back the board's own
+       111px padding as needed — without this the outer teams would be cut off by the
+       board's 1080px edge. Past ~127% there is no padding left to give and clipping
+       is unavoidable; that is the operator's call. */
+    const tile = Math.max(10, Math.round(tileFor(grid, gap) * size / 100));
+    boardEl.style.setProperty("--tile", cfg.stretch ? "auto" : tile + "px");
+    const spanned = cfg.stretch ? 0 : cfg.cols * tile + (cfg.cols - 1) * gap;
+    boardEl.style.setProperty("--padx",
+      Math.max(0, Math.min(111, Math.floor((1080 - spanned) / 2))) + "px");
+    /* Logo scale lives in the padding around it, so the button frame never changes.
+       Up to 100% this is the original curve, unchanged. Past 100% the padding keeps
+       going and turns NEGATIVE, which is what lets a big logo spill outside its
+       button — at 200% the logo is ~140% of the tile. */
+    const logofrac = logo <= 100
+      ? 0.30 - (logo / 100) * 0.145                       // 60%->.213  100%->.155
+      : 0.155 - (logo - 100) * 0.0051;                     // 150%->-.100  200%->-.355
+    boardEl.style.setProperty("--logofrac", logofrac.toFixed(3));
+    /* a spilling logo has to escape the button's own clip */
+    boardEl.classList.toggle("logo-spill", logofrac < 0);
     boardEl.style.setProperty("--fxi", fxi);
     boardEl.classList.toggle("has-btnstyle", !!btn?.url);
 
