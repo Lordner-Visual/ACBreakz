@@ -96,15 +96,18 @@ r = await deck(`action=play_loop&name=${encodeURIComponent(CLIP)}`);
 const second = JSON.parse(r.body || "{}");
 ok(`deck reports it stopped (looping=${second.looping}, state=${second.state})`,
   second.looping === false && second.state === "off");
-/* catch it mid-fade: present but no longer fully opaque */
-let sawFade = false;
-for (let i = 0; i < 12; i++) {
+/* Catch it mid-fade: present but no longer fully opaque. The window has to cover
+   realtime delivery (~200-400ms) AND the 350ms fade, so sample until the element
+   actually goes away rather than for a fixed slice. */
+let sawFade = false, minOpacity = 1;
+for (let i = 0; i < 60; i++) {
   const l = await loop();
-  if (l?.present && Number(l.opacity) < 0.95) { sawFade = true; break; }
-  if (!l) break;
+  if (!l) break;                                   // gone — fade finished
+  minOpacity = Math.min(minOpacity, Number(l.opacity));
+  if (Number(l.opacity) < 0.95) sawFade = true;
   await ov.waitForTimeout(40);
 }
-ok("it faded out rather than cutting", sawFade);
+ok(`it faded out rather than cutting (min opacity seen ${minOpacity.toFixed(2)})`, sawFade);
 w = await until(l => l === null, 5000);
 ok(`the loop element is gone (${w.took}ms)`, w.took >= 0);
 s = await readState();
