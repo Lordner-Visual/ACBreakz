@@ -41,7 +41,7 @@
   #layer-hud{inset:0;display:none}
   /* Tiles live inside the WhatNot-safe area measured from the original board art:
      x 111..968 (858 wide), tiles 53x53 square, 16 x 2. Never wider than this. */
-  #board{--gap:0px;--tile:53px;--cols:16;--rows:2;--fxi:1;--logofrac:.18;--padx:111px;
+  #board{--gap:0px;--tile:53px;--track:53px;--cols:16;--rows:2;--fxi:1;--logofrac:.18;--padx:111px;
     --radius:calc(var(--tile) * .14);--bezel:calc(var(--tile) * .1);
     --logopad:calc(var(--tile) * var(--logofrac));
     left:0;top:480px;width:1080px;height:165px;overflow:hidden;
@@ -51,8 +51,8 @@
     background-size:cover;background-position:center;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -14px 26px rgba(0,0,0,.55);
     display:grid;
-    grid-template-columns:repeat(var(--cols), var(--tile));
-    grid-template-rows:repeat(var(--rows), var(--tile));
+    grid-template-columns:repeat(var(--cols), var(--track));
+    grid-template-rows:repeat(var(--rows), var(--track));
     justify-content:center;align-content:center;
     gap:var(--gap);padding:0 var(--padx)}
   /* one wide, feathered light bar sweeping BOTH rows at once (v2) */
@@ -68,7 +68,8 @@
     58%{left:1120px;opacity:1} 62%{left:1120px;opacity:0} 100%{left:-470px;opacity:0}}
   /* Beveled copper bezel + dark inset line + teal glass, matching the original art.
      Two background layers: glass clipped to the padding box, bezel to the border box. */
-  .cell{position:relative;border-radius:var(--radius);overflow:hidden;
+  .cell{position:relative;width:var(--tile);height:var(--tile);
+    border-radius:var(--radius);overflow:hidden;
     border:var(--bezel) solid transparent;
     background-image:
       radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
@@ -98,7 +99,8 @@
   /* ---- v4: a custom button style REPLACES the stock bezel entirely ---- */
   #board.has-btnstyle{--logopad:calc(var(--tile) * (var(--logofrac) + .015))}
   #board.has-btnstyle .cell{border:none;box-shadow:none;background-color:transparent;
-    background-size:100% 100%}
+    background-size:var(--btnzoom,100%) var(--btnzoom,100%);
+    background-position:var(--btnpan,50% 50%)}
   #board.has-btnstyle .cell::before{display:none}
 
   /* ---- v4: grid styles (each still wears the chosen button style) ---- */
@@ -303,11 +305,15 @@
     const anims = (Array.isArray(s?.buttonAnims) ? s.buttonAnims
                   : s?.buttonAnim ? [s.buttonAnim] : []).filter(Boolean);
     const grid = GRIDS.includes(s?.boardGrid) ? s.boardGrid : "buttons";
-    const gap = Math.max(0, Math.min(20, Number(s?.boardGap ?? 0)));
+    const gap = Math.max(-20, Math.min(20, Number(s?.boardGap ?? 0)));  // negative = overlap
     const size = Math.max(40, Math.min(150, Number(s?.boardSize ?? 100)));
     const logo = Math.max(60, Math.min(200, Number(s?.logoSize ?? 100)));
     const fxi = Math.max(0.3, Math.min(2.5, Number(s?.fxIntensity ?? 100) / 100));
-    const key = [btn?.url, bg?.url, grid, gap, size, logo, fxi,
+    /* The crops MUST be in this key. Without them a reframe of the board background or
+       the button texture changed nothing on screen, because this early return fired
+       before any of the code below could apply it. */
+    const cropOf = (a) => JSON.stringify(a?.meta?.crop ?? a?.crop ?? null);
+    const key = [btn?.url, cropOf(btn), bg?.url, cropOf(bg), grid, gap, size, logo, fxi,
       anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
     if (key === partsKey) return false; partsKey = key;
 
@@ -315,7 +321,9 @@
     GRIDS.forEach(g => boardEl.classList.remove("grid-" + g));
     boardEl.classList.add("grid-" + grid);
     const cfg = GRID_CFG[grid] ?? GRID_CFG.buttons;
-    boardEl.style.setProperty("--gap", gap + "px");
+    /* CSS `gap` cannot be negative, so overlap is done by shrinking the TRACK below
+       the tile and letting each cell overflow its own track by exactly |gap|. */
+    boardEl.style.setProperty("--gap", Math.max(0, gap) + "px");
     boardEl.style.setProperty("--cols", cfg.cols);
     boardEl.style.setProperty("--rows", cfg.rows);
     /* size is a percentage of the biggest tile that still fits the safe area.
@@ -325,6 +333,8 @@
        is unavoidable; that is the operator's call. */
     const tile = Math.max(10, Math.round(tileFor(grid, gap) * size / 100));
     boardEl.style.setProperty("--tile", cfg.stretch ? "auto" : tile + "px");
+    boardEl.style.setProperty("--track",
+      cfg.stretch ? "auto" : Math.max(4, tile + Math.min(0, gap)) + "px");
     const spanned = cfg.stretch ? 0 : cfg.cols * tile + (cfg.cols - 1) * gap;
     boardEl.style.setProperty("--padx",
       Math.max(0, Math.min(111, Math.floor((1080 - spanned) / 2))) + "px");
@@ -349,15 +359,22 @@
       boardBgSig = bgSig;
       clearLoopers(boardEl);
       boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
+      boardEl.style.backgroundImage = "";
       if (bg?.url && /\.(webm|mp4)(\?|$)/i.test(bg.url)) {
-        boardEl.style.backgroundImage = "";
         boardEl.insertBefore(makeLoop(bg.url, bg.meta ?? bg, 0), boardEl.firstChild);
-      } else {
-        boardEl.style.backgroundImage = bg?.url ? `url("${bg.url}")` : "";
+      } else if (bg?.url) {
+        /* a real <img> rather than a CSS background, so Reframe pan/zoom can apply —
+           a background-image has no element to transform */
+        boardEl.insertBefore(makeStill(bg.url, bg.meta ?? bg, 0), boardEl.firstChild);
       }
     }
 
-    /* buttons: texture on every cell */
+    /* buttons: texture on every cell. Reframe crop is expressed as background
+       position/size here for the same reason — there is no element per cell. */
+    const bcrop = btn?.meta?.crop ?? btn?.crop ?? null;
+    const bz = bcrop?.z ? Math.max(1, Math.min(6, bcrop.z / 100)) : 1;
+    boardEl.style.setProperty("--btnzoom", (bz * 100) + "%");
+    boardEl.style.setProperty("--btnpan", bcrop ? `${bcrop.x ?? 50}% ${bcrop.y ?? 50}%` : "50% 50%");
     for (const abbr of C.ORDER)
       cells[abbr].style.backgroundImage = btn?.url ? `url("${btn.url}")` : "";
 
@@ -476,6 +493,19 @@
     };
     wrap._raf = requestAnimationFrame(tick);
     wrap._stop = () => cancelAnimationFrame(wrap._raf);
+    return wrap;
+  }
+  /* The still-image twin of makeLoop: same positioned, clipping wrapper, so a
+     Reframe zoom crops inside the frame instead of doing nothing (a CSS
+     background-image cannot be panned or zoomed by transform). */
+  function makeStill(url, cropMeta, z) {
+    const wrap = document.createElement("div");
+    wrap.className = "looper";
+    wrap.style.cssText = `position:absolute;inset:0;overflow:hidden;z-index:${z ?? 0};pointer-events:none`;
+    const im = Object.assign(document.createElement("img"), { src: url });
+    im.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover";
+    applyCrop(im, cropMeta);
+    wrap.appendChild(im);
     return wrap;
   }
   const clearLoopers = (root) => root.querySelectorAll(".looper")
