@@ -19,7 +19,7 @@ supabase/functions/deck/index.ts           Stream Deck endpoint
 supabase/functions/panel/index.ts          write gateway + trash + deselectEverywhere
 supabase/functions/generate-asset/index.ts AI (inline images, queued audio/video, i2i/i2v)
 supabase/functions/_shared/auth.ts         password→token (other session authored)
-supabase/schema.sql + migrate-v2/v3/v4.sql + migrate-v11-atomic.sql + harden-m6.sql
+supabase/schema.sql + migrate-v2/v3/v4.sql + migrate-v11-atomic.sql + migrate-v12-loopfx.sql + harden-m6.sql
 scripts/build-sd-profile.mjs   generates 5 per-PC .streamDeckProfile (gitignored output)
 scripts/encode*.mjs, migrate.mjs, upload-v2.mjs, make-icons.mjs, extract-*.mjs
 streamdeck/icons/{normal,x,glow,main}/*.png   extracted from old profile
@@ -39,6 +39,7 @@ Local only: `.env`, `media-staging/`, `streamdeck/*.local.*`. ffmpeg at `%LOCALA
   buttonAnims:[assetRow…],            // multi-select; legacy buttonAnim single may linger
   boardGrid:"buttons|checker|checkerbare|honeycomb|logos|rect84|slant",
   boardGap:0-20, boardSize:40-100, logoSize:60-160, fxIntensity:30-250,
+  loopFx:{url,name,boxed,fit,image,sfxUrl}|null,   // deck play_loop toggle; survives reload
   updatedAt:ms, lastWriter:"deck"|clientId|"server" }   // both stamped SERVER-SIDE by state_stamp()
 ```
 **assets** (kind ∈ background|banner|animation|sfx|logo|style; url; meta jsonb):
@@ -46,7 +47,7 @@ Local only: `.env`, `media-staging/`, `streamdeck/*.local.*`. ffmpeg at `%LOCALA
 
 **events** payload: `{pc?, team, animUrl|styleUrl+styleImage+styleFit+logoOverlay, sfxUrl, url, boxed, fit, image}`; overlay ignores age>20s or `payload.pc !== DEVICE`.
 
-**/deck** GET `?key=DECK_KEY&action=X[&pc=N]` (no pc = all 5; deployed `--no-verify-jwt`): `team_toggle` (server reads board → pick|restore; THE deck key action), `team_pick`, `team_restore`, `board_reset`, `highlight|unhighlight|highlight_toggle|highlight_clear` (highlight NEVER restores a team — independent of elimination), `play&name=` (ilike; boxed unless meta.fit==="full"), `banner_skip`, `set_background&name=`. `board_mode|board_visible` = retired no-ops.
+**/deck** GET `?key=DECK_KEY&action=X[&pc=N]` (no pc = all 5; deployed `--no-verify-jwt`): `team_toggle` (server reads board → pick|restore; THE deck key action), `team_pick`, `team_restore`, `board_reset`, `highlight|unhighlight|highlight_toggle|highlight_clear` (highlight NEVER restores a team — independent of elimination), `play&name=` (ilike; boxed unless meta.fit==="full"), `play_loop&name=` (TOGGLE via loop_fx_toggle() row lock → data.loopFx; same clip stops it, a different clip switches), `banner_skip`, `set_background&name=`. `board_mode|board_visible` = retired no-ops.
 
 **/panel** POST auth: `{action:"login",password}→{token}` | `{token}` | `{key:PANEL_KEY}` (scripts) | `{op:OP_KEY,pc:1-5}` (operator: only state/event/sign_upload `^banners\/composed-`/asset kind=banner non-template). Actions: `patch{pc,clientId,patch}` (non-board keys, atomic), `board{pc,clientId,boardAction,team}` (atomic board_action), `state{pc,data,force?}` (legacy whole-doc — board-protected unless force), `event{pc,type,payload}`, `asset{asset}`, `update_asset{id,meta}` (merge; sweeps rotation copies+bg crop; hideRotation⇒deselect), `delete_asset` (soft→trash+deselectEverywhere), `restore_asset` (clears deleted+both hide flags), `purge_asset`/`empty_trash` (remove files+rows+deselect), `sign_upload{path}`→`uploadToSignedUrl`.
 
@@ -128,6 +129,7 @@ Dead assets awaiting user decision: `Btn anim: Electricity arcing around rim` (r
 
 Next, in order:
 
+0. **Re-import the Stream Deck profiles on all 5 PCs** — `streamdeck/*.local.streamDeckProfile` were rebuilt (team/highlight keys no longer navigate home; the 4 animation keys are now `play_loop` toggles). Delete the old profile on each PC first — import DUPLICATES, it does not replace.
 1. **Stream Deck icons that follow the server** — user-approved direction, deliberately deferred until the concurrency work was proven. Principle: a key's icon must NEVER change on an unconfirmed press (today a Multi Action Switch flips it locally before the HTTP result). `board_action()` already returns what to paint: `results[0].state` ∈ `out|in|hl|off`, and `/deck?…&fmt=text` returns it as a bare body for API Ninja's matcher. **Spike FIRST** — the plugin manifest is encrypted, so hand-make one key in the Stream Deck UI with "Custom images based on response", export, and diff (`scripts/dump-installed-ninja.mjs`) to learn: does `customImageValue` match the raw body or a parsed field; does `matchedImage` take a relative `Images/…` or an absolute path; **does a painted image survive leaving and re-entering the page** (if not, this approach is not worth shipping). Then replace `requestThenHome()` in `scripts/build-sd-profile.mjs` with a top-level `apiNinja` key — user has CONFIRMED losing auto-return-to-main is fine (a second deck drives pages) — and update `qa/verify-sd-profile.mjs` (URL count 132→68; drop the two-state/multi-action assertions; KEEP the `"No file..."` sentinel and `autorunMinutes===""` checks). Residual drift: a board change made from a panel won't repaint the deck until that key is next pressed; user chose to live with it and reassess. Autorun polling is NOT an option — the key's URL is the toggle, so it would re-toggle on a timer.
 2. User will upload `Spin 3 Pick 1` and `PYT` animations (exact names) — deck keys already wired, currently 404 "animation not found".
 3. Optional cleanups: `deselectEverywhere` + `update_asset` in the panel fn are the last read-whole-doc→write-whole-doc writers (they never touch `board`, so they cannot lose a press, but same bug class). Master has no self-update poller (`pc.html` has one) so it can run stale code indefinitely — add one, but as a "new version — click to reload" chip, never a blind reload, since master has upload and AI flows a surprise reload would destroy.
