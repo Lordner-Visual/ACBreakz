@@ -1284,7 +1284,8 @@
     $$("#oneshotGrid [data-play]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.play);
       fireEvent("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
-        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null});
+        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null,
+        crop:a.meta?.crop ?? null});
     });
     /* a Stream Deck key can leave a clip looping forever — always give the panel a
        way to stop it, so a lost or mis-pressed deck key can't strand an animation */

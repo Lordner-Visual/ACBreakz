@@ -153,6 +153,7 @@ begin
           'styleUrl',    coalesce(style->>'url', style->'meta'->>'base_url'),
           'styleImage',  coalesce((style->'meta'->>'image')::boolean, false),
           'styleFit',    coalesce(style->'meta'->>'fit', 'box'),
+          'styleCrop',   style->'meta'->'crop',      -- reframe pan/zoom, v13
           'logoOverlay', true);
       else
         payload := jsonb_build_object('team', p_team, 'pc', pc,

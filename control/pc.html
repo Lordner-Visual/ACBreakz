@@ -406,7 +406,8 @@
     $$("#oneshotGrid [data-anim]").forEach(b => b.onclick = () => {
       const a = assets.find(x=>x.id===b.dataset.anim);
       fire("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
-        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null});
+        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null,
+        crop:a.meta?.crop ?? null});
       toast("Playing " + a.name);
     });
     /* a Stream Deck key can leave a clip looping forever — the operator must be able

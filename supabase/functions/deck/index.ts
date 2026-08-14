@@ -111,7 +111,8 @@ Deno.serve(async (req) => {
       const boxed = fit === "full" ? false : a.meta?.group !== "team";
       const rows = pcs.map((pc) => ({ type: "play_animation", payload: {
         url: a.url, name: a.name, boxed, fit,
-        image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null, pc } }));
+        image: a.meta?.image === true, sfxUrl: a.meta?.sfxUrl ?? null,
+        crop: a.meta?.crop ?? null, pc } }));
       await sb.from("events").insert(rows);
       return json({ ok: true, name: a.name, pcs });
     }
