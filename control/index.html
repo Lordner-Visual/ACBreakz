@@ -161,7 +161,17 @@
 
 <section id="tab-anims">
   <h2>NFL team animations — one style plays for every team (logo added automatically)</h2>
+  <div class="row">
+    <label class="up btn gold">Upload team animation set (32 files)
+      <input type="file" id="teamSetInput" accept="video/webm,video/mp4" multiple></label>
+    <span class="tag">One card holding a clip per team — name the files after the team
+      (Chiefs.webm, 49ers.webm). Which set a PC uses is per PC, like Classic Stingers.</span>
+  </div>
   <div class="grid" id="styleGrid"></div>
+
+  <h2>Stream Deck event keys — which clip each key plays on THIS PC</h2>
+  <div class="grid" id="eventGrid"></div>
+
   <h2>One-shot animations — play inside the animation box</h2>
   <div class="row">
     <label class="up btn gold">Upload animation (.webm)
@@ -394,6 +404,29 @@
 </section>
 
 </main>
+
+<div class="modal" id="teamSet"><div class="box">
+  <h2 style="margin-top:0">New team animation set</h2>
+  <div class="row"><span class="tag" style="width:70px">Set name</span>
+    <input type="text" id="tsName" placeholder="e.g. 2026 Stingers" style="flex:1"></div>
+  <div class="row" style="margin-top:6px"><span class="tag" id="tsSummary"></span></div>
+  <div id="tsList" style="max-height:44vh;overflow:auto;margin:10px 0"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn gold" id="tsSave">Upload &amp; create card</button>
+    <button class="btn ghost" id="tsCancel">Cancel</button>
+    <span class="tag" id="tsMsg"></span></div>
+</div></div>
+
+<div class="modal" id="eventPick"><div class="box">
+  <h2 style="margin-top:0" id="epTitle">Event</h2>
+  <div class="row">
+    <label class="up btn gold">New animation (.webm)
+      <input type="file" id="epUpload" accept="video/webm,video/mp4"></label>
+    <span class="tag" id="epMsg"></span>
+  </div>
+  <div id="epList" style="max-height:48vh;overflow:auto;margin:10px 0"></div>
+  <div class="row"><button class="btn ghost" id="epClose">Close</button></div>
+</div></div>
 
 <div class="modal" id="reframe"><div class="box">
   <h2 style="margin-top:0">Reframe — drag the sliders to choose the visible crop</h2>
@@ -1149,6 +1182,169 @@
       toast("Added to " + $("#aiAddKind").selectedOptions[0].textContent); }
   };
 
+  /* ---------- team animation sets ----------
+     A set is ONE style card plus 32 clips that all carry the same meta.set. The server
+     resolves "the clip for this team WITHIN the selected set", so a new upload can never
+     outrank Classic Stingers just by being newer. state.animStyle is already per-PC, so
+     which set a PC uses is per-PC for free. */
+  const normName = (x) => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const NICK_TO_ABBR = Object.fromEntries(
+    Object.entries(C.TEAMS).map(([abbr, t]) => [normName(t.name), abbr]));
+  function matchTeam(filename) {
+    const stem = normName(filename.replace(/\.[^.]+$/, ""));
+    if (NICK_TO_ABBR[stem]) return NICK_TO_ABBR[stem];
+    if (C.TEAMS[stem]) return stem;                       // named by abbreviation
+    let best = null;                                      // longest nickname inside the name
+    for (const [nick, abbr] of Object.entries(NICK_TO_ABBR))
+      if (stem.includes(nick) && (!best || nick.length > best.nick.length)) best = { nick, abbr };
+    return best ? best.abbr : null;
+  }
+  let tsFiles = [];
+  const TEAM_OPTS = C.ORDER.map(a => `<option value="${a}">${esc(C.TEAMS[a].name)}</option>`).join("");
+  function renderTeamSet(){
+    $("#tsList").innerHTML = tsFiles.map((f, i) => `
+      <div class="row" style="gap:8px;padding:3px 0">
+        <span class="tag" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis"
+          title="${esc(f.file.name)}">${esc(f.file.name)}</span>
+        <select data-ts="${i}" style="width:190px">
+          <option value="">— skip —</option>${TEAM_OPTS}</select>
+      </div>`).join("");
+    tsFiles.forEach((f, i) => { const sel = $(`[data-ts="${i}"]`); if (sel) sel.value = f.team ?? ""; });
+    $$("#tsList [data-ts]").forEach(sel => sel.onchange = () => {
+      tsFiles[+sel.dataset.ts].team = sel.value || null; summariseTeamSet(); });
+    summariseTeamSet();
+  }
+  function summariseTeamSet(){
+    const picked = tsFiles.filter(f => f.team).map(f => f.team);
+    const dupes = [...new Set(picked.filter((t, i) => picked.indexOf(t) !== i))];
+    const missing = C.ORDER.filter(a => !picked.includes(a));
+    $("#tsSummary").innerHTML =
+      `${picked.length}/32 matched` +
+      (dupes.length ? ` · <b style="color:var(--danger)">two files on ${dupes.map(d=>C.TEAMS[d].name).join(", ")}</b>` : "") +
+      (missing.length ? ` · no clip for ${missing.length} team${missing.length===1?"":"s"}: ${missing.slice(0,6).map(m=>C.TEAMS[m].name).join(", ")}${missing.length>6?"…":""}`
+                      : " · every team covered");
+    $("#tsSave").disabled = !picked.length || dupes.length > 0;
+  }
+  $("#teamSetInput").onchange = (e) => {
+    tsFiles = [...e.target.files].map(file => ({ file, team: matchTeam(file.name) }));
+    e.target.value = "";
+    if (!tsFiles.length) return;
+    $("#tsName").value = ""; $("#tsMsg").textContent = "";
+    renderTeamSet(); $("#teamSet").classList.add("on");
+  };
+  $("#tsCancel").onclick = () => { $("#teamSet").classList.remove("on"); tsFiles = []; };
+  $("#tsSave").onclick = async () => {
+    const setName = $("#tsName").value.trim();
+    if (!setName) return toast("Give the set a name first");
+    const chosen = tsFiles.filter(f => f.team);
+    if (!chosen.length) return toast("No files matched a team");
+    const btn = $("#tsSave"); busy(btn, true);
+    const setId = crypto.randomUUID();
+    let poster = null, done = 0;
+    /* clips first, card last — enabling a half-uploaded set would show blank stingers */
+    for (const f of chosen) {
+      $("#tsMsg").textContent = `uploading ${++done}/${chosen.length}…`;
+      const ext = (f.file.name.match(/\.[^.]+$/) || [".webm"])[0];
+      const path = `team_anim/${setId}/${f.team}${ext}`;
+      const { url, error } = await uploadToStorage(path, f.file, f.file.type || undefined);
+      if (error) { busy(btn, false); $("#tsMsg").textContent = "";
+        return toast("Upload failed: " + error.message); }
+      poster ??= url;
+      await saveAsset({ kind: "animation", name: `${C.TEAMS[f.team].name} — ${setName}`, url,
+        meta: { team: f.team, group: "team", set: setId, type: "upload" } });
+    }
+    await saveAsset({ kind: "style", name: setName, url: null,
+      meta: { domain: "team_anim", per_team: true, set: setId, type: "upload", poster } });
+    busy(btn, false); $("#tsMsg").textContent = "";
+    $("#teamSet").classList.remove("on"); tsFiles = [];
+    await loadAssets();
+    toast(`"${setName}" created — Enable it on its card`);
+  };
+
+  /* ---------- Stream Deck event keys ----------
+     The deck sends ?name=<event>; the per-PC map state.oneshots decides which asset that
+     name resolves to. Keeping the key equal to the deck's own name means no profile
+     rebuild and no re-import on the five PCs. */
+  const DECK_EVENTS = ["Stash or Pass", "Spin 2 Pick 1", "Spin 3 Pick 1", "PYT"];
+  const eventOf = (a) => a.meta?.event ??
+    DECK_EVENTS.find(ev => a.name.toLowerCase().includes(ev.toLowerCase())) ?? null;
+  const variantsFor = (ev) => assets
+    .filter(a => a.kind === "animation" && a.meta?.group !== "team" && eventOf(a) === ev);
+  /* what the deck plays with no explicit assignment: newest matching name */
+  const fallbackFor = (ev) => variantsFor(ev)[0] ?? null;
+  const assignedFor = (ev) => {
+    const id = state.oneshots?.[ev];
+    return (id && assets.find(a => a.id === id)) || fallbackFor(ev);
+  };
+  let epEvent = null;
+  function renderEventGrid(){
+    if (!$("#eventGrid")) return;
+    const evs = [...new Set([...DECK_EVENTS, ...assets.map(eventOf).filter(Boolean)])];
+    $("#eventGrid").innerHTML = evs.map(ev => {
+      const cur = assignedFor(ev), n = variantsFor(ev).length;
+      return `<div class="asset" data-ev="${esc(ev)}" style="cursor:pointer">
+        <div class="thumb">${cur ? thumb(cur) : "🎬"}</div>
+        <div class="meta"><div class="name">${esc(ev)}</div>
+          <div class="row"><span class="tag">${cur ? esc(cur.name) : "no clip yet"}</span></div>
+          <div class="row"><span class="tag">${n} option${n===1?"":"s"} · tap to change</span></div>
+        </div></div>`; }).join("");
+    $$("#eventGrid [data-ev]").forEach(d => d.onclick = () => openEvent(d.dataset.ev));
+  }
+  function openEvent(ev){
+    epEvent = ev; $("#epTitle").textContent = ev; $("#epMsg").textContent = "";
+    renderEventList(); $("#eventPick").classList.add("on");
+  }
+  function renderEventList(){
+    const cur = assignedFor(epEvent);
+    const list = variantsFor(epEvent);
+    $("#epList").innerHTML = list.length ? list.map(a => {
+      const on = cur && cur.id === a.id;
+      return `<div class="asset ${on?"active":""}" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <div class="thumb banner-thumb" style="width:120px;flex:none">${thumb(a)}</div>
+        <div class="meta" style="flex:1">
+          <div class="name">${esc(a.name)}</div>
+          <div class="row">
+            <button class="btn ${on?"ghost":""}" data-use="${a.id}">${on?"In use on PC "+PC:"Use on this PC"}</button>
+            <button class="btn ghost" data-useall="${a.id}">Use on all 5 PCs</button>
+          </div></div></div>`; }).join("")
+      : `<span class="tag">Nothing uploaded for this event yet.</span>`;
+    $$("#epList [data-use]").forEach(b => b.onclick = async () => {
+      await patchState({ oneshots: { ...(state.oneshots ?? {}), [epEvent]: b.dataset.use } });
+      renderEventList(); renderEventGrid(); toast("Assigned on PC " + PC);
+    });
+    $$("#epList [data-useall]").forEach(b => b.onclick = async () => {
+      busy(b, true); await assignEventEverywhere(epEvent, b.dataset.useall); busy(b, false);
+      renderEventList(); renderEventGrid(); toast("Assigned on all 5 PCs");
+    });
+  }
+  /* each PC keeps its own map, so merge per PC rather than overwriting the whole key */
+  async function assignEventEverywhere(ev, id){
+    const { data: rows } = await sb.from("stream_state").select("id,data");
+    for (const r of rows ?? []) {
+      const next = { ...(r.data?.oneshots ?? {}), [ev]: id };
+      await panelCall({ action:"patch", pc:String(r.id), clientId:CLIENT_ID, patch:{ oneshots: next } });
+    }
+    await loadState();
+  }
+  $("#epClose").onclick = () => { $("#eventPick").classList.remove("on"); epEvent = null; };
+  $("#epUpload").onchange = async (e) => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file || !epEvent) return;
+    /* Pin every PC to what it plays TODAY before adding a rival, so uploading can never
+       silently change what the deck keys already do. */
+    const before = fallbackFor(epEvent);
+    if (before) await assignEventEverywhere(epEvent, before.id);
+    $("#epMsg").textContent = "uploading…";
+    const path = `animation/${Date.now()}-${file.name.replace(/[^\w.\-]/g,"_")}`;
+    const { url, error } = await uploadToStorage(path, file, file.type || undefined);
+    if (error) { $("#epMsg").textContent = ""; return toast("Upload failed: " + error.message); }
+    await saveAsset({ kind:"animation", name:file.name.replace(/\.[^.]+$/,""), url,
+      meta:{ type:"upload", group:"oneshot", event: epEvent } });
+    $("#epMsg").textContent = "";
+    await loadAssets();
+    renderEventList(); renderEventGrid();
+    toast("Added — pick it above to use it");
+  };
+
   /* ---------- reframe editor ---------- */
   let rfAsset = null;
   /* preview box matches the shape the asset is actually shown in */
@@ -1269,6 +1465,7 @@
         </div></div>`; }).join("");
     $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
       patchState({animStyle: assets.find(x=>x.id===b.dataset.style)}); });
+    renderEventGrid();
 
     /* one-shot animations */
     $("#oneshotGrid").innerHTML = assets

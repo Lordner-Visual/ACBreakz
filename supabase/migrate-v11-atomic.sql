@@ -73,7 +73,7 @@ security invoker
 set search_path = public
 as $$
 declare
-  pc int; d jsonb; b jsonb; style jsonb; payload jsonb;
+  pc int; d jsonb; b jsonb; style jsonb; payload jsonb; fx jsonb;
   was_out boolean; was_hl boolean; now_out boolean; now_hl boolean; changed boolean;
   is_hl_action boolean;
   results jsonb := '[]'::jsonb;
@@ -96,6 +96,8 @@ begin
     select data into d from stream_state where id = pc for update;   -- <<< the critical section
     if not found then continue; end if;
     d := coalesce(d, '{}'::jsonb);
+    /* per-PC FX when the caller supplies it, flat object otherwise (back-compatible) */
+    fx := coalesce(p_fx -> pc::text, p_fx, '{}'::jsonb);
 
     b := coalesce(d->'board', '{}'::jsonb);
     b := b || jsonb_build_object('picked',      coalesce(b->'picked','{}'::jsonb),
@@ -157,14 +159,14 @@ begin
           'logoOverlay', true);
       else
         payload := jsonb_build_object('team', p_team, 'pc', pc,
-                                      'animUrl', p_fx->'teamAnimUrl');
+                                      'animUrl', fx->'teamAnimUrl');
       end if;
       -- a linked sound wins; an explicit JSON null means "No SoundFX"
       payload := payload || jsonb_build_object('sfxUrl',
         case when jsonb_typeof(style->'meta') = 'object'
                   and jsonb_exists(style->'meta', 'sfxUrl')
              then style->'meta'->'sfxUrl'
-             else coalesce(p_fx->'defaultSfxUrl', 'null'::jsonb) end);
+             else coalesce(fx->'defaultSfxUrl', 'null'::jsonb) end);
       insert into events(type, payload) values ('team_pick', payload);
 
     elsif p_action in ('team_toggle','team_restore') and not now_out and changed then

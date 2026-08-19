@@ -131,25 +131,37 @@ Deno.serve(async (req) => {
     case "board": {
       const act = String(body.boardAction ?? "");
       const team = String(body.team ?? "").toLowerCase() || null;
-      /* resolve the FX assets BEFORE the RPC — it holds a row lock and must not do I/O */
-      let fx: Record<string, unknown> = {};
+      /* Resolve the FX assets BEFORE the RPC — it holds a row lock and must not do I/O.
+         Keyed BY PC, because each PC can be on a different team-animation set and so a
+         different clip for the same team. */
+      const pcs = pcList(body.pc);
+      const fx: Record<string, unknown> = {};
       if (act === "team_toggle" || act === "team_pick") {
-        const [{ data: dflt }, { data: anim }] = await Promise.all([
-          sb.from("assets").select("url").eq("kind", "sfx").eq("meta->>default", "true").limit(1),
-          team ? sb.from("assets").select("url").eq("kind", "animation")
-                   .eq("meta->>team", team).order("created_at", { ascending: false }).limit(1)
-               : Promise.resolve({ data: [] }),
-        ]);
+        const { data: dflt } = await sb.from("assets").select("url")
+          .eq("kind", "sfx").eq("meta->>default", "true").limit(1);
         let sfxUrl = dflt?.[0]?.url ?? null;
         if (!sfxUrl) {
           const { data: newest } = await sb.from("assets").select("url")
             .eq("kind", "sfx").order("created_at", { ascending: false }).limit(1);
           sfxUrl = newest?.[0]?.url ?? null;
         }
-        fx = { defaultSfxUrl: sfxUrl, teamAnimUrl: anim?.[0]?.url ?? null };
+        const { data: rows } = await sb.from("stream_state").select("id,data").in("id", pcs);
+        const setOf = (pc: number) =>
+          (rows ?? []).find((r) => r.id === pc)?.data?.animStyle?.meta?.set ?? null;
+        const urls = new Map<string | null, string | null>();
+        for (const setId of [...new Set(pcs.map(setOf))]) {
+          if (!team) { urls.set(setId, null); continue; }
+          let q = sb.from("assets").select("url").eq("kind", "animation")
+            .eq("meta->>team", team).order("created_at", { ascending: false }).limit(1);
+          q = setId ? q.eq("meta->>set", setId) : q.is("meta->>set", null);
+          const { data: a } = await q;
+          urls.set(setId, a?.[0]?.url ?? null);
+        }
+        for (const pc of pcs)
+          fx[String(pc)] = { defaultSfxUrl: sfxUrl, teamAnimUrl: urls.get(setOf(pc)) ?? null };
       }
       const { data, error } = await sb.rpc("board_action", {
-        p_pcs: pcList(body.pc), p_action: act, p_team: team,
+        p_pcs: pcs, p_action: act, p_team: team,
         p_fx: fx, p_writer: body.clientId ?? null, p_return_data: true });
       return error ? json({ error: error.message }, 400)
                    : json({ ok: true, results: data?.results ?? [] });

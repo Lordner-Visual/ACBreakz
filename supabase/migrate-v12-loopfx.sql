@@ -31,8 +31,11 @@ begin
     if not found then continue; end if;
     d := coalesce(d, '{}'::jsonb);
     cur := d->'loopFx';
-    /* same clip already looping -> stop; anything else -> start this one */
-    on_now := not (jsonb_typeof(cur) = 'object' and cur->>'url' = p_fx->>'url');
+    /* Same clip already looping -> stop; anything else -> start this one.
+       coalesce is load-bearing: on a PC whose data has never carried a loopFx key,
+       cur is SQL NULL, so the comparison is NULL and `not NULL` is NULL rather than
+       true — the toggle would silently never turn on. */
+    on_now := not coalesce(jsonb_typeof(cur) = 'object' and cur->>'url' = p_fx->>'url', false);
     d := state_stamp(
            jsonb_set(d, '{loopFx}',
                      case when on_now then p_fx else 'null'::jsonb end, true),
