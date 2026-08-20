@@ -792,8 +792,32 @@
   }
 
   /* ---------------- state application ---------------- */
-  const pendingDim = new Set();     // teams eliminated but still waiting on their stinger
+  /* board_action writes the state row and inserts the FX event in ONE transaction, and
+     realtime delivers the row FIRST — so applyState always sees a fresh elimination before
+     its stinger event arrives. It therefore holds the paint itself: any not-out -> out
+     transition parks the team in pendingDim, and whichever comes next — the team_pick
+     event's choreography, or this fallback — actually dims it. */
+  const pendingDim = new Set();
+  const dimTimers = new Map();      // team -> timer ids still owed a dimNow
+  let boardBooted = false;          // the first paint is the current board, not a transition
   let lastState = null;
+  function armDim(team, ms) {
+    const t = setTimeout(() => dimNow(team), ms);
+    dimTimers.set(team, (dimTimers.get(team) || []).concat(t));
+  }
+  function clearDim(team) {
+    (dimTimers.get(team) || []).forEach(clearTimeout);
+    dimTimers.delete(team); pendingDim.delete(team);
+  }
+  function dimNow(team) {
+    const c = cells[team];
+    if (!c || !pendingDim.has(team)) return;      // already dimmed, or restored meanwhile
+    clearDim(team);
+    c.classList.add("on", "slam"); c.classList.remove("hl");
+    setTimeout(() => c.classList.remove("slam"), 600);
+    triggerButtonAnim(team);
+    recomputeHl();
+  }
   /* highlighted set, with any mid-stinger team still counted as on the board */
   function hlKeyOf(s) {
     const picked = s?.board?.picked || {}, hl = s?.board?.highlighted || {};
@@ -813,10 +837,17 @@
     const partsChanged = applyBoardParts(s);
     const picked = s.board?.picked || {}, hl = s.board?.highlighted || {};
     for (const abbr of C.ORDER) {
-      const out = !!picked[abbr] && !pendingDim.has(abbr);
+      const want = !!picked[abbr];
+      if (!want) clearDim(abbr);
+      else if (boardBooted && !pendingDim.has(abbr) && !cells[abbr].classList.contains("on")) {
+        pendingDim.add(abbr);                     // its stinger event is milliseconds behind
+        armDim(abbr, 900);                        // …unless none ever comes
+      }
+      const out = want && !pendingDim.has(abbr);
       cells[abbr].classList.toggle("on", out);
       cells[abbr].classList.toggle("hl", !!hl[abbr] && !out);
     }
+    boardBooted = true;
     /* Any change at all — intensity, grid, which effect, who is highlighted — restarts
        every effect together so the highlighted buttons stay in step. */
     const hlKey = hlKeyOf(s);
@@ -837,27 +868,18 @@
            clip these are the same thing; on a slow one it stops the team disappearing
            before its animation exists. Capped so a clip that never starts still dims. */
         const media = !!(p.animUrl || p.styleUrl);
-        let dimmed = false;
-        const dim = () => { if (dimmed) return; dimmed = true;
-          pendingDim.delete(p.team);
-          const c = cells[p.team];
-          if (c) { c.classList.add("on","slam"); c.classList.remove("hl");
-            setTimeout(() => c.classList.remove("slam"), 600); }
-          triggerButtonAnim(p.team);
-          recomputeHl(); };
-        if (media) pendingDim.add(p.team);
+        clearDim(p.team);                         // take the fallback off applyState
+        if (!cells[p.team]?.classList.contains("on")) pendingDim.add(p.team);
         runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl, fit: p.styleFit,
                 styleUrl: p.styleUrl, styleImage: p.styleImage, logoOverlay: p.logoOverlay,
                 styleCrop: p.styleCrop, crop: p.crop,
-                onStart: media ? () => setTimeout(dim, 1200) : null });
-        setTimeout(dim, media ? 2600 : 900);
+                onStart: media ? () => armDim(p.team, 1200) : null });
+        armDim(p.team, media ? 2600 : 900);       // cap: a clip that never starts still dims
         break; }
       case "team_restore":
-        pendingDim.delete(p.team); cells[p.team]?.classList.remove("on");
-        applyState(lastState); break;
+        clearDim(p.team); cells[p.team]?.classList.remove("on"); break;
       case "board_reset":
-        pendingDim.clear(); C.ORDER.forEach(a => cells[a].classList.remove("on"));
-        applyState(lastState); break;
+        C.ORDER.forEach(a => { clearDim(a); cells[a].classList.remove("on"); }); break;
       case "play_animation":
         runFx({ url: p.url, boxed: p.boxed, image: p.image, sfxUrl: p.sfxUrl, fit: p.fit,
                 crop: p.crop }); break;
