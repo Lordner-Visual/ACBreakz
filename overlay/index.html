@@ -176,8 +176,10 @@
   @keyframes dust{to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}
 
   #banners{left:0;top:645px;width:1080px;height:97px;overflow:hidden;background:#06111b}
-  #banners .b{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
-  #banners .b.live{opacity:1}
+  #banners .b{position:absolute;inset:0;transform:translateX(-100%);
+    transition:transform .6s cubic-bezier(.22,.61,.36,1);will-change:transform}
+  #banners .b.live{transform:translateX(0)}
+  #banners .b.out{transform:translateX(100%)}
   #banners .b img,#banners .b video{width:100%;height:100%;object-fit:cover;object-position:50% 50%}
   #banners .b .txt{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
     color:var(--bone);font-size:44px;letter-spacing:1px;text-transform:uppercase;
@@ -511,17 +513,25 @@
   const clearLoopers = (root) => root.querySelectorAll(".looper")
     .forEach(n => { n._stop?.(); n.remove(); });
   const rotator = {
-    list: [], i: -1, timer: null,
+    list: [], i: -1, timer: null, shownId: null,
     setList(list) {
       const same = JSON.stringify((list||[]).map(a=>[a.id,a.meta?.crop])) ===
                    JSON.stringify(this.list.map(a=>[a.id,a.meta?.crop]));
       this.list = list || [];
       if (!same) { this.i = -1; this.next(); }
-      if (!this.list.length) { clearTimeout(this.timer); banEl.innerHTML=""; }
+      if (!this.list.length) { clearTimeout(this.timer); banEl.innerHTML=""; this.shownId = null; }
     },
     next() {
       clearTimeout(this.timer);
       if (!this.list.length) return;
+      /* With ONE banner in rotation there is nothing to slide to. The old crossfade
+         hid this — dissolving an image into an identical copy is invisible — but a
+         slide would scroll the same artwork across the band every cycle. Hold it. */
+      if (this.list.length === 1 && this.shownId === this.list[0].id
+          && banEl.querySelector(".b.live")) {
+        this.timer = setTimeout(() => this.next(), C.bannerSeconds(this.list[0]) * 1000);
+        return;
+      }
       this.i = (this.i + 1) % this.list.length;
       const a = this.list[this.i];
       const b = document.createElement("div"); b.className = "b";
@@ -540,9 +550,16 @@
         if (this.list.length > 1) this.next();
       };
       banEl.appendChild(b);
-      requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add("live")));
       while (banEl.children.length > 2) banEl.firstChild.remove();
-      [...banEl.children].slice(0,-1).forEach(n => n.classList.remove("live"));
+      /* Start both halves in the SAME frame: if the outgoing banner began moving even
+         one frame early, a sliver of the empty band would show between them. */
+      const leaving = [...banEl.children].slice(0, -1);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!b.isConnected) return;      // its media 404'd and onerror pulled it — hold what we have
+        b.classList.add("live");
+        leaving.forEach(n => { n.classList.remove("live"); n.classList.add("out"); });
+      }));
+      this.shownId = a.id;
       this.timer = setTimeout(() => this.next(), C.bannerSeconds(a) * 1000);
     },
   };
