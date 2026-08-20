@@ -176,10 +176,11 @@
   @keyframes dust{to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}
 
   #banners{left:0;top:645px;width:1080px;height:97px;overflow:hidden;background:#06111b}
-  #banners .b{position:absolute;inset:0;transform:translateX(-100%);
-    transition:transform .6s cubic-bezier(.22,.61,.36,1);will-change:transform}
-  #banners .b.live{transform:translateX(0)}
-  #banners .b.out{transform:translateX(100%)}
+  #banners .b{position:absolute;inset:0;transform:translate3d(-100%,0,0);
+    transition:transform .8s cubic-bezier(.37,0,.63,1);
+    will-change:transform;backface-visibility:hidden}
+  #banners .b.live{transform:translate3d(0,0,0)}
+  #banners .b.out{transform:translate3d(100%,0,0)}
   #banners .b img,#banners .b video{width:100%;height:100%;object-fit:cover;object-position:50% 50%}
   #banners .b .txt{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
     color:var(--bone);font-size:44px;letter-spacing:1px;text-transform:uppercase;
@@ -512,14 +513,33 @@
   }
   const clearLoopers = (root) => root.querySelectorAll(".looper")
     .forEach(n => { n._stop?.(); n.remove(); });
+  /* Resolves when the media can actually be painted, rejects when it cannot. decode()
+     covers fetch AND decode in one wait; the timeout stops one hung file freezing the
+     whole rotation. */
+  function mediaReady(el, ms = 4000) {
+    return new Promise((res, rej) => {
+      const t = setTimeout(rej, ms);
+      const ok = () => { clearTimeout(t); res(); };
+      const no = () => { clearTimeout(t); rej(); };
+      if (el.tagName === "IMG") {
+        if (el.decode) el.decode().then(ok, no);
+        else if (el.complete && el.naturalWidth) ok();
+        else { el.onload = ok; el.onerror = no; }
+      } else {
+        if (el.readyState >= 2) ok();
+        else { el.onloadeddata = ok; el.onerror = no; }
+      }
+    });
+  }
+
   const rotator = {
-    list: [], i: -1, timer: null, shownId: null,
+    list: [], i: -1, timer: null, shownId: null, gen: 0,
     setList(list) {
       const same = JSON.stringify((list||[]).map(a=>[a.id,a.meta?.crop])) ===
                    JSON.stringify(this.list.map(a=>[a.id,a.meta?.crop]));
       this.list = list || [];
       if (!same) { this.i = -1; this.next(); }
-      if (!this.list.length) { clearTimeout(this.timer); banEl.innerHTML=""; this.shownId = null; }
+      if (!this.list.length) { clearTimeout(this.timer); this.gen++; banEl.innerHTML=""; this.shownId = null; }
     },
     next() {
       clearTimeout(this.timer);
@@ -533,7 +553,16 @@
         return;
       }
       this.i = (this.i + 1) % this.list.length;
-      const a = this.list[this.i];
+      this.show(this.list[this.i], 0);
+    },
+
+    /* Build the banner off-canvas and slide ONLY once its media can actually paint.
+       The old order — append, slide, discover the file is broken, restart — was
+       measurable: the band snapped back to the left edge mid-travel every time the
+       rotation reached a dead file. A slow file did the same thing more quietly, by
+       sliding in blank. Waiting costs nothing visible: it happens during the dwell. */
+    show(a, tried) {
+      const gen = ++this.gen;
       const b = document.createElement("div"); b.className = "b";
       if (a.meta?.type === "text" && !a.url) {
         b.innerHTML = `<div class="txt">${(a.meta.text||"").replace(/</g,"&lt;")}</div>`;
@@ -542,25 +571,36 @@
       } else {
         b.innerHTML = `<img src="${a.url}" style="${cropCss(a.meta)}">`;
       }
-      /* a deleted file would otherwise sit here as a blank frame — skip straight on */
-      const media = b.querySelector("img,video");
-      if (media) media.onerror = () => {
-        console.warn("[acbz] banner missing, skipping:", a.name);
-        b.remove();
-        if (this.list.length > 1) this.next();
+
+      const slide = () => {
+        if (gen !== this.gen) return;            // the list changed while we were waiting
+        banEl.appendChild(b);
+        while (banEl.children.length > 2) banEl.firstChild.remove();
+        /* Start both halves in the SAME frame: if the outgoing banner began moving even
+           one frame early, a sliver of the empty band would show between them. */
+        const leaving = [...banEl.children].slice(0, -1);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (gen !== this.gen || !b.isConnected) return;
+          b.classList.add("live");
+          leaving.forEach(n => { n.classList.remove("live"); n.classList.add("out"); });
+        }));
+        this.shownId = a.id;
+        this.timer = setTimeout(() => this.next(), C.bannerSeconds(a) * 1000);
       };
-      banEl.appendChild(b);
-      while (banEl.children.length > 2) banEl.firstChild.remove();
-      /* Start both halves in the SAME frame: if the outgoing banner began moving even
-         one frame early, a sliver of the empty band would show between them. */
-      const leaving = [...banEl.children].slice(0, -1);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!b.isConnected) return;      // its media 404'd and onerror pulled it — hold what we have
-        b.classList.add("live");
-        leaving.forEach(n => { n.classList.remove("live"); n.classList.add("out"); });
-      }));
-      this.shownId = a.id;
-      this.timer = setTimeout(() => this.next(), C.bannerSeconds(a) * 1000);
+      const skip = () => {
+        if (gen !== this.gen) return;
+        console.warn("[acbz] banner unusable, skipping:", a.name);
+        if (tried + 1 < this.list.length) {       // move on while still off-canvas
+          this.i = (this.i + 1) % this.list.length;
+          this.show(this.list[this.i], tried + 1);
+        } else {                                  // nothing in the list loads — retry later
+          this.timer = setTimeout(() => this.next(), 5000);
+        }
+      };
+
+      const media = b.querySelector("img,video");
+      if (!media) return slide();                 // text banner: nothing to load
+      mediaReady(media).then(slide, skip);
     },
   };
 
