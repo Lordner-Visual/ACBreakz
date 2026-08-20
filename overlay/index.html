@@ -792,20 +792,34 @@
   }
 
   /* ---------------- state application ---------------- */
+  const pendingDim = new Set();     // teams eliminated but still waiting on their stinger
+  let lastState = null;
+  /* highlighted set, with any mid-stinger team still counted as on the board */
+  function hlKeyOf(s) {
+    const picked = s?.board?.picked || {}, hl = s?.board?.highlighted || {};
+    return C.ORDER.filter(a => hl[a] && !(picked[a] && !pendingDim.has(a))).join(",");
+  }
+  function recomputeHl() {
+    const k = hlKeyOf(lastState);
+    if (k === lastHlKey) return;
+    lastHlKey = k; restartEffects();
+  }
   function applyState(s) {
     if (!s) return;
+    lastState = s;
     setBackground(s.background);
     setLoopFx(s.loopFx); loopBooted = true;
     warmForState(s);
     const partsChanged = applyBoardParts(s);
     const picked = s.board?.picked || {}, hl = s.board?.highlighted || {};
     for (const abbr of C.ORDER) {
-      cells[abbr].classList.toggle("on", !!picked[abbr]);
-      cells[abbr].classList.toggle("hl", !!hl[abbr] && !picked[abbr]);
+      const out = !!picked[abbr] && !pendingDim.has(abbr);
+      cells[abbr].classList.toggle("on", out);
+      cells[abbr].classList.toggle("hl", !!hl[abbr] && !out);
     }
     /* Any change at all — intensity, grid, which effect, who is highlighted — restarts
        every effect together so the highlighted buttons stay in step. */
-    const hlKey = C.ORDER.filter(a => hl[a] && !picked[a]).join(",");
+    const hlKey = hlKeyOf(s);
     const hlChanged = hlKey !== lastHlKey;
     lastHlKey = hlKey;
     if (partsChanged || hlChanged) restartEffects();
@@ -825,17 +839,25 @@
         const media = !!(p.animUrl || p.styleUrl);
         let dimmed = false;
         const dim = () => { if (dimmed) return; dimmed = true;
-          cells[p.team]?.classList.add("on","slam");
+          pendingDim.delete(p.team);
+          const c = cells[p.team];
+          if (c) { c.classList.add("on","slam"); c.classList.remove("hl");
+            setTimeout(() => c.classList.remove("slam"), 600); }
           triggerButtonAnim(p.team);
-          setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); };
+          recomputeHl(); };
+        if (media) pendingDim.add(p.team);
         runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl, fit: p.styleFit,
                 styleUrl: p.styleUrl, styleImage: p.styleImage, logoOverlay: p.logoOverlay,
                 styleCrop: p.styleCrop, crop: p.crop,
                 onStart: media ? () => setTimeout(dim, 1200) : null });
         setTimeout(dim, media ? 2600 : 900);
         break; }
-      case "team_restore": cells[p.team]?.classList.remove("on"); break;
-      case "board_reset": C.ORDER.forEach(a => cells[a].classList.remove("on")); break;
+      case "team_restore":
+        pendingDim.delete(p.team); cells[p.team]?.classList.remove("on");
+        applyState(lastState); break;
+      case "board_reset":
+        pendingDim.clear(); C.ORDER.forEach(a => cells[a].classList.remove("on"));
+        applyState(lastState); break;
       case "play_animation":
         runFx({ url: p.url, boxed: p.boxed, image: p.image, sfxUrl: p.sfxUrl, fit: p.fit,
                 crop: p.crop }); break;
