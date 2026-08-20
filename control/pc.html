@@ -336,7 +336,8 @@
       const {data:signed, error:sErr} = await call({ action:"sign_upload", path });
       if (sErr) return toast("Save failed: " + sErr.message);
       const {error} = await sb.storage.from("media")
-        .uploadToSignedUrl(signed.path, signed.token, blob, { contentType:"image/png" });
+        .uploadToSignedUrl(signed.path, signed.token, blob,
+          { contentType:"image/png", cacheControl: "31536000" });
       if (error) return toast("Upload failed: " + error.message);
       const url = sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl;
       const {error:aErr} = await call({ action:"asset",

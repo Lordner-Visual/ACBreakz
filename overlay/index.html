@@ -598,17 +598,32 @@
     if (isImg) node.style.setProperty("--rfz", z);
     else node.style.transform = z > 1 ? `scale(${z})` : "";
   }
-  function playVideo(url, boxed, done, full, crop){
+  function playVideo(url, boxed, done, full, crop, onStart){
     const box = !!boxed && !full;
     fxVBox.classList.toggle("boxed", box);
     fxVBox.classList.toggle("full", !!full);
     fxV.classList.toggle("fit-contain", box);
     fxCrop(fxV, crop, false);
+    fxV.muted = false;
     fxV.style.opacity = "1"; fxV.src = url; fxVBox.style.display = "block";
-    fxV.onended = fxV.onerror = () => {
-      fxVBox.style.display = "none"; fxV.removeAttribute("src"); fxV.style.opacity = "1"; done();
-    };
-    fxV.play().catch(() => { fxVBox.style.display = "none"; done(); });
+    /* A hung buffer fires stalled/waiting, never error — without this the queue's
+       one-at-a-time gate would stay closed forever and every later FX would silently
+       pile up behind it. */
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true;
+      clearTimeout(watchdog);
+      fxVBox.style.display = "none"; fxV.removeAttribute("src"); fxV.style.opacity = "1"; done(); };
+    const watchdog = setTimeout(() => {
+      if (!fxV.currentTime) { console.warn("[acbz] clip never started, giving up:", url); finish(); }
+    }, 8000);
+    fxV.addEventListener("playing", () => { clearTimeout(watchdog); onStart && onStart(); }, { once: true });
+    fxV.onended = fxV.onerror = finish;
+    /* an unmuted clip can have play() refused outright; the graphic still matters more
+       than its audio, so fall back to muted rather than showing nothing */
+    fxV.play().catch(() => {
+      fxV.muted = true;
+      fxV.play().catch(() => finish());
+    });
   }
   /* a one-shot still: 3s pop, then gone */
   function showStill(url, full, crop, done){
@@ -636,16 +651,16 @@
     const full = job.fit === "full";
     if (job.styleUrl && job.logoOverlay) {          // v2 style: one base + team logo on top
       if (job.styleImage) {
-        showStill(job.styleUrl, full, job.styleCrop, null);
+        showStill(job.styleUrl, full, job.styleCrop, null); job.onStart && job.onStart();
         logoPop(job.team, false, 2900, done);
       } else {
-        playVideo(job.styleUrl, true, done, full, job.styleCrop);
+        playVideo(job.styleUrl, true, done, full, job.styleCrop, job.onStart);
         logoPop(job.team, false, 2900, null);
       }
     } else if (job.url && job.image) {              // one-shot AI still
       showStill(job.url, full, job.crop, done);
     } else if (job.url) {                           // video: boxed one-shot or full-canvas stinger
-      playVideo(job.url, !!job.boxed, done, full, job.crop);
+      playVideo(job.url, !!job.boxed, done, full, job.crop, job.onStart);
     } else if (job.team) {                          // CSS fallback burst
       const t = C.TEAMS[job.team]; const b = $("#burst");
       $("#flash").classList.remove("go"); void $("#flash").offsetWidth; $("#flash").classList.add("go");
@@ -661,6 +676,75 @@
       setTimeout(() => b.classList.add("fadeout"), 2200);
       setTimeout(() => { b.style.display="none"; b.innerHTML=""; b.classList.remove("fadeout"); done(); }, 2600);
     } else done();
+  }
+
+  /* ---------------- FX cache warm ----------------
+     Nothing used to preload FX media, and the overlay does not even learn a stinger's
+     URL until the press event arrives — so the FIRST press of any clip was a cold fetch
+     of a ~6 MB file, while the board dimmed on a fixed timer regardless. That is why a
+     team could leave the board with the sound playing and no stinger, and why it only
+     happened once per clip.
+
+     Only the FX source needs these: each PC runs three browser sources, so warming
+     without this gate would pull the set three times per PC. */
+  const warmed = new Set();
+  let warmQ = [], warmRunning = 0;
+  const WARM_PARALLEL = 3;          // OBS is uploading a stream on this connection
+
+  function warmOne(url) {
+    return new Promise((done) => {
+      const v = Object.assign(document.createElement("video"),
+        { src: url, muted: true, playsInline: true, preload: "auto" });
+      v.style.cssText = "position:absolute;width:1px;height:1px;opacity:0;pointer-events:none";
+      const finish = () => { clearTimeout(t); v.removeAttribute("src"); v.remove(); done(); };
+      const t = setTimeout(finish, 30000);
+      v.addEventListener("canplaythrough", finish, { once: true });
+      v.addEventListener("error", finish, { once: true });
+      document.body.appendChild(v);
+    });
+  }
+  function pumpWarm() {
+    while (warmRunning < WARM_PARALLEL && warmQ.length) {
+      const url = warmQ.shift();
+      warmRunning++;
+      warmOne(url).then(() => { warmRunning--; pumpWarm(); });
+    }
+  }
+  function warmUrls(urls) {
+    let added = 0;
+    for (const u of urls) {
+      if (!u || warmed.has(u)) continue;
+      warmed.add(u); warmQ.push(u); added++;
+    }
+    if (added) { console.log(`[acbz] warming ${added} FX clip(s)`); pumpWarm(); }
+  }
+
+  /* Which clips this PC could need: every team's clip in the selected set, plus the
+     clip each Stream Deck event key resolves to. Mirrors teamClipUrl/oneshotByPc in
+     the deck function — the set-less set is Classic Stingers. */
+  let warmKey = null;
+  async function warmForState(s) {
+    if (!(layer === "fx" || layer === "all")) return;
+    if (!window.__sb) return;
+    const setId = s?.animStyle?.meta?.set ?? null;
+    const key = setId + "|" + JSON.stringify(s?.oneshots ?? {});
+    if (key === warmKey) return; warmKey = key;
+    try {
+      let q = window.__sb.from("assets").select("id,url,meta")
+        .eq("kind", "animation").not("url", "is", null);
+      const { data } = await q;
+      const rows = (data ?? []).filter(a => !a.meta?.deleted);
+      const teamClips = [];
+      for (const abbr of C.ORDER) {
+        const forTeam = rows
+          .filter(a => a.meta?.team === abbr && (a.meta?.set ?? null) === setId);
+        if (forTeam[0]?.url) teamClips.push(forTeam[0].url);
+      }
+      const chosen = Object.values(s?.oneshots ?? {})
+        .map(id => rows.find(a => a.id === id)?.url).filter(Boolean);
+      const oneShots = rows.filter(a => a.meta?.group !== "team").map(a => a.url);
+      warmUrls([...chosen, ...oneShots, ...teamClips]);
+    } catch (e) { /* warming is best effort; a press still works cold */ }
   }
 
   /* ---------------- looping animation (Stream Deck toggle) ----------------
@@ -712,6 +796,7 @@
     if (!s) return;
     setBackground(s.background);
     setLoopFx(s.loopFx); loopBooted = true;
+    warmForState(s);
     const partsChanged = applyBoardParts(s);
     const picked = s.board?.picked || {}, hl = s.board?.highlighted || {};
     for (const abbr of C.ORDER) {
@@ -733,15 +818,22 @@
     const p = ev.payload || {};
     if (p.pc && Number(p.pc) !== PC) return;        // v2: not for this PC
     switch (ev.type) {
-      case "team_pick":
+      case "team_pick": {
+        /* Dim the board 1200ms into the stinger, not 1200ms after the press. On a warm
+           clip these are the same thing; on a slow one it stops the team disappearing
+           before its animation exists. Capped so a clip that never starts still dims. */
+        const media = !!(p.animUrl || p.styleUrl);
+        let dimmed = false;
+        const dim = () => { if (dimmed) return; dimmed = true;
+          cells[p.team]?.classList.add("on","slam");
+          triggerButtonAnim(p.team);
+          setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); };
         runFx({ team: p.team, url: p.animUrl, sfxUrl: p.sfxUrl, fit: p.styleFit,
                 styleUrl: p.styleUrl, styleImage: p.styleImage, logoOverlay: p.logoOverlay,
-                styleCrop: p.styleCrop, crop: p.crop });
-        setTimeout(() => { cells[p.team]?.classList.add("on","slam");
-          triggerButtonAnim(p.team);
-          setTimeout(()=>cells[p.team]?.classList.remove("slam"), 600); },
-          (p.animUrl || p.styleUrl) ? 1200 : 900);
-        break;
+                styleCrop: p.styleCrop, crop: p.crop,
+                onStart: media ? () => setTimeout(dim, 1200) : null });
+        setTimeout(dim, media ? 2600 : 900);
+        break; }
       case "team_restore": cells[p.team]?.classList.remove("on"); break;
       case "board_reset": C.ORDER.forEach(a => cells[a].classList.remove("on")); break;
       case "play_animation":
@@ -755,6 +847,7 @@
   /* ---------------- transport: Supabase or same-browser preview ---------------- */
   if (C.SUPABASE_URL && C.SUPABASE_ANON_KEY) {
     const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+    window.__sb = sb;
     sb.from("stream_state").select("data").eq("id", PC).single()
       .then(({data}) => applyState(data?.data));
     sb.channel("db")

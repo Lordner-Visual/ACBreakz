@@ -667,7 +667,8 @@
     const {data:signed, error:sErr} = await panelCall({action:"sign_upload", path});
     if (sErr) return { error: sErr };
     const {error} = await sb.storage.from("media")
-      .uploadToSignedUrl(signed.path, signed.token, blob, { contentType });
+      .uploadToSignedUrl(signed.path, signed.token, blob,
+        { contentType, cacheControl: "31536000" });
     if (error) return { error };
     return { url: sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl };
   }
