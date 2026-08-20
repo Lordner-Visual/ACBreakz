@@ -63,28 +63,16 @@ Deno.serve(async (req) => {
   }
 
   /* Anything that disappears must also stop being SELECTED, on every PC — otherwise a
-     deleted banner keeps its slot in a rotation and renders as a blank frame. */
+     deleted banner keeps its slot in a rotation and renders as a blank frame.
+
+     V13: this used to read all five rows and write whole documents back with no lock,
+     which silently erased any Stream Deck press that landed inside the loop — measured
+     at presses lost in 8 of 8 rounds. assets_deselect() holds a row lock per PC and can
+     only reach asset-selection keys, so it cannot touch board / loopFx / oneshots. */
   async function deselectEverywhere(id: string, url?: string | null) {
-    const { data: rows } = await sb.from("stream_state").select("id,data");
-    for (const row of rows ?? []) {
-      const d = row.data ?? {}; let touched = false;
-      if (Array.isArray(d.banners?.rotation)) {
-        const before = d.banners.rotation.length;
-        d.banners.rotation = d.banners.rotation.filter(
-          (b: { id?: string; url?: string }) => b?.id !== id && (!url || b?.url !== url));
-        touched ||= d.banners.rotation.length !== before;
-      }
-      if (d.background && ((d.background.id && d.background.id === id) ||
-          (url && d.background.url === url))) { d.background = null; touched = true; }
-      for (const k of ["animStyle", "boardButtons", "boardBg", "buttonAnim"])
-        if (d[k]?.id === id) { d[k] = null; touched = true; }
-      if (Array.isArray(d.buttonAnims)) {
-        const before = d.buttonAnims.length;
-        d.buttonAnims = d.buttonAnims.filter((a: { id?: string }) => a?.id !== id);
-        touched ||= d.buttonAnims.length !== before;
-      }
-      if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
-    }
+    const { error } = await sb.rpc("assets_deselect",
+      { p_id: id, p_url: url ?? null, p_writer: "server" });
+    if (error) console.error("assets_deselect failed", error.message);
   }
 
   const pcList = (v: unknown) => {
@@ -188,20 +176,12 @@ Deno.serve(async (req) => {
       const meta = { ...cur.meta, ...(body.meta ?? {}) };
       const { data: upd, error } = await sb.from("assets").update({ meta }).eq("id", body.id).select().single();
       if (error) return json({ error: error.message }, 500);
-      /* propagate the new meta into every PC's rotation copies / active background */
-      const { data: rows } = await sb.from("stream_state").select("id,data");
-      for (const row of rows ?? []) {
-        let touched = false;
-        const d = row.data ?? {};
-        const rot = d.banners?.rotation;
-        if (Array.isArray(rot)) rot.forEach((b: Record<string, unknown>, i: number) => {
-          if (b?.id === body.id) { rot[i] = { ...b, meta }; touched = true; }
-        });
-        if (d.background?.url && d.background.url === cur.url) {
-          d.background.crop = meta.crop ?? null; touched = true;
-        }
-        if (touched) await sb.from("stream_state").update({ data: d, updated_at: new Date() }).eq("id", row.id);
-      }
+      /* Propagate the new meta into every PC's rotation copies / active background.
+         Same story as deselectEverywhere: this is the path the Reframe "Save crop"
+         button takes, and unlocked it was erasing presses mid-show. */
+      const { error: propErr } = await sb.rpc("assets_propagate_meta",
+        { p_id: body.id, p_url: cur.url ?? null, p_meta: meta, p_writer: body.clientId ?? "server" });
+      if (propErr) return json({ error: propErr.message }, 500);
       /* hiding it from the rotation list must also unselect it on every PC */
       if (body.meta?.hideRotation) await deselectEverywhere(body.id, cur.url);
       return json({ ok: true, asset: upd });

@@ -117,6 +117,16 @@ Deno.serve(async (req) => {
 
   if (!DECK_KEY || g("key") !== DECK_KEY) return json({ error: "bad key" }, 401);
 
+  /* History pruning used to run as a trigger on every events/deck_log insert — i.e.
+     INSIDE board_action's row lock, taking locks on rows shared by all five PCs. It
+     happens out here now, on a small fraction of calls, in its own transaction, and
+     crucially NOT awaited: a press must never wait on, or fail because of, maintenance. */
+  if (Math.random() < 0.02) {
+    const job = (async () => { try { await sb.rpc("prune_now"); } catch (_) { /* best effort */ } })();
+    try { (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+      .EdgeRuntime?.waitUntil?.(job); } catch (_) { /* not available: it still runs */ }
+  }
+
   const action = g("action");
   const pcRaw = parseInt(g("pc") ?? "", 10);
   const pcs = pcRaw >= 1 && pcRaw <= 5 ? [pcRaw] : [1, 2, 3, 4, 5];
