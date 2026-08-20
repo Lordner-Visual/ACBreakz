@@ -108,9 +108,11 @@ ok(`pc.html shows PHI as eliminated AND starred (on=${card.on} hl=${card.hl})`, 
 
 /* restore */
 await browser.close();
-const res = await panel({ action: "state", pc: PC, data: ORIGINAL });
+const res = await panel({ action: "state", pc: PC, data: ORIGINAL, force: true });
 const back = await readState();
-ok(`PC${PC} restored byte-identical (${res.ok ? "written" : JSON.stringify(res)})`,
-  JSON.stringify(back) === JSON.stringify(ORIGINAL));
+/* updatedAt/lastWriter are stamped server-side by state_stamp — they are SUPPOSED to
+   differ after a restore, so compare everything else. */
+const bare = (d) => { const { updatedAt, lastWriter, ...rest } = d; return JSON.stringify(rest); };
+ok(`PC${PC} restored (${res.ok ? "written" : JSON.stringify(res)})`, bare(back) === bare(ORIGINAL));
 
 console.log(fails ? `\nDONE with ${fails} FAILURES` : "\nDONE all ok");

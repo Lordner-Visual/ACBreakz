@@ -69,8 +69,15 @@ let s = await readState();
 ok(`state carries loopFx for "${s.loopFx?.name}"`, !!s.loopFx?.url);
 let w = await until(l => l?.present && l.playing);
 ok(`overlay is playing the clip (${w.took}ms, ${w.l?.copies} crossfade copies)`, w.took >= 0);
-ok(`it is boxed to the animation box (left=${w.l?.box.left} width=${w.l?.box.width})`,
-  w.l?.box.left === "207px" && w.l?.box.width === "667px");
+/* Geometry comes from the ASSET, not from play_loop: meta.fit==="full" fills the frame,
+   anything else sits in the animation box. Whichever clip this PC is pinned to, the
+   render must match its own fit — hard-coding "boxed" broke the day a full-frame
+   variant was pinned here. */
+const wantFull = s.loopFx?.fit === "full";
+ok(`${wantFull ? "fills the frame" : "is boxed to the animation box"} as its asset asks ` +
+   `(fit=${s.loopFx?.fit ?? "box"} left=${w.l?.box.left} width=${w.l?.box.width})`,
+  wantFull ? (w.l?.box.left === "0px" && w.l?.box.width === "1080px")
+           : (w.l?.box.left === "207px" && w.l?.box.width === "667px"));
 
 console.log("\n=== it keeps looping past the end of the clip ===");
 const t1 = (await loop()).t;
