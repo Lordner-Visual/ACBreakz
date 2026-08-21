@@ -34,12 +34,19 @@ console.log(`snapshot of PC${PC} taken — restored at the end\n`);
 const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] });
 const isClip = (u) => /\/media\/(animations|team_anim)\//.test(u) && /\.(webm|mp4)(\?|$)/i.test(u);
 
-/* count the clips each layer pulls, from a cold cache each time */
+/* Count the clips each layer ASKS for, from a cold cache each time.
+   The bodies are aborted: this pass only cares which URLs are requested, and letting it
+   really download meant ~250 MB of the user's Supabase egress every single run. The
+   playback pass below is deliberately left alone — it must fetch for real, since it
+   asserts the stinger renders and plays unmuted. */
 const clipsPulledBy = async (layer, settleMs = 20000) => {
   const ctx = await browser.newContext();          // fresh context = cold HTTP cache
   const page = await ctx.newPage();
   const urls = new Set();
-  page.on("request", r => { if (isClip(r.url())) urls.add(r.url()); });
+  await page.route(u => isClip(u.href ?? String(u)), (route) => {
+    urls.add(route.request().url());
+    route.abort();
+  });
   await page.goto(`${HOSTED}/overlay/?layer=${layer}&pc=${PC}`, { waitUntil: "networkidle" });
   /* wait for the warm queue to go quiet rather than a fixed sleep */
   const t0 = Date.now();

@@ -1393,6 +1393,19 @@
   /* ---------- renderers ---------- */
   /* a dead file (deleted from storage) shows a visible chip instead of silent black */
   const MISSTHUMB = `onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'⚠ file missing',className:'gone'}))"`;
+  /* A 78px card does not need the 2 MB source PNG. Supabase resizes at the edge — the
+     biggest board_button texture went 1.95 MB -> 409 KB, and less again as WebP in a real
+     browser. Images only (there is no video transform), and only formats the resizer
+     accepts — an unsupported one would 4xx and trip the "file missing" chip on a healthy
+     file. Must stay identical to the copy in control/pc.html. */
+  const thumbSrc = (u) => {
+    if (!u || !/^https?:/i.test(u) || !/\.(png|jpe?g|webp)(\?|$)/i.test(u)) return u;
+    const marker = "/storage/v1/object/public/";
+    const i = u.indexOf(marker);
+    if (i < 0) return u;
+    return u.slice(0, i) + "/storage/v1/render/image/public/" + u.slice(i + marker.length) +
+      (u.includes("?") ? "&" : "?") + "width=240&quality=60";
+  };
   function thumb(a){
     /* a folder-style card (e.g. 32 team videos) carries a poster frame lifted from
        one of its videos; otherwise seek video thumbs past the blank first frame */
@@ -1414,7 +1427,7 @@
     if (/\.(wav|mp3|ogg|m4a)(\?|$)/i.test(u)) return `<div style="font-size:24px">🔊</div>`;
     if (/\.(webm|mp4)(\?|$)/i.test(u) || u.startsWith("data:video"))
       return `<video src="${u}#t=1.2" muted playsinline preload="metadata" ${MISSTHUMB}></video>`;
-    return `<img src="${u}" loading="lazy" ${MISSTHUMB}>`;
+    return `<img src="${thumbSrc(u)}" loading="lazy" ${MISSTHUMB}>`;
   }
   const delBtn = (a) => a.meta?.builtin ? "" : `<button class="btn warn" data-del="${a.id}">Delete</button>`;
   const sfxLabel = (a) => a.meta && "sfxUrl" in a.meta

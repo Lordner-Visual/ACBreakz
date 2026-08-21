@@ -17,7 +17,7 @@ const DIR = "C:/ACBreakz-Cloud/media-staging/v4";
 async function up(path, file, contentType) {
   const signed = await panel({ action: "sign_upload", path });
   const { error } = await sb.storage.from("media")
-    .uploadToSignedUrl(signed.path, signed.token, readFileSync(`${DIR}/${file}`), { contentType });
+    .uploadToSignedUrl(signed.path, signed.token, readFileSync(`${DIR}/${file}`), { contentType, cacheControl: "31536000" });
   if (error) throw new Error(`${file}: ${error.message}`);
   return sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl;
 }

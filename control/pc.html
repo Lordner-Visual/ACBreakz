@@ -350,6 +350,19 @@
   /* ---------- render ---------- */
   /* a dead file (deleted from storage) shows a visible chip instead of silent black */
   const MISS = `onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'⚠ file missing',className:'gone'}))"`;
+  /* A 78px card does not need the 2 MB source PNG. Supabase resizes at the edge — the
+     biggest board_button texture went 1.95 MB -> 409 KB, and less again as WebP in a real
+     browser. Opening this page used to cost 15.8 MB of egress, nearly all of it thumbnails.
+     Images only (there is no video transform), and only formats the resizer accepts — an
+     unsupported one would 4xx and trip the "file missing" chip on a healthy file. */
+  const thumbSrc = (u) => {
+    if (!u || !/^https?:/i.test(u) || !/\.(png|jpe?g|webp)(\?|$)/i.test(u)) return u;
+    const marker = "/storage/v1/object/public/";
+    const i = u.indexOf(marker);
+    if (i < 0) return u;
+    return u.slice(0, i) + "/storage/v1/render/image/public/" + u.slice(i + marker.length) +
+      (u.includes("?") ? "&" : "?") + "width=240&quality=60";
+  };
   const thumb = (a) => {
     const u = a.meta?.poster ?? a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
     if (a.meta?.type==="text" && !a.url) return `<div style="font-size:11px;padding:6px">${esc(a.meta.text)}</div>`;
@@ -368,7 +381,7 @@
     if (/\.(wav|mp3|ogg|m4a)(\?|$)/i.test(u)) return `<div style="font-size:24px">🔊</div>`;
     return /\.(webm|mp4)(\?|$)/i.test(u)
       ? `<video src="${u}#t=1.2" muted playsinline preload="metadata" ${MISS}></video>`
-      : `<img src="${u}" loading="lazy" ${MISS}>`;
+      : `<img src="${thumbSrc(u)}" loading="lazy" ${MISS}>`;
   };
   const GRIDS = [["buttons","Buttons"],["checker","Checker board"],["checkerbare","Checker · no edge"],
     ["honeycomb","Honeycomb"],["logos","NFL logos only"],["rect84","8 × 4 rectangles"],["slant","Slanted"]];

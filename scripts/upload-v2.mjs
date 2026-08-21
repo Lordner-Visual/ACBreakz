@@ -17,7 +17,7 @@ const DIR = "C:/ACBreakz-Cloud/media-staging/v2";
 for (const f of readdirSync(DIR)) {
   const signed = await panel({ action: "sign_upload", path: `animations/v2/${f}` });
   const { error } = await sb.storage.from("media")
-    .uploadToSignedUrl(signed.path, signed.token, readFileSync(`${DIR}/${f}`), { contentType: "video/webm" });
+    .uploadToSignedUrl(signed.path, signed.token, readFileSync(`${DIR}/${f}`), { contentType: "video/webm", cacheControl: "31536000" });
   if (error) throw new Error(`${f}: ${error.message}`);
   process.stdout.write(f.replace(".webm", "") + " ");
 }

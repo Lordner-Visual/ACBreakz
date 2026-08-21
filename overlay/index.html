@@ -270,6 +270,13 @@
   if (layer === "bg"  || layer === "all") show("#layer-bg");
   if (layer === "hud" || layer === "all") show("#layer-hud");
   if (layer === "fx"  || layer === "all") show("#layer-fx");
+  /* Showing a layer is only display:none — WITHOUT these gates every source still
+     downloads every asset, so each PC pulled the same background three times and the
+     fx/bg sources pulled board art and banners they can never render. Measured: 14.4 MB
+     of wasted background per source per load. Gate the FETCH, never the bookkeeping —
+     applyState/applyBoardParts must still track state identically on all three. */
+  const BG_LAYER  = (layer === "bg"  || layer === "all");
+  const HUD_LAYER = (layer === "hud" || layer === "all");
 
   /* ---------------- board cells (v2: all logos always visible) ---------------- */
   const boardEl = $("#board");
@@ -278,7 +285,9 @@
     const t = C.TEAMS[abbr];
     const d = document.createElement("div");
     d.className = "cell";
-    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}" alt="${t.name}">`;
+    /* the cell still exists on every layer — applyState toggles .on/.hl on it — but only
+       the HUD source paints it. The FX source builds its own logo per stinger. */
+    if (HUD_LAYER) d.innerHTML = `<img src="${C.LOGO_URL(abbr)}" alt="${t.name}">`;
     boardEl.appendChild(d); cells[abbr] = d;
   });
 
@@ -358,7 +367,7 @@
        unrelated change (intensity, grid, spacing) restarted the clip from black, so only
        touch it when the background itself actually changed. */
     const bgSig = bg?.url ? bg.url + "|" + JSON.stringify(bg.meta?.crop ?? bg.crop ?? null) : "";
-    if (bgSig !== boardBgSig) {
+    if (HUD_LAYER && bgSig !== boardBgSig) {
       boardBgSig = bgSig;
       clearLoopers(boardEl);
       boardEl.querySelectorAll("video.boardbg").forEach(n => n.remove());
@@ -379,7 +388,7 @@
     boardEl.style.setProperty("--btnzoom", (bz * 100) + "%");
     boardEl.style.setProperty("--btnpan", bcrop ? `${bcrop.x ?? 50}% ${bcrop.y ?? 50}%` : "50% 50%");
     for (const abbr of C.ORDER)
-      cells[abbr].style.backgroundImage = btn?.url ? `url("${btn.url}")` : "";
+      cells[abbr].style.backgroundImage = (HUD_LAYER && btn?.url) ? `url("${btn.url}")` : "";
 
     /* button animations: every selected ambient effect runs at once, on one clock */
     AMBIENT.forEach(e => boardEl.classList.remove("anim-" + e));
@@ -389,7 +398,8 @@
       if (eff && AMBIENT.includes(eff)) boardEl.classList.add("anim-" + eff);
     }
     /* AI-generated clips loop continuously over each highlighted button */
-    fxClips = anims.filter(a => a.url && /\.(webm|mp4)(\?|$)/i.test(a.url)).map(a => a.url);
+    fxClips = HUD_LAYER
+      ? anims.filter(a => a.url && /\.(webm|mp4)(\?|$)/i.test(a.url)).map(a => a.url) : [];
     return true;                       // caller restarts everything once, in sync
   }
 
@@ -535,6 +545,7 @@
   const rotator = {
     list: [], i: -1, timer: null, shownId: null, gen: 0,
     setList(list) {
+      if (!HUD_LAYER) return;   // the banner band lives in #layer-hud only
       const same = JSON.stringify((list||[]).map(a=>[a.id,a.meta?.crop])) ===
                    JSON.stringify(this.list.map(a=>[a.id,a.meta?.crop]));
       this.list = list || [];
@@ -607,6 +618,7 @@
   /* ---------------- background (with reframe crop) ---------------- */
   let bgKey = null;
   function setBackground(bg) {
+    if (!BG_LAYER) return;      // the hud/fx sources never render it — do not fetch it
     const key = bg?.url ? bg.url + JSON.stringify(bg.crop ?? null) : null;
     if (key === bgKey) return; bgKey = key;
     const f = $("#bgFrame");
@@ -952,8 +964,12 @@
     sb.from("stream_state").select("data").eq("id", PC).single()
       .then(({data}) => applyState(data?.data));
     sb.channel("db")
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
-          (p)=>{ if (p.new.id === PC) applyState(p.new.data); })
+      /* Filter server-side: unfiltered, all 15 sources (5 PCs x 3 layers) received every
+         PC's state and threw away 14 of 15. `events` cannot be filtered the same way —
+         it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
+         filters only work on real columns — so that one still discards client-side. */
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
+           filter:`id=eq.${PC}`}, (p)=>applyState(p.new.data))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
           (p)=>handleEvent(p.new))
       .subscribe();
