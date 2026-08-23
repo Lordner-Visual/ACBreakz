@@ -120,8 +120,11 @@
     /* a thin white rim lifts the logo off whatever texture is behind it; the dark drop
        shadow underneath still gives it weight. Both scale with the tile (set in JS)
        because --tile reads "auto" on the stretched grids. */
-    filter:drop-shadow(0 0 var(--logoglow,1.6px) rgba(255,255,255,.92))
-           drop-shadow(0 0 calc(var(--logoglow,1.6px) * 2) rgba(255,255,255,.45))
+    /* A TIGHT rim, not a halo. Two stacked shadows at 1.6px and 3.2px on a ~37px logo
+       read as blur, not separation — measured at 6x against the pre-glow build, that is
+       what made the logos look grainy. One sub-pixel rim is enough to lift the logo off
+       the texture without softening its edges. */
+    filter:drop-shadow(0 0 var(--logoglow,.8px) rgba(255,255,255,.85))
            drop-shadow(0 2px 3px rgba(0,0,0,.7));
     transition:filter .45s ease, opacity .45s ease}
 
@@ -497,7 +500,7 @@
       const r = cells[C.ORDER[0]].getBoundingClientRect();
       const short = Math.min(r.width, r.height) || tile;      // 0 while the layer is hidden
       if (frame?.url) boardEl.style.setProperty("--frmw", Math.max(2, Math.round(short * frac)) + "px");
-      boardEl.style.setProperty("--logoglow", (short * 0.03).toFixed(2) + "px");
+      boardEl.style.setProperty("--logoglow", (short * 0.015).toFixed(2) + "px");
     }
 
     /* button animations: every selected ambient effect runs at once, on one clock */

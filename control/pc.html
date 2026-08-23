@@ -494,9 +494,14 @@
     part("button_frame","#frameStyleGrid","boardFrame");
     part("board_button","#btnStyleGrid","boardButtons");
     part("board_bg","#bgStyleGrid","boardBg");
-    $$("[data-part]").forEach(b => b.onclick = () => {
+    $("[data-part]").forEach(b => b.onclick = async () => {
       const [k,id] = b.dataset.part.split(":");
-      const s = assets.find(x=>x.id===id);
+      /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
+         page cached its list at load — so a panel left open across an asset re-upload
+         would write the STALE url back onto a board and silently undo the update. That
+         is exactly how an old frame came back after being replaced. */
+      const fresh = await sb.from("assets").select("*").eq("id", id).maybeSingle();
+      const s = fresh.data || assets.find(x=>x.id===id);
       patchState({[k]: (s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none")) ? null : s});
     });
 

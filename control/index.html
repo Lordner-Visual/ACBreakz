@@ -1607,9 +1607,14 @@
     setS("#sizeRange","#sizeVal","boardSize",100,"%");
     setS("#logoRange","#logoVal","logoSize",100,"%");
     setS("#fxRange","#fxVal","fxIntensity",100,"%");
-    $$("[data-part]").forEach(b => b.onclick = () => {
+    $("[data-part]").forEach(b => b.onclick = async () => {
       const [k, id] = b.dataset.part.split(":");
-      const s = assets.find(x=>x.id===id);
+      /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
+         page cached its list at load — so a panel left open across an asset re-upload
+         would write the STALE url back onto a board and silently undo the update. That
+         is exactly how an old frame came back after being replaced. */
+      const fresh = await sb.from("assets").select("*").eq("id", id).maybeSingle();
+      const s = fresh.data || assets.find(x=>x.id===id);
       /* "no effect" builtins (Gold Buttons, Navy Glass Board, No Button Animation)
          mean "use the CSS default" and store as null; builtin EFFECTS still store. */
       const isDefault = s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
