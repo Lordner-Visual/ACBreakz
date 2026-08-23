@@ -3,7 +3,12 @@ node_modules/
 .env.*
 *.local
 *.local.*
+# The profile builder writes build-pc1..build-pc5, and "streamdeck/build/" does NOT match
+# those — a trailing-slash pattern matches that exact directory name only. Those staging
+# folders hold the fully expanded key manifests, so every API Ninja url inside them carries
+# DECK_KEY in the clear, and they were pushed to this PUBLIC repo for 13 days.
 streamdeck/build/
+streamdeck/build-pc*/
 supabase/.temp/
 supabase/.branches/
 .wrangler/

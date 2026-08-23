@@ -18,11 +18,12 @@
     <option value="highlight">Highlight (shows the glow when highlighted)</option>
   </select>
   <hr>
-  <label>Deck key — shared by every key on this PC</label>
-  <input id="deckKey" type="password" placeholder="from .env DECK_KEY" autocomplete="off">
-  <div class="hint">Stored once per machine, not per key. The icon is painted from the live
-    board over Realtime, so it cannot drift from what is on stream — leave it alone and it
-    stays correct through resets, panel changes and rapid presses.</div>
+  <label>Deck key — optional override, shared by every key on this PC</label>
+  <input id="deckKey" type="password" placeholder="leave blank — built into the plugin" autocomplete="off">
+  <div class="hint">The key ships inside the plugin, so this is only for rotating it without
+    a rebuild. Stored once per machine, not per key. The icon is painted from the live board
+    over Realtime, so it cannot drift from what is on stream — leave it alone and it stays
+    correct through resets, panel changes and rapid presses.</div>
 <script>
 "use strict";
 let ws = null, uuid = null, action = null, settings = {};

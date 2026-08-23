@@ -25,7 +25,10 @@
 let sd = null, pluginUUID = null;
 const keys = new Map();      // context -> { pc, team, mode }
 const boards = new Map();    // pc -> { picked:{}, highlighted:{} }
-let deckKey = "";
+/* Baked into config.js at build time from .env; a per-machine global setting still
+   overrides it. Without a key the plugin looks entirely healthy — realtime connects and
+   every key paints — and only a press fails, silently, as an alert triangle. */
+let deckKey = (window.ACBZ_CFG && ACBZ_CFG.DECK_KEY) || "";
 
 const send = (o) => { try { sd && sd.readyState === 1 && sd.send(JSON.stringify(o)); } catch (e) {} };
 const log = (m) => send({ event: "logMessage", payload: { message: "[acbz] " + m } });
@@ -131,7 +134,8 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
     const ctx = m.context, p = m.payload || {};
     switch (m.event) {
       case "didReceiveGlobalSettings":
-        deckKey = (p.settings && p.settings.deckKey) || "";
+        deckKey = (p.settings && p.settings.deckKey) ||
+          (window.ACBZ_CFG && ACBZ_CFG.DECK_KEY) || "";
         break;
       case "willAppear":
       case "didReceiveSettings": {
