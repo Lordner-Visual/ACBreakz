@@ -34,8 +34,23 @@
   #bgFrame{left:0;top:0;width:1080px;height:480px;overflow:hidden;background:
     radial-gradient(120% 160% at 50% -20%, #123a5c 0%, var(--navy) 45%, var(--navy-deep) 100%)}
   #bgFrame video,#bgFrame img{width:100%;height:100%;object-fit:cover;object-position:50% 50%}
-  #bgFrame .fade{position:absolute;left:0;right:0;bottom:0;height:70px;
-    background:linear-gradient(180deg,transparent,rgba(4,10,18,.85))}
+  /* The seam between the background and the board. A 2-stop linear ramp darkens at a
+     CONSTANT rate, which the eye reads as a hard line where it starts (Mach banding) —
+     it looked like a bar laid over the art rather than a shadow. This is an ease-in
+     (alpha tracks t^2.2), so the top ~a third is imperceptible and the darkening only
+     really arrives at the board edge, where it anchors the board. Shorter too: 44px of
+     the 480px band instead of 70px, so the background keeps another 26px of itself. */
+  #bgFrame .fade{position:absolute;left:0;right:0;bottom:0;height:44px;
+    background:linear-gradient(180deg,
+      rgba(4,10,18,0)     0%,
+      rgba(4,10,18,.03)  12%,
+      rgba(4,10,18,.13)  25%,
+      rgba(4,10,18,.28)  38%,
+      rgba(4,10,18,.43)  50%,
+      rgba(4,10,18,.58)  62%,
+      rgba(4,10,18,.73)  75%,
+      rgba(4,10,18,.83)  88%,
+      rgba(4,10,18,.86) 100%)}
 
   /* ---------- HUD LAYER (board 1080x165 @y480, banners 1080x97 @y645) ---------- */
   #layer-hud{inset:0;display:none}
