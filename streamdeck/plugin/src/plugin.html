@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ACBreakz Board</title>
+<!--
+  The whole point of this plugin: a key's icon is PAINTED FROM SERVER STATE, never from
+  counting presses.
+
+  The old Multi Action Switch design flipped the icon locally on every press and was never
+  reconciled with the board, so it drifted permanently. Measured over four days of real
+  shows: 900 board_reset cycles stranding an average of 6.1 keys each (one press changes
+  up to 32 teams, and no repaint-on-press scheme can ever fix that), ~520 changes made
+  from the control panels that the deck never saw, and 650 rapid press pairs. Rapid
+  pressing was the smallest of the three.
+
+  Here the deck subscribes to stream_state over Realtime. Any change - a deck press, a
+  panel click, a reset, another operator - repaints every affected key. A dropped request
+  is self-healing: the icon simply keeps showing what the board says.
+-->
+<script src="supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="icons.js"></script>
+</head><body>
+<script>
+"use strict";
+/* ---------- Stream Deck socket ---------- */
+let sd = null, pluginUUID = null;
+const keys = new Map();      // context -> { pc, team, mode }
+const boards = new Map();    // pc -> { picked:{}, highlighted:{} }
+let deckKey = "";
+
+const send = (o) => { try { sd && sd.readyState === 1 && sd.send(JSON.stringify(o)); } catch (e) {} };
+const log = (m) => send({ event: "logMessage", payload: { message: "[acbz] " + m } });
+
+/* Which artwork a key should be wearing right now. This is the ONLY place that decides,
+   and it reads the board — never a press counter. */
+function imageFor(cfg) {
+  const b = boards.get(Number(cfg.pc)) || {};
+  const set = cfg.mode === "highlight"
+    ? (b.highlighted && b.highlighted[cfg.team] ? "glow" : "normal")
+    : (b.picked && b.picked[cfg.team] ? "x" : "normal");
+  return (ICONS[set] && ICONS[set][cfg.team]) || (ICONS.normal && ICONS.normal[cfg.team]) || "";
+}
+function paint(ctx) {
+  const cfg = keys.get(ctx);
+  if (!cfg || !cfg.team) return;
+  const img = imageFor(cfg);
+  if (img) send({ event: "setImage", context: ctx, payload: { image: img, target: 0 } });
+}
+const paintPc = (pc) => { for (const [ctx, cfg] of keys) if (Number(cfg.pc) === Number(pc)) paint(ctx); };
+const paintAll = () => { for (const ctx of keys.keys()) paint(ctx); };
+
+/* ---------- the board, straight from Supabase ---------- */
+let sb = null;
+const watching = new Set();
+
+function applyRow(row) {
+  if (!row) return;
+  const d = row.data || {};
+  boards.set(Number(row.id), {
+    picked: (d.board && d.board.picked) || {},
+    highlighted: (d.board && d.board.highlighted) || {},
+  });
+  paintPc(row.id);
+}
+
+async function watchPc(pc) {
+  pc = Number(pc);
+  if (!pc || watching.has(pc) || !sb) return;
+  watching.add(pc);
+  /* current truth first, so a key is right the moment it appears */
+  try {
+    const { data, error } = await sb.from("stream_state").select("id,data").eq("id", pc).single();
+    if (error) log("initial read failed for PC" + pc + ": " + error.message);
+    else applyRow(data);
+  } catch (e) { log("initial read threw for PC" + pc + ": " + e); }
+
+  /* filtered server-side: an unfiltered subscription would hand every deck all five
+     boards and throw away four fifths of it */
+  sb.channel("deck-pc-" + pc)
+    .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "stream_state", filter: "id=eq." + pc },
+        (p) => applyRow(p.new))
+    .subscribe((st) => log("PC" + pc + " realtime: " + st));
+}
+
+/* A dropped websocket is the one way this design can go stale, so re-read on reconnect
+   rather than trusting the cache. */
+function startSupabase() {
+  if (sb || !window.supabase || !window.ACBZ_CFG) return;
+  sb = window.supabase.createClient(ACBZ_CFG.SUPABASE_URL, ACBZ_CFG.SUPABASE_ANON_KEY, {
+    realtime: { params: { eventsPerSecond: 20 } },
+  });
+  setInterval(async () => {
+    for (const pc of watching) {
+      try {
+        const { data } = await sb.from("stream_state").select("id,data").eq("id", pc).single();
+        applyRow(data);
+      } catch (e) {}
+    }
+  }, 60000);   // slow safety net; realtime does the real work
+}
+
+/* ---------- presses ---------- */
+async function press(cfg) {
+  if (!deckKey) { log("no deck key set — open the key's settings"); return false; }
+  const action = cfg.mode === "highlight" ? "highlight_toggle" : "team_toggle";
+  const url = `${ACBZ_CFG.SUPABASE_URL}/functions/v1/deck?key=${encodeURIComponent(deckKey)}` +
+    `&action=${action}&team=${encodeURIComponent(cfg.team)}&pc=${encodeURIComponent(cfg.pc)}`;
+  try {
+    const r = await fetch(url);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) { log("press failed: " + r.status + " " + JSON.stringify(j).slice(0, 120)); return false; }
+    /* Paint from what the server actually did, so the key is right even before realtime
+       lands. Realtime will confirm it a moment later; both agree because both are truth. */
+    const res = (j.results || []).find((x) => Number(x.pc) === Number(cfg.pc)) || j.results?.[0];
+    if (res && res.board) applyRow({ id: cfg.pc, data: { board: res.board } });
+    return true;
+  } catch (e) { log("press threw: " + e); return false; }
+}
+
+/* ---------- Stream Deck plumbing ---------- */
+function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
+  pluginUUID = uuid;
+  sd = new WebSocket("ws://127.0.0.1:" + port);
+  sd.onopen = () => {
+    send({ event: registerEvent, uuid });
+    send({ event: "getGlobalSettings", context: uuid });
+    startSupabase();
+  };
+  sd.onmessage = async (e) => {
+    let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+    const ctx = m.context, p = m.payload || {};
+    switch (m.event) {
+      case "didReceiveGlobalSettings":
+        deckKey = (p.settings && p.settings.deckKey) || "";
+        break;
+      case "willAppear":
+      case "didReceiveSettings": {
+        const cfg = p.settings || {};
+        keys.set(ctx, cfg);
+        if (cfg.pc) watchPc(cfg.pc);
+        paint(ctx);
+        break;
+      }
+      case "willDisappear":
+        keys.delete(ctx);
+        break;
+      case "keyUp": {
+        const cfg = keys.get(ctx) || p.settings || {};
+        if (!cfg.team || !cfg.pc) { send({ event: "showAlert", context: ctx }); break; }
+        /* No optimistic flip. The icon moves only when the board says so — that is the
+           whole fix, and it is why a double press cannot desync anything. */
+        const ok = await press(cfg);
+        if (!ok) send({ event: "showAlert", context: ctx });
+        break;
+      }
+    }
+  };
+  sd.onclose = () => { sd = null; };
+}
+window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+</script>
+</body></html>

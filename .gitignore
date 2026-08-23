@@ -8,3 +8,8 @@ supabase/.temp/
 supabase/.branches/
 .wrangler/
 media-staging/
+
+# built plugin package + vendored lib (regenerate with scripts/build-sd-plugin.mjs)
+streamdeck/plugin/build/
+streamdeck/plugin/vendor/
+streamdeck/*.streamDeckPlugin

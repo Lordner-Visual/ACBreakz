@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ACBreakz Team Key</title>
+<script src="config.js"></script>
+<style>
+  body{font:13px/1.4 "Segoe UI",system-ui,sans-serif;color:#d8d8d8;background:#2d2d2d;margin:0;padding:12px}
+  label{display:block;margin:10px 0 4px;color:#9a9a9a;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+  select,input{width:100%;padding:7px;background:#3d3d3d;color:#fff;border:1px solid #555;border-radius:4px;font-size:13px}
+  .hint{color:#8a8a8a;font-size:11px;margin-top:8px;line-height:1.5}
+  hr{border:0;border-top:1px solid #444;margin:14px 0}
+</style></head><body>
+  <label>PC</label>
+  <select id="pc"></select>
+  <label>Team</label>
+  <select id="team"></select>
+  <label>What the key does</label>
+  <select id="mode">
+    <option value="eliminate">Eliminate / restore (shows an X when out)</option>
+    <option value="highlight">Highlight (shows the glow when highlighted)</option>
+  </select>
+  <hr>
+  <label>Deck key — shared by every key on this PC</label>
+  <input id="deckKey" type="password" placeholder="from .env DECK_KEY" autocomplete="off">
+  <div class="hint">Stored once per machine, not per key. The icon is painted from the live
+    board over Realtime, so it cannot drift from what is on stream — leave it alone and it
+    stays correct through resets, panel changes and rapid presses.</div>
+<script>
+"use strict";
+let ws = null, uuid = null, action = null, settings = {};
+const $ = (s) => document.querySelector(s);
+
+/* team list comes from the same config the overlay uses, so the two can never disagree */
+const TEAMS = (window.ACBZ_CFG && ACBZ_CFG.TEAMS) || {};
+const ORDER = (window.ACBZ_CFG && ACBZ_CFG.ORDER) || Object.keys(TEAMS);
+$("#team").innerHTML = ORDER.map((a) =>
+  `<option value="${a}">${(TEAMS[a] && TEAMS[a].name) || a}</option>`).join("");
+$("#pc").innerHTML = [1, 2, 3, 4, 5].map((n) => `<option value="${n}">PC ${n}</option>`).join("");
+
+const push = () => ws && ws.send(JSON.stringify({
+  event: "setSettings", context: uuid,
+  payload: { pc: +$("#pc").value, team: $("#team").value, mode: $("#mode").value } }));
+
+for (const id of ["#pc", "#team", "#mode"]) $(id).onchange = push;
+$("#deckKey").onchange = () => ws && ws.send(JSON.stringify({
+  event: "setGlobalSettings", context: uuid, payload: { deckKey: $("#deckKey").value.trim() } }));
+
+function connectElgatoStreamDeckSocket(port, inUUID, registerEvent, info, actionInfo) {
+  uuid = inUUID;
+  try { action = JSON.parse(actionInfo); settings = (action.payload && action.payload.settings) || {}; } catch (e) {}
+  ws = new WebSocket("ws://127.0.0.1:" + port);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ event: registerEvent, uuid: inUUID }));
+    ws.send(JSON.stringify({ event: "getGlobalSettings", context: inUUID }));
+    if (settings.pc) $("#pc").value = settings.pc;
+    if (settings.team) $("#team").value = settings.team;
+    if (settings.mode) $("#mode").value = settings.mode;
+    /* a fresh key has nothing stored; write the visible defaults so it works immediately */
+    if (!settings.team) push();
+  };
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+    if (m.event === "didReceiveGlobalSettings")
+      $("#deckKey").value = (m.payload && m.payload.settings && m.payload.settings.deckKey) || "";
+  };
+}
+window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+</script>
+</body></html>
