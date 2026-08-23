@@ -290,6 +290,9 @@
   <div class="row">
     <span class="tag" style="width:110px">Edge glow colour</span>
     <input type="color" id="glowColor" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag" style="width:110px">Glow light</span>
+    <input type="color" id="glowLight" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag">The light that spills past the frame. Leave matching for a natural glow.</span>
     <button class="btn ghost" id="glowReset">Reset to gold</button>
     <span class="tag">Applies to the built-in Edge Glow effect.</span>
   </div>
@@ -724,7 +727,9 @@
      the sliders follow, so a colour drag cannot flood the write path */
   $("#glowColor").oninput  = (e) => document.documentElement.style.setProperty("--glowpv", e.target.value);
   $("#glowColor").onchange = (e) => patchState({ glowColor: e.target.value });
-  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; patchState({ glowColor: null }); };
+  $("#glowLight").onchange = (e) => patchState({ glowLight: e.target.value });
+  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; $("#glowLight").value = "#D9A441";
+    patchState({ glowColor: null, glowLight: null }); };
 
   const styleSel = $("#styleUpKind");
   const syncStyleUp = () => {

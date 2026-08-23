@@ -191,6 +191,9 @@
   <div class="row" style="margin-bottom:10px">
     <span class="tag" style="width:110px">Edge glow colour</span>
     <input type="color" id="glowColor" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag" style="width:110px">Glow light</span>
+    <input type="color" id="glowLight" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag">The light that spills past the frame. Leave matching for a natural glow.</span>
     <button class="btn ghost" id="glowReset">Reset to gold</button>
   </div>
   <h2>Button frame</h2><div class="grid" id="frameStyleGrid"></div>
@@ -500,6 +503,7 @@
     part("board_button","#btnStyleGrid","boardButtons");
     part("board_bg","#bgStyleGrid","boardBg");
     $("#glowColor").value = state.glowColor || "#D9A441";
+    $("#glowLight").value = state.glowLight || state.glowColor || "#D9A441";
     $$("[data-part]").forEach(b => b.onclick = async () => {
       const [k,id] = b.dataset.part.split(":");
       /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
@@ -569,7 +573,9 @@
   slider("#fxRange",   "#fxVal",   "fxIntensity", "%");
   /* one write on release, like the sliders — a colour drag would otherwise flood it */
   $("#glowColor").onchange = (e) => patchState({ glowColor: e.target.value });
-  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; patchState({ glowColor: null }); };
+  $("#glowLight").onchange = (e) => patchState({ glowLight: e.target.value });
+  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; $("#glowLight").value = "#D9A441";
+    patchState({ glowColor: null, glowLight: null }); };
 
   /* ---------- Stream Deck event keys ----------
      The deck sends ?name=<event>; state.oneshots decides which clip that resolves to on

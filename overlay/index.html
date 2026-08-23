@@ -57,7 +57,7 @@
   /* Tiles live inside the WhatNot-safe area measured from the original board art:
      x 111..968 (858 wide), tiles 53x53 square, 16 x 2. Never wider than this. */
   #board{--gap:0px;--tile:53px;--track:53px;--cols:16;--rows:2;--fxi:1;--logofrac:.18;--padx:111px;
-    --radius:calc(var(--tile) * .14);--bezel:calc(var(--tile) * .1);
+    --radius:calc(var(--tile) * .165);--bezel:calc(var(--tile) * .1);
     --logopad:calc(var(--tile) * var(--logofrac));
     left:0;top:480px;width:1080px;height:165px;overflow:hidden;
     background:
@@ -245,12 +245,31 @@
      than the 8px the old rule hard-coded. */
   .cell .edge{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0}
   .cell .edge i{position:absolute;inset:0;display:block;border-radius:var(--radius)}
-  #board.anim-glow .cell.hl .edge{
-    filter:drop-shadow(0 0 calc(4px * var(--fxi)) var(--glowc, var(--gold)))
-           drop-shadow(0 0 calc(11px * var(--fxi)) var(--glowc, var(--gold)));
+  /* GLOW: the tint sits on the frame (inset) and the light spills beyond the button.
+     A cell own box-shadow escapes its overflow:hidden — only descendants are clipped —
+     so this is the one place an outward glow can come from. The highlighted cell is
+     lifted so its bleed is not painted over by the next tile.
+     Alphas are pre-mixed in JS (--glowc-a/-b, --glowl-a/-b) rather than color-mix(),
+     which needs a newer engine than some OBS builds ship. */
+  #board.anim-glow .cell.hl{z-index:6;animation:bglowedge 2.6s ease-in-out infinite}
+  @keyframes bglowedge{
+    0%,100%{box-shadow:
+      inset 0 0 calc(3px * var(--fxi)) var(--glowc-a),
+      0 0 calc(4px * var(--fxi)) var(--glowl-a),
+      0 0 calc(10px * var(--fxi)) var(--glowl-a)}
+    50%{box-shadow:
+      inset 0 0 calc(5px * var(--fxi)) calc(1px * var(--fxi)) var(--glowc-b),
+      0 0 calc(7px * var(--fxi)) calc(1px * var(--fxi)) var(--glowl-b),
+      0 0 calc(22px * var(--fxi)) calc(5px * var(--fxi)) var(--glowl-b)}}
+  /* Shaped grids clip-path the cell, and clip-path DOES cut the box-shadow, so those keep
+     the inner ring: an outward glow around a hexagon is not expressible here. */
+  #board.grid-honeycomb.anim-glow .cell.hl,#board.grid-slant.anim-glow .cell.hl{
+    box-shadow:none !important;animation:none}
+  #board.grid-honeycomb.anim-glow .cell.hl .edge,
+  #board.grid-slant.anim-glow .cell.hl .edge{
+    filter:drop-shadow(0 0 calc(4px * var(--fxi)) var(--glowl-b))
+           drop-shadow(0 0 calc(11px * var(--fxi)) var(--glowl-b));
     animation:bglow 2.6s ease-in-out infinite}
-  #board.anim-glow .cell.hl .edge i{
-    border:calc(2px * var(--fxi)) solid var(--glowc, var(--gold))}
   /* shaped grids: the ring is a clipped band instead of a border */
   #board.grid-honeycomb.anim-glow .cell.hl .edge i,
   #board.grid-slant.anim-glow .cell.hl .edge i{
@@ -474,8 +493,11 @@
        the button texture changed nothing on screen, because this early return fired
        before any of the code below could apply it. */
     const cropOf = (a) => JSON.stringify(a?.meta?.crop ?? a?.crop ?? null);
-    const glowc = /^#[0-9a-f]{3,8}$/i.test(String(s?.glowColor ?? "")) ? s.glowColor : "";
-    const key = [btn?.url, cropOf(btn), frame?.url, cropOf(frame), frame?.meta?.builtin, glowc,
+    const hex = (v) => /^#[0-9a-f]{6}$/i.test(String(v ?? "")) ? v : "";
+    const glowc = hex(s?.glowColor) || "#D9A441";
+    const glowl = hex(s?.glowLight) || glowc;     // unset = same hue, so they blend
+    const key = [btn?.url, cropOf(btn), frame?.url, cropOf(frame), frame?.meta?.builtin,
+      glowc, glowl,
       bg?.url, cropOf(bg), grid, gap, size, logo, fxi,
       anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
     if (key === partsKey) return false; partsKey = key;
@@ -512,9 +534,18 @@
     /* a spilling logo has to escape the button's own clip */
     boardEl.classList.toggle("logo-spill", logofrac < 0);
     boardEl.style.setProperty("--fxi", fxi);
-    /* validated above: this lands in a CSS var, so never pass through unchecked text */
-    if (glowc) boardEl.style.setProperty("--glowc", glowc);
-    else boardEl.style.removeProperty("--glowc");
+    /* Pre-mix the alphas here: the keyframes need a dim and a bright value for each
+       colour, and animating alpha through color-mix() is not safe on older CEF. Both
+       values are parsed from a validated #rrggbb, so nothing unchecked reaches CSS. */
+    const rgba = (h, a) => {
+      const v = parseInt(h.slice(1), 16);
+      return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+    };
+    boardEl.style.setProperty("--glowc",   glowc);
+    boardEl.style.setProperty("--glowc-a", rgba(glowc, .30));
+    boardEl.style.setProperty("--glowc-b", rgba(glowc, .95));
+    boardEl.style.setProperty("--glowl-a", rgba(glowl, .18));
+    boardEl.style.setProperty("--glowl-b", rgba(glowl, .80));
     boardEl.classList.toggle("has-btnstyle", !!(btn?.url || frame?.url));
     /* Builtins are CSS, not images, and the two are now independent: a board can wear the
        copper frame with any fill, or a custom fill with no frame at all. */
