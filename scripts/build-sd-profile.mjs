@@ -83,13 +83,30 @@ const obsSimple = (uuid, name, title) => ({
   UUID: uuid,
 });
 
-/* A team / highlight key. Two states so the key can show a second icon after it fires
-   (X'd when removed, glowing when highlighted). Both states run the same
+/* A team / highlight key, now a plugin action rather than a Multi Action Switch.
+   The switch flipped its icon LOCALLY on press and was never reconciled with the board,
+   so it drifted permanently — measured at 900 board_reset cycles stranding ~6 keys each,
+   plus ~520 changes made from the panels that the deck never saw. The plugin paints from
+   stream_state over Realtime instead, so the icon cannot disagree with the stream.
+   States[0].Image is only what the profile ships with, so the key looks right before the
+   plugin has painted; the plugin overrides it at runtime.
+   OLD, kept for reference:
    server-authoritative toggle, so the ACTION is always right even if the icon and the
    board drift apart (e.g. after Reset Board).
    The key deliberately STAYS on its page — eliminating several teams in a row is the
    common case, and a second Stream Deck drives page navigation. */
-const teamKey = (url, title, imageRel, imageRel2) => {
+const teamKeyPlugin = (pc, abbr, mode, imageRel) => ({
+  ActionID: randomUUID(),
+  Name: "Team Key",
+  Plugin: { Name: "ACBreakz Board", UUID: "com.acbreakz.board", Version: "1.0.0.0" },
+  Resources: null,
+  Settings: { pc: Number(pc), team: abbr, mode },
+  State: 0,
+  States: [ { Image: imageRel, Title: "", ShowTitle: false } ],
+  UUID: "com.acbreakz.board.team",
+});
+
+const teamKeyLegacy = (url, title, imageRel, imageRel2) => {
   const step = () => {
     const req = apiNinja(url);
     req.Settings.isInMultiAction = true;
@@ -206,7 +223,8 @@ function buildProfile(pc) {
   /* pages 2 and 3 — all 32 teams, each firing its request then hopping back to main
      (exactly what the original profile did, which is how 32 teams fit on 32 keys).
      Nested actions need isInMultiAction — without it the step is skipped silently. */
-  for (const [action, altSet] of [["team_toggle", "x"], ["highlight_toggle", "glow"]]) {
+  for (const [action, altSet, mode] of [["team_toggle", "x", "eliminate"],
+                                        ["highlight_toggle", "glow", "highlight"]]) {
     newPage((dir) => {
       const A = {};
       TEAMS.forEach(([abbr, name], i) => {
@@ -217,9 +235,9 @@ function buildProfile(pc) {
           copyFileSync(src, join(dir, rel));
           return rel;
         };
+        put(altSet, "-" + altSet);          // ship both artworks; the plugin picks
         A[pos(i % COLS, Math.floor(i / COLS))] =
-          teamKey(deckUrl(`action=${action}&team=${abbr}`, pc), name,
-            put("normal", ""), put(altSet, "-" + altSet));
+          teamKeyPlugin(pc, abbr, mode, put("normal", ""));
       });
       return A;
     });

@@ -20,10 +20,14 @@ for (let pc = 1; pc <= 5; pc++) {
   }
   /* identify pages by what their keys DO — both team pages have 32 keys, so their
      order in the archive is not meaningful */
-  const urlsOf = (p) => JSON.stringify(Object.values(p));
+  /* Identify by what the keys ARE, not by a URL: team and highlight keys are plugin
+     actions now and carry no url at all, so the old regex over the JSON found nothing
+     and both pages came back undefined. */
+  const hasMode = (p, mode) => Object.values(p).some(
+    (k) => k.UUID === "com.acbreakz.board.team" && k.Settings?.mode === mode);
   const main  = pages.find(p => Object.keys(p).length !== 32);
-  const teams = pages.find(p => /action=team_toggle/.test(urlsOf(p)));
-  const highs = pages.find(p => /action=highlight_toggle/.test(urlsOf(p)));
+  const teams = pages.find(p => hasMode(p, "eliminate"));
+  const highs = pages.find(p => hasMode(p, "highlight"));
 
   const flat = [];
   const collect = (a) => { if (!a || typeof a !== "object") return; if (a.UUID) flat.push(a);
@@ -45,36 +49,44 @@ for (let pc = 1; pc <= 5; pc++) {
       main["7,1"]?.UUID === "com.elgato.obsstudio.record" &&
       main["7,2"]?.UUID === "com.elgato.obsstudio.replaybuffer" &&
       main["7,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
-    /* two-state keys: normal art, then X'd (teams) / glowing (highlights) */
-    const twoState = (page, alt) => Object.values(page).every(k =>
-      k.States?.length === 2 &&
+    /* Team and highlight keys are now plugin actions, not Multi Action Switches. The
+       switch's second state WAS the drift: it flipped locally on press and was never
+       reconciled with the board. A plugin key has ONE state — the artwork the profile
+       ships with — and the plugin repaints it from stream_state at runtime. */
+    const pluginKeys = (page, mode) => Object.values(page).every(k =>
+      k.UUID === "com.acbreakz.board.team" &&
+      k.States?.length === 1 &&
       /^Images\/\w[\w'.-]*\.png$/.test(k.States[0].Image ?? "") &&
-      (k.States[1].Image ?? "").includes(alt));
+      k.Settings?.mode === mode &&
+      Number(k.Settings?.pc) === pc &&
+      typeof k.Settings?.team === "string" && k.Settings.team.length >= 2);
     ok(`${head} scenes go black when that scene isn't active`,
       ["0,0","1,0","2,0","3,0"].every(p =>
         (main[p].States?.[1]?.Image ?? "").includes("scene-inactive")));
     ok(`${head} no key is left showing the API Ninja logo`,
       Object.values(main).filter(k => k.UUID === "com.barraider.apininja")
         .every(k => !!k.States[0].Image));
-    ok(`${head} team keys show the X'd logo after removal`, twoState(teams, "-x"));
-    ok(`${head} highlight keys show the glowing logo`, twoState(highs, "-glow"));
+    ok(`${head} all 32 team keys are plugin keys carrying pc/team/mode`,
+      Object.keys(teams).length === 32 && pluginKeys(teams, "eliminate"));
+    ok(`${head} all 32 highlight keys are plugin keys carrying pc/team/mode`,
+      Object.keys(highs).length === 32 && pluginKeys(highs, "highlight"));
+    ok(`${head} every team appears exactly once on each page`,
+      new Set(Object.values(teams).map(k => k.Settings.team)).size === 32 &&
+      new Set(Object.values(highs).map(k => k.Settings.team)).size === 32);
+    ok(`${head} no Multi Action Switch survives on either page`,
+      ![...Object.values(teams), ...Object.values(highs)]
+        .some(k => /multiactions/.test(k.UUID ?? "")));
     ok(`${head} dashboard key uses the Website action (open handles files, not URLs)`,
       main["7,0"]?.UUID === "com.elgato.streamdeck.system.website" &&
       main["7,0"].Settings.openInBrowser === true &&
-      main["7,0"].Settings.path.endsWith("/control/pc.html?pc=1"));
+      main["7,0"].Settings.path.endsWith(`/control/pc.html?pc=${pc}`));
     ok(`${head} TEAMS -> page 2, HIGHLIGHTS -> page 3 (1-based)`,
       main["0,2"]?.Settings.PageIndex === 2 && main["1,2"]?.Settings.PageIndex === 3);
-    ok(`${head} nested multi-action steps carry isInMultiAction`,
-      Object.values(teams).every(k =>
-        k.Actions?.[0]?.Actions?.every(s => s.Settings?.isInMultiAction === true)));
     /* team + highlight keys deliberately STAY on their page — a second deck drives
        navigation, and eliminating several teams in a row is the common case */
     ok(`${head} team + highlight keys do NOT navigate away`,
       [...Object.values(teams), ...Object.values(highs)].every(k =>
-        k.Actions.every(step => step.Actions.every(
-          s => s.UUID !== "com.elgato.streamdeck.page.goto"))));
-    ok(`${head} teams + highlights pages are 32 keys each`,
-      Object.keys(teams).length === 32 && Object.keys(highs).length === 32);
+        k.UUID === "com.acbreakz.board.team"));
     ok(`${head} animation row includes Spin 3 Pick 1 and PYT`,
       urls.some(u => /name=Spin%203%20Pick%201/.test(u)) && urls.some(u => /name=PYT/.test(u)));
     const ninjas = flat.filter(a => a.UUID === "com.barraider.apininja");
@@ -87,10 +99,15 @@ for (let pc = 1; pc <= 5; pc++) {
     ok(`${head} plugin version matches the installed 1.5.1`,
       ninjas.every(a => a.Plugin.Version === "1.5.1"));
   }
-  /* the point of five profiles: each one only ever talks to its own PC */
-  /* 4 animations + (32 teams + 32 highlights) x 2 switch states = 132 */
-  ok(`${head} every request is scoped to pc=${pc} (${urls.length} urls)`,
-    urls.length === 132 && urls.every(u => u.endsWith(`&pc=${pc}`)));
+  /* The point of five profiles: each one only ever talks to its own PC. That used to be
+     one URL check (132 = 4 animations + 64 keys x 2 switch states), but team and
+     highlight keys carry no URL at all now — their PC lives in Settings — so scoping has
+     to be checked in both places, and for every PC rather than just PC1. */
+  ok(`${head} the remaining API Ninja urls are scoped to pc=${pc} (${urls.length} urls)`,
+    urls.length === 4 && urls.every(u => u.endsWith(`&pc=${pc}`)));
+  const plugKeys = [...Object.values(teams ?? {}), ...Object.values(highs ?? {})];
+  ok(`${head} all 64 plugin keys are scoped to pc=${pc}`,
+    plugKeys.length === 64 && plugKeys.every(k => Number(k.Settings?.pc) === pc));
   ok(`${head} profile name`, JSON.parse(await zip.file(
       names.find(n => n.endsWith(".sdProfile/manifest.json"))).async("string")).Name
       === `ACBreakz Cloud PC${pc}`);
