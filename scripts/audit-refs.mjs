@@ -67,6 +67,7 @@ for (const row of states) {
   one("animStyle", d.animStyle);
   one("boardButtons", d.boardButtons);
   one("boardBg", d.boardBg);
+  one("boardFrame", d.boardFrame);        // added to the state model after this file was written
   one("buttonAnim", d.buttonAnim);
   one("loopFx", d.loopFx);
   (d.buttonAnims || []).forEach((v, i) => one(`buttonAnims[${i}]`, v));
