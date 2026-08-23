@@ -41,21 +41,51 @@ console.log(`  with crop: transform=${r.tr} objectPosition=${r.pos}`);
 ok("  240% zoom applied", /matrix\(2\.4,/.test(r.tr));
 ok("  pan applied", r.pos.startsWith("30% 70%"));
 
-console.log("\n=== button style texture ===");
+console.log("\n=== button style texture: cover-fitted, never stretched ===");
+/* still.png is 640x360, deliberately NOT square, so a stretch to a square cell is
+   obvious: background-size:100% 100% warped it, object-fit:cover crops it instead. */
 await set({ boardButtons: { id: "s", name: "btn", url: "http://localhost:8777/still.png", meta: {} } });
-r = await p.evaluate(() => { const c = document.querySelector("#board .cell");
-  return { size: getComputedStyle(c).backgroundSize, pos: getComputedStyle(c).backgroundPosition,
-    img: getComputedStyle(c).backgroundImage.slice(0, 30) }; });
-console.log(`  no crop: background-size=${r.size} position=${r.pos}`);
-ok("  texture is applied at 100%", r.size.startsWith("100%") && r.img.includes("url"));
+r = await p.evaluate(() => {
+  const c = document.querySelector("#board .cell");
+  const t = c.querySelector("img.tex");
+  if (!t) return { none: true };
+  const cb = c.getBoundingClientRect(), tb = t.getBoundingClientRect();
+  const cs = getComputedStyle(t);
+  return { fit: cs.objectFit, pos: cs.objectPosition, tr: cs.transform,
+    natural: `${t.naturalWidth}x${t.naturalHeight}`,
+    fillsCell: Math.abs(tb.width - cb.width) < 1.5 && Math.abs(tb.height - cb.height) < 1.5 };
+});
+console.log(`  no crop: element=${r.none ? "MISSING" : "img.tex"} fit=${r.fit} natural=${r.natural}`);
+ok("  the texture is a real element, not a stretched background", !r.none);
+ok("  it is cover-fitted, so a non-square source crops instead of warping",
+  r.fit === "cover");
+ok("  and it fills the cell exactly", r.fillsCell === true);
 
 await set({ boardButtons: { id: "s", name: "btn", url: "http://localhost:8777/still.png",
   meta: { crop: { x: 10, y: 90, z: 300 } } } });
-r = await p.evaluate(() => { const c = document.querySelector("#board .cell");
-  return { size: getComputedStyle(c).backgroundSize, pos: getComputedStyle(c).backgroundPosition }; });
-console.log(`  300% crop: background-size=${r.size} position=${r.pos}`);
-ok("  zoom becomes background-size 300%", r.size.startsWith("300%"));
-ok("  pan becomes background-position 10% 90%", r.pos.startsWith("10% 90%"));
+r = await p.evaluate(() => { const t = document.querySelector("#board .cell img.tex");
+  return { tr: getComputedStyle(t).transform, pos: getComputedStyle(t).objectPosition }; });
+console.log(`  300% crop: transform=${r.tr} objectPosition=${r.pos}`);
+ok("  zoom is a scale on the element", r.tr.startsWith("matrix(3"));
+ok("  pan is objectPosition 10% 90%", r.pos.startsWith("10% 90%"));
+
+console.log("\n=== button frame: a separate layer above the texture ===");
+await set({ boardButtons: { id: "s", name: "btn", url: "http://localhost:8777/still.png", meta: {} },
+            boardFrame: { id: "f", name: "frame", url: "http://localhost:8777/frame.png", meta: {} } });
+r = await p.evaluate(() => {
+  const c = document.querySelector("#board .cell");
+  const t = c.querySelector("img.tex"), f = c.querySelector("img.frm");
+  if (!t || !f) return { none: true };
+  return { fit: getComputedStyle(f).objectFit,
+    texZ: +getComputedStyle(t).zIndex, frmZ: +getComputedStyle(f).zIndex,
+    logoZ: +getComputedStyle(c.querySelector("img.logo")).zIndex };
+});
+console.log(`  z-order: tex=${r.texZ} frame=${r.frmZ} logo=${r.logoZ}`);
+ok("  both layers exist together", !r.none);
+ok("  the frame is cover-fitted too", r.fit === "cover");
+ok("  frame sits ABOVE the texture and BELOW the logo",
+  r.texZ < r.frmZ && r.frmZ < r.logoZ);
+await set({ boardFrame: null });
 
 console.log("\n=== button spacing, including negative ===");
 await set({ boardButtons: null, boardBg: null });

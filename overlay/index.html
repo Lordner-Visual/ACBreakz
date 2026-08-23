@@ -83,25 +83,53 @@
     58%{left:1120px;opacity:1} 62%{left:1120px;opacity:0} 100%{left:-470px;opacity:0}}
   /* Beveled copper bezel + dark inset line + teal glass, matching the original art.
      Two background layers: glass clipped to the padding box, bezel to the border box. */
+  /* v5: the cell itself carries NO art. "Gold Buttons" used to weld a copper bezel and a
+     teal glass fill into one look with no way to keep one and drop the other — which is
+     why the radial darkening could not be turned off. They are now two independent
+     builtins: a BUTTON FRAME (.frame-gold) and a BUTTON STYLE (.btn-teal). */
   .cell{position:relative;width:var(--tile);height:var(--tile);
     border-radius:var(--radius);overflow:hidden;
-    border:var(--bezel) solid transparent;
+    border:0 solid transparent;
+    background-repeat:no-repeat;background-size:100% 100%;
+    background-origin:padding-box;background-clip:padding-box;
+    transition:filter .45s ease}
+  /* builtin button STYLE: the teal glass fill */
+  #board.btn-teal .cell{background-image:
+    radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%)}
+  #board.btn-teal .cell::before{ /* faint glass gloss across the top edge */
+    content:"";position:absolute;inset:0;
+    background:linear-gradient(178deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,.04) 30%,transparent 52%);
+    pointer-events:none;z-index:3}
+  /* builtin button FRAME: the copper bezel, drawn on the border box */
+  #board.frame-gold .cell{border-width:var(--bezel);
+    background-image:
+      linear-gradient(145deg, #E8C07A 0%, #C08A45 17%, #8A5A26 52%, #6B3F17 76%, #B27A3E 100%);
+    background-origin:border-box;background-clip:border-box;
+    box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.85), 0 2px 3px rgba(0,0,0,.55)}
+  /* both at once = the original Gold Buttons look, as two stacked layers */
+  #board.btn-teal.frame-gold .cell{
     background-image:
       radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
       linear-gradient(145deg, #E8C07A 0%, #C08A45 17%, #8A5A26 52%, #6B3F17 76%, #B27A3E 100%);
     background-origin:padding-box, border-box;
     background-clip:padding-box, border-box;
-    background-size:100% 100%, 100% 100%;background-repeat:no-repeat;
-    box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.85), 0 2px 3px rgba(0,0,0,.55);
-    transition:filter .45s ease}
-  .cell::before{ /* faint glass gloss across the top edge */
-    content:"";position:absolute;inset:0;
-    background:linear-gradient(178deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,.04) 30%,transparent 52%);
-    pointer-events:none;z-index:3}
-  .cell img{position:absolute;inset:var(--logopad);
+    background-size:100% 100%, 100% 100%}
+  .cell img.logo{position:absolute;inset:var(--logopad);
     width:calc(100% - 2*var(--logopad));height:calc(100% - 2*var(--logopad));
     object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
     transition:filter .45s ease, opacity .45s ease}
+
+  /* v5: the button TEXTURE and the button FRAME are real elements, not background-image.
+     background-size:100% 100% STRETCHES the art to the cell box, which warped every
+     non-square grid (rect84 especially) and any non-square source. object-fit:cover
+     scales uniformly and crops instead — the same thing applyCrop() already does for
+     backgrounds and FX, so Reframe zoom/pan works here with no extra code.
+     The frame sits ABOVE the texture and BELOW the logo: its middle is transparent, so
+     the texture reads as the button background and the logo shows through. */
+  .cell img.tex,.cell img.frm{position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;object-position:50% 50%;pointer-events:none}
+  .cell img.tex{z-index:0}
+  .cell img.frm{z-index:1}
 
   /* Logo bigger than its button: the cell normally clips its children (button texture,
      effect video, rounded corners), so spilling needs that clip lifted — but only for
@@ -109,14 +137,12 @@
      Grids that use clip-path (honeycomb, slant) still clip, by definition. */
   #board.logo-spill .cell{overflow:visible}
   #board.logo-spill .cell .vfx{inset:0;width:100%;height:100%}
-  #board.logo-spill .cell img{z-index:5}
+  #board.logo-spill .cell img.logo{z-index:5}
 
   /* ---- v4: a custom button style REPLACES the stock bezel entirely ---- */
   #board.has-btnstyle{--logopad:calc(var(--tile) * (var(--logofrac) + .015))}
-  #board.has-btnstyle .cell{border:none;box-shadow:none;background-color:transparent;
-    background-size:var(--btnzoom,100%) var(--btnzoom,100%);
-    background-position:var(--btnpan,50% 50%)}
-  #board.has-btnstyle .cell::before{display:none}
+  /* a chosen texture or frame replaces the builtin entirely; this is only the small
+     logo inset those looks want */
 
   /* ---- v4: grid styles (each still wears the chosen button style) ---- */
   #board.grid-checker{--radius:0px}
@@ -133,6 +159,7 @@
   #board.grid-honeycomb .cell::before{clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
   #board.grid-logos{--logopad:calc(var(--tile) * (var(--logofrac) - .145))}
   #board.grid-logos .cell{border:none;box-shadow:none;background-image:none !important}
+  #board.grid-logos .cell img.tex,#board.grid-logos .cell img.frm{display:none}
   #board.grid-logos .cell::before{display:none}
   /* the one deliberately non-square grid: wide buttons stretched across the safe area */
   #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);
@@ -144,7 +171,7 @@
   #board.grid-slant .cell::before{clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%)}
   /* v2: eliminate-only — picked teams simply dim (no X, no color change) */
   .cell.on{filter:brightness(.38) saturate(.55)}
-  .cell.on img{opacity:.55}
+  .cell.on img.logo{opacity:.55}
   .cell.slam{animation:slam .5s ease-out}
   @keyframes slam{0%{transform:scale(1)}30%{transform:scale(1.12) rotate(-2deg)}55%{transform:scale(.95) rotate(1deg)}100%{transform:scale(1)}}
 
@@ -302,7 +329,7 @@
     d.className = "cell";
     /* the cell still exists on every layer — applyState toggles .on/.hl on it — but only
        the HUD source paints it. The FX source builds its own logo per stinger. */
-    if (HUD_LAYER) d.innerHTML = `<img src="${C.LOGO_URL(abbr)}" alt="${t.name}">`;
+    if (HUD_LAYER) d.innerHTML = `<img class="logo" src="${C.LOGO_URL(abbr)}" alt="${t.name}">`;
     boardEl.appendChild(d); cells[abbr] = d;
   });
 
@@ -326,8 +353,34 @@
     return Math.max(12, Math.floor(Math.min(MAX_TILE, byWidth, byHeight)));
   }
   let partsKey = null, boardBgSig = null, btnAnims = [], fxClips = [], lastHlKey = null;
+  /* One texture/frame image per cell, fitted with object-fit:cover so it scales
+     uniformly and CROPS rather than stretching to the cell box — which is what
+     background-size:100% 100% was doing on every non-square grid. Reuses applyCrop for
+     Reframe zoom/pan, exactly like the board background and the FX layer.
+     Never rebuilds an element whose src is unchanged: a fresh <img> refetches and blinks,
+     the same reason paintClips seeks instead of recreating. */
+  function setCellLayer(cell, cls, asset) {
+    const url = asset?.url || null;
+    let el = cell.querySelector("img." + cls);
+    if (!url) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement("img");
+      el.className = cls;
+      cell.insertBefore(el, cell.firstChild);
+    }
+    if (el.dataset.src !== url) { el.dataset.src = url; el.src = url; }
+    applyCrop(el, asset.meta ?? asset);
+  }
+
   function applyBoardParts(s) {
     const btn = s?.boardButtons, bg = s?.boardBg;
+    /* "Gold Buttons" used to be one welded look: copper bezel + teal fill. It is now two
+       builtins, so a board that has never chosen a frame must keep exactly what it had —
+       the bezel only if it was wearing the full builtin (no custom texture). An explicit
+       null means the operator turned the frame OFF and must be honoured, so this tests
+       for undefined, not falsiness. */
+    const frame = s?.boardFrame !== undefined ? s.boardFrame
+      : (btn?.url ? null : { name: "Gold Buttons", meta: { builtin: true, domain: "button_frame" } });
     /* one or many button animations may be active at once */
     const anims = (Array.isArray(s?.buttonAnims) ? s.buttonAnims
                   : s?.buttonAnim ? [s.buttonAnim] : []).filter(Boolean);
@@ -340,7 +393,8 @@
        the button texture changed nothing on screen, because this early return fired
        before any of the code below could apply it. */
     const cropOf = (a) => JSON.stringify(a?.meta?.crop ?? a?.crop ?? null);
-    const key = [btn?.url, cropOf(btn), bg?.url, cropOf(bg), grid, gap, size, logo, fxi,
+    const key = [btn?.url, cropOf(btn), frame?.url, cropOf(frame), frame?.meta?.builtin,
+      bg?.url, cropOf(bg), grid, gap, size, logo, fxi,
       anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
     if (key === partsKey) return false; partsKey = key;
 
@@ -376,7 +430,11 @@
     /* a spilling logo has to escape the button's own clip */
     boardEl.classList.toggle("logo-spill", logofrac < 0);
     boardEl.style.setProperty("--fxi", fxi);
-    boardEl.classList.toggle("has-btnstyle", !!btn?.url);
+    boardEl.classList.toggle("has-btnstyle", !!(btn?.url || frame?.url));
+    /* Builtins are CSS, not images, and the two are now independent: a board can wear the
+       copper frame with any fill, or a custom fill with no frame at all. */
+    boardEl.classList.toggle("btn-teal",   !btn?.url);
+    boardEl.classList.toggle("frame-gold", !frame?.url && !!frame?.meta?.builtin);
 
     /* Background: still image or looping video behind the grid. Rebuilding this on every
        unrelated change (intensity, grid, spacing) restarted the clip from black, so only
@@ -398,12 +456,11 @@
 
     /* buttons: texture on every cell. Reframe crop is expressed as background
        position/size here for the same reason — there is no element per cell. */
-    const bcrop = btn?.meta?.crop ?? btn?.crop ?? null;
-    const bz = bcrop?.z ? Math.max(1, Math.min(6, bcrop.z / 100)) : 1;
-    boardEl.style.setProperty("--btnzoom", (bz * 100) + "%");
-    boardEl.style.setProperty("--btnpan", bcrop ? `${bcrop.x ?? 50}% ${bcrop.y ?? 50}%` : "50% 50%");
-    for (const abbr of C.ORDER)
-      cells[abbr].style.backgroundImage = (HUD_LAYER && btn?.url) ? `url("${btn.url}")` : "";
+    for (const abbr of C.ORDER) {
+      cells[abbr].style.backgroundImage = "";        // v4 left this behind on some cells
+      setCellLayer(cells[abbr], "tex", HUD_LAYER ? btn : null);
+      setCellLayer(cells[abbr], "frm", HUD_LAYER ? frame : null);
+    }
 
     /* button animations: every selected ambient effect runs at once, on one clock */
     AMBIENT.forEach(e => boardEl.classList.remove("anim-" + e));
