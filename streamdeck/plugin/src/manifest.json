@@ -23,6 +23,17 @@
       "States": [{ "Image": "icons/key", "TitleAlignment": "bottom", "ShowTitle": false }],
       "SupportedInMultiActions": false,
       "DisableAutomaticStates": true
+    },
+    {
+      "UUID": "com.acbreakz.board.reset",
+      "Name": "Reset Key",
+      "Icon": "icons/action",
+      "PropertyInspectorPath": "pi-reset.html",
+      "Tooltip": "Clears every elimination (or every highlight) on one PC, and puts them all back if pressed again.",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "icons/key", "TitleAlignment": "middle", "ShowTitle": true }],
+      "SupportedInMultiActions": false,
+      "DisableAutomaticStates": true
     }
   ]
 }

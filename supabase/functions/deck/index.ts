@@ -161,9 +161,14 @@ Deno.serve(async (req) => {
   /* Board actions all share one atomic path. `state` is the token a Stream Deck
      key can paint its icon from: out|in for the board, hl|off for highlights. */
   const BOARD = ["team_toggle", "team_pick", "team_restore", "board_reset",
-                 "highlight", "unhighlight", "highlight_toggle", "highlight_clear"];
+                 "highlight", "unhighlight", "highlight_toggle", "highlight_clear",
+                 /* v15: the undoable deck keys — press once to clear, again to put it back.
+                    The snapshot lives in stream_state.data.undo, never in the deck. */
+                 "board_reset_toggle", "highlight_clear_toggle"];
   if (action && BOARD.includes(action)) {
-    const needsTeam = action !== "board_reset" && action !== "highlight_clear";
+    const TEAMLESS = ["board_reset", "highlight_clear",
+                      "board_reset_toggle", "highlight_clear_toggle"];
+    const needsTeam = !TEAMLESS.includes(action);
     if (needsTeam && !team) return json({ error: "team required" }, 400);
     const { data, error } = await boardCall(pcs, action, needsTeam ? team : undefined);
     if (error) return json({ error: error.message }, 500);

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ACBreakz Reset Key</title>
+<script src="config.js"></script>
+<style>
+  body{font:13px/1.4 "Segoe UI",system-ui,sans-serif;color:#d8d8d8;background:#2d2d2d;margin:0;padding:12px}
+  label{display:block;margin:10px 0 4px;color:#9a9a9a;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+  select,input{width:100%;padding:7px;background:#3d3d3d;color:#fff;border:1px solid #555;border-radius:4px;font-size:13px}
+  .hint{color:#8a8a8a;font-size:11px;margin-top:8px;line-height:1.5}
+  hr{border:0;border-top:1px solid #444;margin:14px 0}
+</style></head><body>
+  <label>PC</label>
+  <select id="pc"></select>
+  <label>What the key clears</label>
+  <select id="mode">
+    <option value="eliminate">Eliminations — RESET TEAMS</option>
+    <option value="highlight">Highlights — CLEAR HIGHLIGHTS</option>
+  </select>
+  <div class="hint">Press once to clear, press again to put everything back exactly as it was.
+    The key's own label tells you which the next press will do, and how much it will restore.
+    The snapshot is kept on the server, so the undo still works from a different deck, from a
+    panel, or after Stream Deck restarts — but it is one level deep: clear, eliminate a few
+    more, and clearing again remembers only those.</div>
+  <hr>
+  <label>Deck key — optional override, shared by every key on this PC</label>
+  <input id="deckKey" type="password" placeholder="leave blank — built into the plugin" autocomplete="off">
+<script>
+"use strict";
+let ws = null, uuid = null, action = null, settings = {};
+const $ = (s) => document.querySelector(s);
+
+$("#pc").innerHTML = [1, 2, 3, 4, 5].map((n) => `<option value="${n}">PC ${n}</option>`).join("");
+
+const push = () => ws && ws.send(JSON.stringify({
+  event: "setSettings", context: uuid,
+  payload: { pc: +$("#pc").value, mode: $("#mode").value } }));
+
+for (const id of ["#pc", "#mode"]) $(id).onchange = push;
+$("#deckKey").onchange = () => ws && ws.send(JSON.stringify({
+  event: "setGlobalSettings", context: uuid, payload: { deckKey: $("#deckKey").value.trim() } }));
+
+function connectElgatoStreamDeckSocket(port, inUUID, registerEvent, info, actionInfo) {
+  uuid = inUUID;
+  try { action = JSON.parse(actionInfo); settings = (action.payload && action.payload.settings) || {}; } catch (e) {}
+  ws = new WebSocket("ws://127.0.0.1:" + port);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ event: registerEvent, uuid: inUUID }));
+    ws.send(JSON.stringify({ event: "getGlobalSettings", context: inUUID }));
+    if (settings.pc) $("#pc").value = settings.pc;
+    if (settings.mode) $("#mode").value = settings.mode;
+    /* a fresh key has nothing stored; write the visible defaults so it works immediately */
+    if (!settings.mode) push();
+  };
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+    if (m.event === "didReceiveGlobalSettings")
+      $("#deckKey").value = (m.payload && m.payload.settings && m.payload.settings.deckKey) || "";
+  };
+}
+window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+</script>
+</body></html>

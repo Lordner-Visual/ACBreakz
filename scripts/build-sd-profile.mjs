@@ -109,6 +109,21 @@ const teamKeyPlugin = (pc, abbr, mode) => ({
   UUID: "com.acbreakz.board.team",
 });
 
+/* Same no-Image rule as teamKeyPlugin, for the same reason. The title IS the state here —
+   the plugin rewrites it to "UNDO n TEAMS" whenever a press would restore rather than clear —
+   so ShowTitle must be on and the title must not be linked to the action name. */
+const resetKeyPlugin = (pc, mode, title) => ({
+  ActionID: randomUUID(),
+  LinkedTitle: false,
+  Name: "Reset Key",
+  Plugin: { Name: "ACBreakz Board", UUID: "com.acbreakz.board", Version: "1.0.0.0" },
+  Resources: null,
+  Settings: { pc: Number(pc), mode },
+  State: 0,
+  States: [ { Title: title, ShowTitle: true, TitleAlignment: "middle", FontSize: 12 } ],
+  UUID: "com.acbreakz.board.reset",
+});
+
 const teamKeyLegacy = (url, title, imageRel, imageRel2) => {
   const step = () => {
     const req = apiNinja(url);
@@ -215,6 +230,12 @@ function buildProfile(pc) {
     /* row 3: page jumps — PageIndex is 1-based (main = 1) — with their resets beneath */
     A[pos(0, 2)] = pageGoto(2, "TEAMS");
     A[pos(1, 2)] = pageGoto(3, "HIGH\nLIGHTS");
+    /* Directly beneath each jump, its undoable reset. A reset used to be the single biggest
+       source of deck/board drift — one press changing up to 32 keys — and the reason there
+       was no reset key on the deck at all. It is safe to expose now because it is reversible
+       and because the plugin paints the key with what the NEXT press will do. */
+    A[pos(0, 3)] = resetKeyPlugin(pc, "eliminate", "RESET\nTEAMS");
+    A[pos(1, 3)] = resetKeyPlugin(pc, "highlight", "CLEAR\nHIGHL");
     /* OBS recording sits under the control key, right-hand column */
     A[pos(7, 1)] = obsSimple("com.elgato.obsstudio.record", "Record", "RECORD");
     A[pos(7, 2)] = obsSimple("com.elgato.obsstudio.replaybuffer", "Replay Buffer", "START\nREPLAY");
@@ -281,4 +302,4 @@ for (let pc = 1; pc <= 5; pc++) {
     compression: "DEFLATE", compressionOptions: { level: 6 } }));
   console.log(`built PC${pc}: ${OUT_FILE.split("/").pop()}`);
 }
-console.log("\npages per profile: Main(14) · Teams(32) · Highlights(32)");
+console.log("\npages per profile: Main(16) · Teams(32) · Highlights(32)");

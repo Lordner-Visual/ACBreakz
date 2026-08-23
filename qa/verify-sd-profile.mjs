@@ -40,9 +40,24 @@ for (let pc = 1; pc <= 5; pc++) {
   if (pc === 1) {
     ok(`${head} zip uses forward slashes`, !names.some(n => n.includes("\\")));
     /* 4 scenes + 4 animations + 2 page jumps + 3 OBS + dashboard */
-    ok(`${head} main page has all 14 keys`, Object.keys(main).length === 14);
-    ok(`${head} no reset keys on the deck`,
-      !/board_reset|highlight_clear/.test(JSON.stringify(Object.values(main))));
+    ok(`${head} main page has all 16 keys`, Object.keys(main).length === 16);
+    /* There used to be NO reset key here, because one press wiping 32 teams with no way back
+       was the largest single source of drift. It is allowed now only because it is undoable
+       (board_reset_toggle / highlight_clear_toggle, snapshot in stream_state.data.undo) and
+       because it is a plugin key whose label says which way the next press will go. A raw,
+       one-way board_reset must still never appear on a key. */
+    ok(`${head} reset keys sit directly under their page jumps`,
+      main["0,3"]?.UUID === "com.acbreakz.board.reset" &&
+      main["1,3"]?.UUID === "com.acbreakz.board.reset" &&
+      main["0,3"].Settings.mode === "eliminate" &&
+      main["1,3"].Settings.mode === "highlight" &&
+      Number(main["0,3"].Settings.pc) === pc && Number(main["1,3"].Settings.pc) === pc);
+    ok(`${head} reset keys show a title and bake no image`,
+      ["0,3", "1,3"].every(p => main[p].States?.[0]?.ShowTitle === true &&
+                                main[p].States[0].Image === undefined));
+    ok(`${head} no one-way board_reset is reachable from a key`,
+      !/"action=board_reset"|action%3Dboard_reset|action=board_reset&|action=highlight_clear&/
+        .test(JSON.stringify(Object.values(main))));
     ok(`${head} scene row is Cloud N + Archived 1-3`,
       ["0,0","1,0","2,0","3,0"].every(p => main[p]?.UUID === "com.elgato.obsstudio.scene"));
     ok(`${head} record + replay sit under the control key (column 7)`,

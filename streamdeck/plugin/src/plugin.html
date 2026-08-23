@@ -42,9 +42,28 @@ function imageFor(cfg) {
     : (b.picked && b.picked[cfg.team] ? "x" : "normal");
   return (ICONS[set] && ICONS[set][cfg.team]) || (ICONS.normal && ICONS.normal[cfg.team]) || "";
 }
+const RESET_ACTION = "com.acbreakz.board.reset";
+
+/* A reset key says what the NEXT press will do. That is the entire point of making the
+   reset undoable: someone who hit it by accident can see, without guessing, that pressing
+   again puts the board back — and how much it will put back. Same rule as the team keys —
+   this reads server state and never a press counter. */
+function paintReset(ctx, cfg) {
+  const b = boards.get(Number(cfg.pc)) || {};
+  const hl = cfg.mode === "highlight";
+  const live = Object.keys((hl ? b.highlighted : b.picked) || {}).length;
+  const stashed = Object.keys((b.undo || {})[hl ? "highlighted" : "picked"] || {}).length;
+  const title = live === 0 && stashed > 0
+    ? `UNDO\n${stashed} ${hl ? "HIGHL" : "TEAMS"}`
+    : (hl ? "CLEAR\nHIGHL" : "RESET\nTEAMS");
+  send({ event: "setTitle", context: ctx, payload: { title, target: 0 } });
+}
+
 function paint(ctx) {
   const cfg = keys.get(ctx);
-  if (!cfg || !cfg.team) return;
+  if (!cfg) return;
+  if (cfg.action === RESET_ACTION) { paintReset(ctx, cfg); return; }
+  if (!cfg.team) return;
   const img = imageFor(cfg);
   if (img) send({ event: "setImage", context: ctx, payload: { image: img, target: 0 } });
 }
@@ -61,6 +80,9 @@ function applyRow(row) {
   boards.set(Number(row.id), {
     picked: (d.board && d.board.picked) || {},
     highlighted: (d.board && d.board.highlighted) || {},
+    /* what a reset key would put back — server-side, so every deck and panel agrees and
+       it survives a plugin restart, unlike anything the deck could remember itself */
+    undo: d.undo || {},
   });
   paintPc(row.id);
 }
@@ -105,9 +127,13 @@ function startSupabase() {
 /* ---------- presses ---------- */
 async function press(cfg) {
   if (!deckKey) { log("no deck key set — open the key's settings"); return false; }
-  const action = cfg.mode === "highlight" ? "highlight_toggle" : "team_toggle";
+  const isReset = cfg.action === RESET_ACTION;
+  const action = isReset
+    ? (cfg.mode === "highlight" ? "highlight_clear_toggle" : "board_reset_toggle")
+    : (cfg.mode === "highlight" ? "highlight_toggle" : "team_toggle");
   const url = `${ACBZ_CFG.SUPABASE_URL}/functions/v1/deck?key=${encodeURIComponent(deckKey)}` +
-    `&action=${action}&team=${encodeURIComponent(cfg.team)}&pc=${encodeURIComponent(cfg.pc)}`;
+    `&action=${action}&pc=${encodeURIComponent(cfg.pc)}` +
+    (isReset ? "" : `&team=${encodeURIComponent(cfg.team)}`);
   try {
     const r = await fetch(url);
     const j = await r.json().catch(() => ({}));
@@ -115,7 +141,7 @@ async function press(cfg) {
     /* Paint from what the server actually did, so the key is right even before realtime
        lands. Realtime will confirm it a moment later; both agree because both are truth. */
     const res = (j.results || []).find((x) => Number(x.pc) === Number(cfg.pc)) || j.results?.[0];
-    if (res && res.board) applyRow({ id: cfg.pc, data: { board: res.board } });
+    if (res && res.board) applyRow({ id: cfg.pc, data: { board: res.board, undo: res.undo } });
     return true;
   } catch (e) { log("press threw: " + e); return false; }
 }
@@ -139,7 +165,10 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
         break;
       case "willAppear":
       case "didReceiveSettings": {
-        const cfg = p.settings || {};
+        /* Remember WHICH action this key is. Settings alone cannot tell a team key from a
+           reset key — a reset key legitimately has no team — and the paint and press paths
+           both branch on it. */
+        const cfg = Object.assign({}, p.settings || {}, { action: m.action });
         keys.set(ctx, cfg);
         if (cfg.pc) watchPc(cfg.pc);
         paint(ctx);
@@ -149,8 +178,11 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
         keys.delete(ctx);
         break;
       case "keyUp": {
-        const cfg = keys.get(ctx) || p.settings || {};
-        if (!cfg.team || !cfg.pc) { send({ event: "showAlert", context: ctx }); break; }
+        const cfg = Object.assign({}, keys.get(ctx) || p.settings || {}, { action: m.action });
+        /* a reset key has no team by design, so only demand one for the team action */
+        if (!cfg.pc || (cfg.action !== RESET_ACTION && !cfg.team)) {
+          send({ event: "showAlert", context: ctx }); break;
+        }
         /* No optimistic flip. The icon moves only when the board says so — that is the
            whole fix, and it is why a double press cannot desync anything. */
         const ok = await press(cfg);

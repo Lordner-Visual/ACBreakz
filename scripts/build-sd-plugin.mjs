@@ -96,7 +96,7 @@ if (!existsSync(VEND)) {
 writeFileSync(`${OUT}/supabase.min.js`, readFileSync(VEND));
 
 /* ---- plugin + inspector, and the icons the manifest names ---- */
-for (const f of ["manifest.json", "plugin.html", "pi.html"])
+for (const f of ["manifest.json", "plugin.html", "pi.html", "pi-reset.html"])
   writeFileSync(`${OUT}/${f}`, readFileSync(`${SRC}/${f}`));
 
 /* manifest icons: reuse a team logo so the plugin is recognisable in the SD library */
