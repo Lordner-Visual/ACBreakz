@@ -1613,7 +1613,8 @@
          page cached its list at load — so a panel left open across an asset re-upload
          would write the STALE url back onto a board and silently undo the update. That
          is exactly how an old frame came back after being replaced. */
-      const fresh = await sb.from("assets").select("*").eq("id", id).maybeSingle();
+      const fresh = sb ? await sb.from("assets").select("*").eq("id", id).maybeSingle()
+                       : { data: null };            // sb is null in offline preview mode
       const s = fresh.data || assets.find(x=>x.id===id);
       /* "no effect" builtins (Gold Buttons, Navy Glass Board, No Button Animation)
          mean "use the CSS default" and store as null; builtin EFFECTS still store. */
