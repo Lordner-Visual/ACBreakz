@@ -294,12 +294,15 @@
       <input type="file" id="styleUpInput" accept="image/*,video/webm,video/mp4"></label>
     <select id="styleUpKind">
       <option value="board_button">→ Button style (image)</option>
+      <option value="button_frame">→ Button frame (image with a see-through middle)</option>
       <option value="board_bg">→ Board background (image or video)</option>
       <option value="button_anim">→ Button animation (video)</option>
     </select>
     <span class="tag" id="styleUpHint"></span>
   </div>
-  <h2>Button style — mix and match with any background</h2>
+  <h2>Button frame — the border only; the middle stays see-through</h2>
+  <div class="grid" id="frameStyleGrid"></div>
+  <h2>Button style — the fill behind the frame</h2>
   <div class="grid" id="btnStyleGrid"></div>
   <h2>Board background</h2>
   <div class="grid" id="bgStyleGrid"></div>
@@ -702,7 +705,9 @@
      never appear on stream. */
   const STYLE_UP = {
     board_button: { name:"Buttons: ",  accept:"image/*", video:false,
-                    hint:"Image only — painted as each button's texture." },
+                    hint:"Image only — the fill behind the frame." },
+    button_frame: { name:"Frame: ",    accept:"image/png,image/webp", video:false,
+                    hint:"PNG/WebP with a transparent middle — drawn 9-sliced as the border." },
     board_bg:     { name:"Board: ",    accept:"image/*,video/webm,video/mp4", video:null,
                     hint:"Image or video — video loops behind the board." },
     button_anim:  { name:"Btn anim: ", accept:"video/webm,video/mp4", video:true,
@@ -1416,7 +1421,7 @@
       /* the CSS-default builtins get a swatch of what they actually look like */
       if (a.meta?.builtin && a.meta?.domain === "board_bg")
         return `<div style="width:100%;height:100%;background:radial-gradient(120% 160% at 50% -20%, #123a5c 0%, #0B1E33 45%, #071527 100%)"></div>`;
-      if (a.meta?.builtin && a.meta?.domain === "board_button")
+      if (a.meta?.builtin && (a.meta?.domain === "board_button" || a.meta?.domain === "button_frame"))
         return `<div class="swatchwrap"><div class="minibtn"></div></div>`;
       /* builtin button animations preview their actual effect on a mini button */
       if (a.meta?.builtin && a.meta?.domain === "button_anim")
@@ -1567,7 +1572,8 @@
               ? `<div class="row"><span class="tag">${s.meta.mode === "ambient" ? "always on" : "on team hit"}</span></div>` : ""}
           </div></div>`; }).join("");
     };
-    part("board_button", "#btnStyleGrid", "boardButtons", {icon:"🟨"});
+    part("button_frame", "#frameStyleGrid", "boardFrame",   {icon:"🖼"});
+    part("board_button", "#btnStyleGrid",   "boardButtons", {icon:"🟨"});
     part("board_bg",     "#bgStyleGrid",  "boardBg",      {icon:"🎞"});
 
     /* button animations are multi-select: any number can run at once */

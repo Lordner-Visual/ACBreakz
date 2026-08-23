@@ -126,10 +126,20 @@
      backgrounds and FX, so Reframe zoom/pan works here with no extra code.
      The frame sits ABOVE the texture and BELOW the logo: its middle is transparent, so
      the texture reads as the button background and the logo shows through. */
-  .cell img.tex,.cell img.frm{position:absolute;inset:0;width:100%;height:100%;
-    object-fit:cover;object-position:50% 50%;pointer-events:none}
-  .cell img.tex{z-index:0}
-  .cell img.frm{z-index:1}
+  .cell img.tex{position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;object-position:50% 50%;pointer-events:none;z-index:0}
+  /* The FRAME cannot use object-fit:cover. Cover-cropping a square frame into a wide
+     cell (rect84) throws away the top and bottom rails and leaves only the sides — a
+     border that is not a border. 9-slice is the technique that actually holds: the four
+     corners are placed unscaled, each edge stretches along its own axis, and the middle
+     is left out entirely (no `fill` keyword) so the texture below shows through.
+     --frmslice is how far in from the edge the artwork's border ends, as a percentage of
+     the source, so any frame carries its own thickness. --frmw is that same fraction of
+     the CELL's short side, measured in JS, which keeps corners square on any grid. */
+  .cell .frm{position:absolute;inset:0;z-index:1;pointer-events:none;
+    border-style:solid;border-width:var(--frmw,6px);
+    border-image-slice:var(--frmslice,12%);
+    border-image-repeat:stretch;border-image-width:1}
 
   /* Logo bigger than its button: the cell normally clips its children (button texture,
      effect video, rounded corners), so spilling needs that clip lifted — but only for
@@ -159,7 +169,11 @@
   #board.grid-honeycomb .cell::before{clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
   #board.grid-logos{--logopad:calc(var(--tile) * (var(--logofrac) - .145))}
   #board.grid-logos .cell{border:none;box-shadow:none;background-image:none !important}
-  #board.grid-logos .cell img.tex,#board.grid-logos .cell img.frm{display:none}
+  #board.grid-logos .cell img.tex,#board.grid-logos .cell .frm{display:none}
+  /* A 9-slice frame is rectangular by construction, so it cannot follow a hexagon or a
+     parallelogram — clipped to those shapes it leaves stray rails that read as a bug.
+     These two grids carry their own silhouette; a button frame is not offered on them. */
+  #board.grid-honeycomb .cell .frm,#board.grid-slant .cell .frm{display:none}
   #board.grid-logos .cell::before{display:none}
   /* the one deliberately non-square grid: wide buttons stretched across the safe area */
   #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);
@@ -361,15 +375,22 @@
      the same reason paintClips seeks instead of recreating. */
   function setCellLayer(cell, cls, asset) {
     const url = asset?.url || null;
-    let el = cell.querySelector("img." + cls);
+    const tex = cls === "tex";
+    let el = cell.querySelector(tex ? "img.tex" : "div.frm");
     if (!url) { el?.remove(); return; }
     if (!el) {
-      el = document.createElement("img");
+      el = document.createElement(tex ? "img" : "div");
       el.className = cls;
       cell.insertBefore(el, cell.firstChild);
     }
-    if (el.dataset.src !== url) { el.dataset.src = url; el.src = url; }
-    applyCrop(el, asset.meta ?? asset);
+    /* Only the SRC is skip-guarded — reassigning it refetches and blinks. The crop must
+       be reapplied every time or a crop-only edit silently does nothing, which is the
+       same early-return trap applyBoardParts' change key already had to be fixed for. */
+    if (el.dataset.src !== url) {
+      el.dataset.src = url;
+      if (tex) el.src = url; else el.style.borderImageSource = `url("${url}")`;
+    }
+    if (tex) applyCrop(el, asset.meta ?? asset);
   }
 
   function applyBoardParts(s) {
@@ -456,10 +477,20 @@
 
     /* buttons: texture on every cell. Reframe crop is expressed as background
        position/size here for the same reason — there is no element per cell. */
+    /* 9-slice needs a real border WIDTH, and it has to track the cell so the frame stays
+       proportional at any board size or grid. Measure the cell rather than deriving it:
+       rect84 stretches its tracks, so --tile says "auto" there and tells us nothing. */
+    const frac = Math.max(.02, Math.min(.45, Number(frame?.meta?.sliceFrac) || .12));
+    boardEl.style.setProperty("--frmslice", (frac * 100).toFixed(2) + "%");
     for (const abbr of C.ORDER) {
       cells[abbr].style.backgroundImage = "";        // v4 left this behind on some cells
       setCellLayer(cells[abbr], "tex", HUD_LAYER ? btn : null);
       setCellLayer(cells[abbr], "frm", HUD_LAYER ? frame : null);
+    }
+    if (frame?.url) {
+      const r = cells[C.ORDER[0]].getBoundingClientRect();
+      const short = Math.min(r.width, r.height) || tile;      // 0 while the layer is hidden
+      boardEl.style.setProperty("--frmw", Math.max(2, Math.round(short * frac)) + "px");
     }
 
     /* button animations: every selected ambient effect runs at once, on one clock */

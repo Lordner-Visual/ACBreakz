@@ -21,7 +21,7 @@ const look = async (label, st) => {
     const cs = getComputedStyle(c);
     return { gold: b.classList.contains("frame-gold"), teal: b.classList.contains("btn-teal"),
       border: cs.borderTopWidth, bgLayers: (cs.backgroundImage.match(/gradient|url/g) || []).length,
-      tex: !!c.querySelector("img.tex"), frm: !!c.querySelector("img.frm") };
+      tex: !!c.querySelector("img.tex"), frm: !!c.querySelector("div.frm") };
   });
   console.log(`  ${label.padEnd(34)} ${JSON.stringify(r)}`);
   return r;

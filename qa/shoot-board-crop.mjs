@@ -74,15 +74,17 @@ await set({ boardButtons: { id: "s", name: "btn", url: "http://localhost:8777/st
             boardFrame: { id: "f", name: "frame", url: "http://localhost:8777/frame.png", meta: {} } });
 r = await p.evaluate(() => {
   const c = document.querySelector("#board .cell");
-  const t = c.querySelector("img.tex"), f = c.querySelector("img.frm");
+  const t = c.querySelector("img.tex"), f = c.querySelector("div.frm");
   if (!t || !f) return { none: true };
-  return { fit: getComputedStyle(f).objectFit,
+  const fs_ = getComputedStyle(f);
+  return { slice: fs_.borderImageSlice, bw: fs_.borderTopWidth, src: fs_.borderImageSource.slice(0,20),
     texZ: +getComputedStyle(t).zIndex, frmZ: +getComputedStyle(f).zIndex,
     logoZ: +getComputedStyle(c.querySelector("img.logo")).zIndex };
 });
-console.log(`  z-order: tex=${r.texZ} frame=${r.frmZ} logo=${r.logoZ}`);
+console.log(`  z-order: tex=${r.texZ} frame=${r.frmZ} logo=${r.logoZ}  slice=${r.slice} borderWidth=${r.bw}`);
 ok("  both layers exist together", !r.none);
-ok("  the frame is cover-fitted too", r.fit === "cover");
+ok("  the frame is 9-sliced, so every edge survives any cell shape",
+  /%/.test(r.slice) && r.bw !== "0px" && r.src.includes("url"));
 ok("  frame sits ABOVE the texture and BELOW the logo",
   r.texZ < r.frmZ && r.frmZ < r.logoZ);
 await set({ boardFrame: null });

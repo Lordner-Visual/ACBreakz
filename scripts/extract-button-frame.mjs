@@ -12,7 +12,7 @@
      node scripts/extract-button-frame.mjs "GRAPHICS/Button 2.png" "Button 2"          */
 import { readRGBA, writeRGBA, probe, alphaBBox, at, lum, FFDIR } from "./lib/pixels.mjs";
 import { execFileSync } from "child_process";
-import { mkdirSync, existsSync } from "fs";
+import { mkdirSync, existsSync, writeFileSync } from "fs";
 
 const SRC = process.argv[2] || "C:/ACBreakz-Cloud/GRAPHICS/Button 2.png";
 const LABEL = process.argv[3] || "Button 2";
@@ -108,6 +108,19 @@ console.log(`interior: ${n} px (${(100 * n / (w * h)).toFixed(1)}% of canvas), `
     "-vf", `crop=${cw}:${ch}:${x0}:${y0},scale=1024:1024:flags=lanczos`,
     `${OUT}/background.png`]);
   console.log(`background -> background.png (interior only, scaled to 1024)`);
+}
+
+/* ---- 4b. how far in the border reaches, as a fraction of the output ----
+   This is the 9-slice value the overlay needs: border-image-slice as a percentage, and
+   the border width as the same fraction of the cell. Measured, not assumed, so every
+   frame carries its own thickness. */
+{
+  const k = 1024 / btn.w;
+  const left = Math.round((ib.x0 - btn.x0) * k), right = Math.round((btn.x1 - ib.x1) * k);
+  const top = Math.round((ib.y0 - btn.y0) * k), bot = Math.round((btn.y1 - ib.y1) * k);
+  const sliceFrac = +(Math.min(left, right, top, bot) / 1024).toFixed(4);
+  console.log(`slice: left ${left} right ${right} top ${top} bottom ${bot} of 1024 -> sliceFrac ${sliceFrac}`);
+  writeFileSync(`${OUT}/meta.json`, JSON.stringify({ label: LABEL, sliceFrac }, null, 1));
 }
 
 /* ---- 5. a preview sheet: frame over a magenta card, and the background ---- */
