@@ -230,18 +230,31 @@
      the silhouette; --ring is undefined on rectangular grids, where border-radius is
      already right. The cell clips its children, so the glow lives inside the edge. */
   #board.grid-honeycomb .cell.hl::after,#board.grid-slant .cell.hl::after{
-    border-radius:0 !important;clip-path:var(--ring);
-    box-shadow:none !important;background:var(--gold)}
-  #board.grid-slant .cell.hl::after{background:var(--gold)}
+    border-radius:0 !important;clip-path:var(--ring);box-shadow:none !important}
   #board.anim-lightning.grid-honeycomb .cell.hl::after,
   #board.anim-lightning.grid-slant .cell.hl::after{background:var(--volt);border:0 !important}
   #board.anim-fire.grid-honeycomb .cell.hl::after,
   #board.anim-fire.grid-slant .cell.hl::after{background:rgba(255,120,20,.95)}
-  #board.anim-glow .cell.hl::after{content:"";position:absolute;inset:0;border-radius:8px;
-    z-index:4;pointer-events:none;
-    box-shadow:inset 0 0 0 calc(2px * var(--fxi)) var(--gold),
-               0 0 calc(14px * var(--fxi)) calc(2px * var(--fxi)) var(--gold);
+  /* The glow has to be LIGHT, not a coloured line. Two rules make that work:
+     - filter applies BEFORE clip-path, so the shape and the glow cannot live on the same
+       element — clipped together, the bleed is cut away and only flat colour survives.
+       The ring is the inner <i>; the drop-shadows are on its parent.
+     - the cell clips its children, so the outward bleed is trimmed and what reads on
+       screen is the light spilling INWARD from the edge.
+     Corner shape comes from --radius, so "checker" (radius 0) gets hard corners rather
+     than the 8px the old rule hard-coded. */
+  .cell .edge{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0}
+  .cell .edge i{position:absolute;inset:0;display:block;border-radius:var(--radius)}
+  #board.anim-glow .cell.hl .edge{
+    filter:drop-shadow(0 0 calc(4px * var(--fxi)) var(--glowc, var(--gold)))
+           drop-shadow(0 0 calc(11px * var(--fxi)) var(--glowc, var(--gold)));
     animation:bglow 2.6s ease-in-out infinite}
+  #board.anim-glow .cell.hl .edge i{
+    border:calc(2px * var(--fxi)) solid var(--glowc, var(--gold))}
+  /* shaped grids: the ring is a clipped band instead of a border */
+  #board.grid-honeycomb.anim-glow .cell.hl .edge i,
+  #board.grid-slant.anim-glow .cell.hl .edge i{
+    border:0;background:var(--glowc, var(--gold));clip-path:var(--ring)}
   @keyframes bglow{0%,100%{opacity:calc(.12 * var(--fxi))}50%{opacity:calc(.85 * var(--fxi))}}
   #board.anim-fire .cell.hl::after{content:"";position:absolute;inset:-2px;border-radius:10px;
     z-index:4;pointer-events:none;
@@ -381,7 +394,8 @@
     d.className = "cell";
     /* the cell still exists on every layer — applyState toggles .on/.hl on it — but only
        the HUD source paints it. The FX source builds its own logo per stinger. */
-    if (HUD_LAYER) d.innerHTML = `<img class="logo" src="${C.LOGO_URL(abbr)}" alt="${t.name}">`;
+    if (HUD_LAYER) d.innerHTML = `<img class="logo" src="${C.LOGO_URL(abbr)}" alt="${t.name}">` +
+      `<div class="edge"><i></i></div>`;
     boardEl.appendChild(d); cells[abbr] = d;
   });
 
@@ -460,7 +474,8 @@
        the button texture changed nothing on screen, because this early return fired
        before any of the code below could apply it. */
     const cropOf = (a) => JSON.stringify(a?.meta?.crop ?? a?.crop ?? null);
-    const key = [btn?.url, cropOf(btn), frame?.url, cropOf(frame), frame?.meta?.builtin,
+    const glowc = /^#[0-9a-f]{3,8}$/i.test(String(s?.glowColor ?? "")) ? s.glowColor : "";
+    const key = [btn?.url, cropOf(btn), frame?.url, cropOf(frame), frame?.meta?.builtin, glowc,
       bg?.url, cropOf(bg), grid, gap, size, logo, fxi,
       anims.map(a => a.id + (a.meta?.effect ?? "") + (a.url ?? "")).join(",")].join("|");
     if (key === partsKey) return false; partsKey = key;
@@ -497,6 +512,9 @@
     /* a spilling logo has to escape the button's own clip */
     boardEl.classList.toggle("logo-spill", logofrac < 0);
     boardEl.style.setProperty("--fxi", fxi);
+    /* validated above: this lands in a CSS var, so never pass through unchecked text */
+    if (glowc) boardEl.style.setProperty("--glowc", glowc);
+    else boardEl.style.removeProperty("--glowc");
     boardEl.classList.toggle("has-btnstyle", !!(btn?.url || frame?.url));
     /* Builtins are CSS, not images, and the two are now independent: a board can wear the
        copper frame with any fill, or a custom fill with no frame at all. */

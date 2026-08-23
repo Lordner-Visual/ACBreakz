@@ -188,6 +188,11 @@
     <input type="range" id="fxRange" min="30" max="250" step="5" value="100" style="flex:1">
     <span class="tag" id="fxVal" style="width:44px">100%</span>
   </div>
+  <div class="row" style="margin-bottom:10px">
+    <span class="tag" style="width:110px">Edge glow colour</span>
+    <input type="color" id="glowColor" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <button class="btn ghost" id="glowReset">Reset to gold</button>
+  </div>
   <h2>Button frame</h2><div class="grid" id="frameStyleGrid"></div>
   <h2>Button style</h2><div class="grid" id="btnStyleGrid"></div>
   <h2>Board background</h2><div class="grid" id="bgStyleGrid"></div>
@@ -494,7 +499,8 @@
     part("button_frame","#frameStyleGrid","boardFrame");
     part("board_button","#btnStyleGrid","boardButtons");
     part("board_bg","#bgStyleGrid","boardBg");
-    $("[data-part]").forEach(b => b.onclick = async () => {
+    $("#glowColor").value = state.glowColor || "#D9A441";
+    $$("[data-part]").forEach(b => b.onclick = async () => {
       const [k,id] = b.dataset.part.split(":");
       /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
          page cached its list at load — so a panel left open across an asset re-upload
@@ -561,6 +567,9 @@
   slider("#sizeRange", "#sizeVal", "boardSize",   "%");
   slider("#logoRange", "#logoVal", "logoSize",    "%");
   slider("#fxRange",   "#fxVal",   "fxIntensity", "%");
+  /* one write on release, like the sliders — a colour drag would otherwise flood it */
+  $("#glowColor").onchange = (e) => patchState({ glowColor: e.target.value });
+  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; patchState({ glowColor: null }); };
 
   /* ---------- Stream Deck event keys ----------
      The deck sends ?name=<event>; state.oneshots decides which clip that resolves to on

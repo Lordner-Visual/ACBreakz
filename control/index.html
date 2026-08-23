@@ -287,6 +287,12 @@
     <input type="range" id="fxRange" min="30" max="250" step="5" value="100" style="flex:1">
     <span class="tag" id="fxVal" style="width:52px">100%</span>
   </div>
+  <div class="row">
+    <span class="tag" style="width:110px">Edge glow colour</span>
+    <input type="color" id="glowColor" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <button class="btn ghost" id="glowReset">Reset to gold</button>
+    <span class="tag">Applies to the built-in Edge Glow effect.</span>
+  </div>
   <div class="row"><span class="tag">100% button size is already the largest that fits inside the
     WhatNot-safe width — the slider takes them down from there.</span></div>
   <div class="row" style="margin-top:14px">
@@ -714,6 +720,12 @@
                     meta:{ mode:"ambient" },
                     hint:"Video only — loops over every highlighted team's button." },
   };
+  /* live preview while dragging, one write when released — the same one-in-flight rule
+     the sliders follow, so a colour drag cannot flood the write path */
+  $("#glowColor").oninput  = (e) => document.documentElement.style.setProperty("--glowpv", e.target.value);
+  $("#glowColor").onchange = (e) => patchState({ glowColor: e.target.value });
+  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; patchState({ glowColor: null }); };
+
   const styleSel = $("#styleUpKind");
   const syncStyleUp = () => {
     const c = STYLE_UP[styleSel.value];
@@ -1652,7 +1664,7 @@
     setS("#sizeRange","#sizeVal","boardSize",100,"%");
     setS("#logoRange","#logoVal","logoSize",100,"%");
     setS("#fxRange","#fxVal","fxIntensity",100,"%");
-    $("[data-part]").forEach(b => b.onclick = async () => {
+    $$("[data-part]").forEach(b => b.onclick = async () => {
       const [k, id] = b.dataset.part.split(":");
       /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
          page cached its list at load — so a panel left open across an asset re-upload
