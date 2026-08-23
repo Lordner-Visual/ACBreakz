@@ -116,7 +116,13 @@
     background-size:100% 100%, 100% 100%}
   .cell img.logo{position:absolute;inset:var(--logopad);
     width:calc(100% - 2*var(--logopad));height:calc(100% - 2*var(--logopad));
-    object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));z-index:2;
+    object-fit:contain;z-index:2;
+    /* a thin white rim lifts the logo off whatever texture is behind it; the dark drop
+       shadow underneath still gives it weight. Both scale with the tile (set in JS)
+       because --tile reads "auto" on the stretched grids. */
+    filter:drop-shadow(0 0 var(--logoglow,1.6px) rgba(255,255,255,.92))
+           drop-shadow(0 0 calc(var(--logoglow,1.6px) * 2) rgba(255,255,255,.45))
+           drop-shadow(0 2px 3px rgba(0,0,0,.7));
     transition:filter .45s ease, opacity .45s ease}
 
   /* v5: the button TEXTURE and the button FRAME are real elements, not background-image.
@@ -487,10 +493,11 @@
       setCellLayer(cells[abbr], "tex", HUD_LAYER ? btn : null);
       setCellLayer(cells[abbr], "frm", HUD_LAYER ? frame : null);
     }
-    if (frame?.url) {
+    {
       const r = cells[C.ORDER[0]].getBoundingClientRect();
       const short = Math.min(r.width, r.height) || tile;      // 0 while the layer is hidden
-      boardEl.style.setProperty("--frmw", Math.max(2, Math.round(short * frac)) + "px");
+      if (frame?.url) boardEl.style.setProperty("--frmw", Math.max(2, Math.round(short * frac)) + "px");
+      boardEl.style.setProperty("--logoglow", (short * 0.03).toFixed(2) + "px");
     }
 
     /* button animations: every selected ambient effect runs at once, on one clock */

@@ -39,7 +39,14 @@ btn.x1 = btn.x0 + btn.w - 1; btn.y1 = btn.y0 + btn.h - 1;
 console.log(`button (alpha>240): ${raw.w}x${raw.h} -> squared ${btn.w}x${btn.h} at (${btn.x0},${btn.y0})`);
 
 /* ---- 2. flood-fill the interior from the centre, walled off by the bright border ---- */
-const WALL_LUM = 165;            // the inner border reads ~190+, the teal interior well below
+/* Where does the FRAME actually end? Stopping at the bright inner border keeps that
+   white ring in the frame, which is usually not wanted — the ring belongs to the fill.
+   --wall=metal (default) walls off at the metal bezel instead, detected by hue rather
+   than brightness: copper/gold run strongly red-over-blue, while the white ring is
+   neutral and the interior is blue-dominant, so the fill passes straight through the
+   ring and stops only at the bezel. --wall=bright keeps the old behaviour. */
+const WALL = (process.argv.find(a => a.startsWith("--wall=")) || "--wall=metal").split("=")[1];
+const WALL_LUM = 165;
 const inside = new Uint8Array(w * h);
 {
   const cx = (btn.x0 + btn.x1) >> 1, cy = (btn.y0 + btn.y1) >> 1;
@@ -49,7 +56,8 @@ const inside = new Uint8Array(w * h);
   while (stack.length) {
     const y = stack.pop(), x = stack.pop();
     const p = at(src, w, x, y);
-    if (p[3] < 128 || lum(p) > WALL_LUM) continue;      // transparent or the border: stop
+    const isMetal = (p[0] - p[2]) > 40 && p[0] > 80;
+    if (p[3] < 128 || (WALL === "metal" ? isMetal : lum(p) > WALL_LUM)) continue;
     inside[y * w + x] = 1;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx, ny = y + dy;
@@ -92,11 +100,14 @@ console.log(`interior: ${n} px (${(100 * n / (w * h)).toFixed(1)}% of canvas), `
 /* ---- 4. BACKGROUND: the largest square that lies wholly inside the interior ---- */
 {
   let x0 = ib.x0, y0 = ib.y0, x1 = ib.x1, y1 = ib.y1;
+  /* Being inside the flood fill is not enough: with the wall at the metal bezel the
+     fill also swallows the bright inner ring, and a crop that clips it drags a white
+     stripe into the button background. Shrink until the border is both inside AND not
+     bright, so the fill is the interior gradient only. */
+  const clean = (x, y) => inside[y * w + x] && lum(at(src, w, x, y)) <= WALL_LUM;
   const allInside = () => {
-    for (let x = x0; x <= x1; x += 2)
-      if (!inside[y0 * w + x] || !inside[y1 * w + x]) return false;
-    for (let y = y0; y <= y1; y += 2)
-      if (!inside[y * w + x0] || !inside[y * w + x1]) return false;
+    for (let x = x0; x <= x1; x += 2) if (!clean(x, y0) || !clean(x, y1)) return false;
+    for (let y = y0; y <= y1; y += 2) if (!clean(x0, y) || !clean(x1, y)) return false;
     return true;
   };
   let guard = 0;
