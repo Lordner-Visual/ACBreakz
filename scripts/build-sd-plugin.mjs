@@ -61,6 +61,11 @@ console.log(`baked ${baked} images -> icons.js (${(bytes / 1048576).toFixed(2)} 
 /* ---- config the plugin and its inspector share ---- */
 const url = cfgSrc.match(/SUPABASE_URL:\s*"([^"]*)"/)[1];
 const anon = cfgSrc.match(/SUPABASE_ANON_KEY:\s*"([^"]+)"/)[1];
+/* Note for the profile builder: team keys must ship with NO States[0].Image. Stream Deck
+   treats a profile-baked image as the user's own icon choice and it outranks setImage, so
+   a baked logo silently swallows every repaint the plugin sends. All the artwork the deck
+   needs is in icons.js below; the profile needs none of it. */
+
 /* DECK_KEY is baked in from .env so that installing the plugin IS the whole install —
    there is no key to paste on each of five machines, and a machine that skips that step
    fails in the least obvious way available: the keys light up and paint correctly from

@@ -51,12 +51,16 @@ for (let pc = 1; pc <= 5; pc++) {
       main["7,3"]?.UUID === "com.elgato.obsstudio.replaybuffer.save");
     /* Team and highlight keys are now plugin actions, not Multi Action Switches. The
        switch's second state WAS the drift: it flipped locally on press and was never
-       reconciled with the board. A plugin key has ONE state — the artwork the profile
-       ships with — and the plugin repaints it from stream_state at runtime. */
+       reconciled with the board. A plugin key has ONE state and NO baked image — the
+       plugin paints it from stream_state at runtime.
+       This assertion used to require States[0].Image to be a real Images/*.png, which
+       enforced the exact bug it should have caught: Stream Deck ranks a profile-baked
+       image above setImage, so the plugin repainted correctly and nothing ever showed.
+       An Image here must therefore be a FAILURE, not a requirement. */
     const pluginKeys = (page, mode) => Object.values(page).every(k =>
       k.UUID === "com.acbreakz.board.team" &&
       k.States?.length === 1 &&
-      /^Images\/\w[\w'.-]*\.png$/.test(k.States[0].Image ?? "") &&
+      k.States[0].Image === undefined &&
       k.Settings?.mode === mode &&
       Number(k.Settings?.pc) === pc &&
       typeof k.Settings?.team === "string" && k.Settings.team.length >= 2);

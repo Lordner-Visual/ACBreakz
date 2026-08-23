@@ -95,14 +95,17 @@ const obsSimple = (uuid, name, title) => ({
    board drift apart (e.g. after Reset Board).
    The key deliberately STAYS on its page — eliminating several teams in a row is the
    common case, and a second Stream Deck drives page navigation. */
-const teamKeyPlugin = (pc, abbr, mode, imageRel) => ({
+/* NO Image in States[0] — see the page builder below. Stream Deck ranks a profile-baked
+   image above anything setImage sends, so baking one here makes the plugin's repaints
+   invisible while every other part of it works. */
+const teamKeyPlugin = (pc, abbr, mode) => ({
   ActionID: randomUUID(),
   Name: "Team Key",
   Plugin: { Name: "ACBreakz Board", UUID: "com.acbreakz.board", Version: "1.0.0.0" },
   Resources: null,
   Settings: { pc: Number(pc), team: abbr, mode },
   State: 0,
-  States: [ { Image: imageRel, Title: "", ShowTitle: false } ],
+  States: [ { Title: "", ShowTitle: false } ],
   UUID: "com.acbreakz.board.team",
 });
 
@@ -223,21 +226,17 @@ function buildProfile(pc) {
   /* pages 2 and 3 — all 32 teams, each firing its request then hopping back to main
      (exactly what the original profile did, which is how 32 teams fit on 32 keys).
      Nested actions need isInMultiAction — without it the step is skipped silently. */
-  for (const [action, altSet, mode] of [["team_toggle", "x", "eliminate"],
-                                        ["highlight_toggle", "glow", "highlight"]]) {
-    newPage((dir) => {
+  for (const mode of ["eliminate", "highlight"]) {
+    /* Ship NO artwork on these pages. A profile-baked States[0].Image is treated by Stream
+       Deck as the user's own icon choice and it OUTRANKS setImage, so every repaint the
+       plugin sent was being discarded under a static logo — willAppear, realtime, keyUp and
+       setImage were all working and none of it could ever show. A hand-added key painted
+       correctly precisely because it carried no Image. The plugin holds all 96 icons in
+       icons.js and paints on willAppear, so the profile does not need the PNGs at all. */
+    newPage(() => {
       const A = {};
-      TEAMS.forEach(([abbr, name], i) => {
-        const put = (set, suffix) => {
-          const src = iconPath(set, name);
-          if (!src) return "";
-          const rel = `Images/${name}${suffix}.png`;
-          copyFileSync(src, join(dir, rel));
-          return rel;
-        };
-        put(altSet, "-" + altSet);          // ship both artworks; the plugin picks
-        A[pos(i % COLS, Math.floor(i / COLS))] =
-          teamKeyPlugin(pc, abbr, mode, put("normal", ""));
+      TEAMS.forEach(([abbr], i) => {
+        A[pos(i % COLS, Math.floor(i / COLS))] = teamKeyPlugin(pc, abbr, mode);
       });
       return A;
     });
