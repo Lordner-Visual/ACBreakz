@@ -149,6 +149,11 @@
     border-style:solid;border-width:var(--frmw,6px);
     border-image-slice:var(--frmslice,12%);
     border-image-repeat:stretch;border-image-width:1}
+  /* The builtin bezel paints via the cell on rectangular grids, so its element must draw
+     NOTHING there — a solid border with no border-image falls back to currentColor and
+     renders black, which is exactly the failure that reached a live board. It only comes
+     alive in ring mode below, where CSS cannot cut a shaped border any other way. */
+  .cell .frm.gold{border-width:0;background-image:none}
 
   /* Logo bigger than its button: the cell normally clips its children (button texture,
      effect video, rounded corners), so spilling needs that clip lifted — but only for
@@ -169,6 +174,9 @@
   #board.grid-checkerbare{--radius:0px}
   #board.grid-checkerbare .cell{border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
   #board.grid-honeycomb{--radius:0px;--logopad:calc(var(--tile) * (var(--logofrac) + .065))}
+  #board.grid-honeycomb{--shape:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
+    --ring:polygon(evenodd, 25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%,
+      25% 0%, 31% 13%,69% 13%,87% 50%,69% 87%,31% 87%,13% 50%,31% 13%)}
   #board.grid-honeycomb .cell{border:none;box-shadow:none;
     clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)}
   /* interlock the rows by splitting the half-tile offset, so the combined span of both
@@ -179,16 +187,26 @@
   #board.grid-logos{--logopad:calc(var(--tile) * (var(--logofrac) - .145))}
   #board.grid-logos .cell{border:none;box-shadow:none;background-image:none !important}
   #board.grid-logos .cell img.tex,#board.grid-logos .cell .frm{display:none}
-  /* A 9-slice frame is rectangular by construction, so it cannot follow a hexagon or a
-     parallelogram — clipped to those shapes it leaves stray rails that read as a bug.
-     These two grids carry their own silhouette; a button frame is not offered on them. */
-  #board.grid-honeycomb .cell .frm,#board.grid-slant .cell .frm{display:none}
+  /* RING MODE — shaped grids. 9-slice is rectangular by construction and cannot follow a
+     hexagon, so instead the frame fills the cell clipped to the silhouette and the
+     texture is laid on top, inset by the border width and clipped to the same shape.
+     What is left showing is a border that traces the actual edge. */
+  #board.grid-honeycomb .cell .frm,#board.grid-slant .cell .frm{
+    border-width:0;background-size:100% 100%;background-repeat:no-repeat;
+    clip-path:var(--ring)}
+  #board.grid-honeycomb .cell .frm.gold,#board.grid-slant .cell .frm.gold{
+    background-image:linear-gradient(145deg,#E8C07A 0%,#C08A45 17%,#8A5A26 52%,#6B3F17 76%,#B27A3E 100%)}
+  /* "Checker (no edge)" means exactly that: no border, whatever is selected. */
+  #board.grid-checkerbare .cell .frm{display:none}
   #board.grid-logos .cell::before{display:none}
   /* the one deliberately non-square grid: wide buttons stretched across the safe area */
   #board.grid-rect84{grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(4,1fr);
     justify-content:stretch;align-content:stretch;padding:12px var(--padx);
     --logopad:4px;--radius:6px;--bezel:3px}
   #board.grid-slant{--radius:0px}
+  #board.grid-slant{--shape:polygon(16% 0%,100% 0%,84% 100%,0% 100%);
+    --ring:polygon(evenodd, 16% 0%,100% 0%,84% 100%,0% 100%,
+      16% 0%, 22% 13%,94% 13%,78% 87%,6% 87%,22% 13%)}
   #board.grid-slant .cell{border:none;
     clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%)}
   #board.grid-slant .cell::before{clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%)}
@@ -208,6 +226,17 @@
      fxIntensity controls BRIGHTNESS AND SIZE ONLY — every duration below is a fixed
      constant. Dividing the duration by --fxi used to make "more intense" also mean
      "faster", which is not what the slider says it does. */
+  /* On a shaped grid the rectangular ring is replaced by an evenodd outline that follows
+     the silhouette; --ring is undefined on rectangular grids, where border-radius is
+     already right. The cell clips its children, so the glow lives inside the edge. */
+  #board.grid-honeycomb .cell.hl::after,#board.grid-slant .cell.hl::after{
+    border-radius:0 !important;clip-path:var(--ring);
+    box-shadow:none !important;background:var(--gold)}
+  #board.grid-slant .cell.hl::after{background:var(--gold)}
+  #board.anim-lightning.grid-honeycomb .cell.hl::after,
+  #board.anim-lightning.grid-slant .cell.hl::after{background:var(--volt);border:0 !important}
+  #board.anim-fire.grid-honeycomb .cell.hl::after,
+  #board.anim-fire.grid-slant .cell.hl::after{background:rgba(255,120,20,.95)}
   #board.anim-glow .cell.hl::after{content:"";position:absolute;inset:0;border-radius:8px;
     z-index:4;pointer-events:none;
     box-shadow:inset 0 0 0 calc(2px * var(--fxi)) var(--gold),
@@ -385,8 +414,11 @@
   function setCellLayer(cell, cls, asset) {
     const url = asset?.url || null;
     const tex = cls === "tex";
+    /* The builtin bezel has no image, but on a shaped grid it still needs an element to
+       paint the ring into — CSS alone cannot cut a hexagonal border out of a cell. */
+    const builtinFrame = !tex && !url && !!asset?.meta?.builtin;
     let el = cell.querySelector(tex ? "img.tex" : "div.frm");
-    if (!url) { el?.remove(); return; }
+    if (!url && !builtinFrame) { el?.remove(); return; }
     if (!el) {
       el = document.createElement(tex ? "img" : "div");
       el.className = cls;
@@ -395,9 +427,14 @@
     /* Only the SRC is skip-guarded — reassigning it refetches and blinks. The crop must
        be reapplied every time or a crop-only edit silently does nothing, which is the
        same early-return trap applyBoardParts' change key already had to be fixed for. */
-    if (el.dataset.src !== url) {
-      el.dataset.src = url;
-      if (tex) el.src = url; else el.style.borderImageSource = `url("${url}")`;
+    el.classList.toggle("gold", builtinFrame);
+    if (el.dataset.src !== (url || "builtin")) {
+      el.dataset.src = url || "builtin";
+      if (tex) el.src = url;
+      else if (url) {
+        el.style.borderImageSource = `url("${url}")`;   // 9-slice on rectangular grids
+        el.style.backgroundImage  = `url("${url}")`;    // ring on shaped grids
+      } else { el.style.borderImageSource = "none"; el.style.backgroundImage = ""; }
     }
     if (tex) applyCrop(el, asset.meta ?? asset);
   }

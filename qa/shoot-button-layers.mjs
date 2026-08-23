@@ -48,5 +48,39 @@ ok("the default grid still gets the copper bezel", a2.gold && a2.teal && a2.bord
 ok("PC5 gains no bezel, and its texture is a layer", !b.gold && !b.teal && b.tex && !b.frm);
 ok("an explicit null really turns the frame off", !c.gold && c.border === "0px");
 ok("an uploaded frame renders as a layer, not the builtin", d.frm && !d.gold);
+
+/* ---- the frame and the edge glow must follow whatever silhouette the grid has ---- */
+const GOLD = { id: "g", name: "Gold Bezel", url: null,
+  meta: { builtin: true, domain: "button_frame", effect: "gold" } };
+const shape = async (grid) => {
+  await p.evaluate(o => window.__push(o), { boardGrid: grid, boardButtons: null,
+    boardFrame: GOLD, board: { picked: {}, highlighted: { atl: true } } });
+  await p.waitForTimeout(700);
+  return p.evaluate(() => {
+    const b = document.getElementById("board"), c = b.querySelector(".cell");
+    const f = c.querySelector(".frm");
+    const glow = getComputedStyle(c, "::after").clipPath;
+    return { frm: !!f, hidden: f ? getComputedStyle(f).display === "none" : null,
+      frmClip: f ? getComputedStyle(f).clipPath : "-",
+      frmBorder: f ? getComputedStyle(f).borderTopWidth : "-", glow };
+  });
+};
+console.log("\n=== a shaped grid gets a shaped border and a shaped glow ===");
+for (const g of ["honeycomb", "slant"]) {
+  const r = await shape(g);
+  console.log(`  ${g.padEnd(11)} frmClip=${r.frmClip.slice(0, 30)}  border=${r.frmBorder}`);
+  ok(`${g}: the frame is a ring clipped to the silhouette, not a rectangular 9-slice`,
+    r.frm && /evenodd/.test(r.frmClip) && r.frmBorder === "0px");
+  ok(`${g}: the edge glow follows the silhouette too`, /evenodd/.test(r.glow));
+}
+console.log("\n=== checker (no edge) shows no border, whatever is selected ===");
+const cb = await shape("checkerbare");
+ok("the frame element is hidden on checkerbare", cb.frm && cb.hidden === true);
+console.log("\n=== a rectangular grid keeps the 9-slice path ===");
+const rect = await shape("buttons");
+console.log(`  buttons     frmClip=${rect.frmClip}  border=${rect.frmBorder}`);
+ok("buttons: no evenodd ring — the builtin bezel is drawn by the cell",
+  !/evenodd/.test(rect.frmClip));
+
 await br.close();
 console.log(fails ? `\nDONE with ${fails} FAILURES` : "\nDONE all ok");
