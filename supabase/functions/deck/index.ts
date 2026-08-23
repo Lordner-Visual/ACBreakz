@@ -30,18 +30,40 @@ const json = (b: unknown, s = 200) =>
     headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
   });
 
+/* PostgREST can hand a transient 401/5xx even to a service-role call — measured 16 in
+   48h across assets/stream_state/prune_now. Every lookup below used to destructure only
+   `data` and drop `error` on the floor, so a blip returned null and the press went
+   through with NO stinger: the team left the board, the sfx played, nothing rendered.
+   That is indistinguishable from "the clip is missing" and it is why this was invisible.
+   Retry once, then give up LOUDLY so it shows up in the function logs. */
+async function q1<T>(label: string, run: () => PromiseLike<{ data: T | null; error: unknown }>) {
+  let last: unknown = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { data, error } = await run();
+    if (!error) return data;
+    last = error;
+    console.error(`[acbz] ${label} attempt ${attempt} failed:`, JSON.stringify(error));
+    if (attempt === 1) await new Promise((r) => setTimeout(r, 150));
+  }
+  console.error(`[acbz] ${label} GAVE UP after 2 attempts:`, JSON.stringify(last));
+  return null;
+}
+
 async function findAsset(kind: string, name?: string, team?: string) {
-  let q = sb.from("assets").select("*").eq("kind", kind).order("created_at", { ascending: false });
-  if (team) q = q.eq("meta->>team", team);
-  if (name) q = q.ilike("name", `%${name}%`);
-  const { data } = await q.limit(1);
+  const data = await q1<any[]>(`findAsset(${kind},${name ?? ""},${team ?? ""})`, () => {
+    let q = sb.from("assets").select("*").eq("kind", kind).order("created_at", { ascending: false });
+    if (team) q = q.eq("meta->>team", team);
+    if (name) q = q.ilike("name", `%${name}%`);
+    return q.limit(1);
+  });
   return data?.[0] ?? null;
 }
 /* The panels prefer an sfx flagged default and fall back to the newest; the deck
    used to just take the newest. One rule now, resolved here. */
 async function defaultSfxUrl() {
-  const { data } = await sb.from("assets").select("url,meta")
-    .eq("kind", "sfx").eq("meta->>default", "true").limit(1);
+  const data = await q1<any[]>("defaultSfxUrl", () =>
+    sb.from("assets").select("url,meta")
+      .eq("kind", "sfx").eq("meta->>default", "true").limit(1));
   if (data?.[0]?.url) return data[0].url;
   return (await findAsset("sfx"))?.url ?? null;
 }
@@ -49,7 +71,8 @@ async function defaultSfxUrl() {
 /* Each PC picks its own team-animation set and its own variant per deck event, so
    everything below resolves PER PC. Read the rows once, outside any lock. */
 async function statesFor(pcs: number[]) {
-  const { data } = await sb.from("stream_state").select("id,data").in("id", pcs);
+  const data = await q1<any[]>(`statesFor(${pcs.join(",")})`, () =>
+    sb.from("stream_state").select("id,data").in("id", pcs));
   const m = new Map<number, Record<string, any>>();
   for (const r of data ?? []) m.set(r.id, r.data ?? {});
   return m;
@@ -57,10 +80,12 @@ async function statesFor(pcs: number[]) {
 /* The clip for this team WITHIN one set. Classic Stingers is the set-less set, so a
    new 32-clip upload cannot silently outrank it just by being newer. */
 async function teamClipUrl(team: string, setId: string | null) {
-  let q = sb.from("assets").select("url,meta").eq("kind", "animation")
-    .eq("meta->>team", team).order("created_at", { ascending: false }).limit(1);
-  q = setId ? q.eq("meta->>set", setId) : q.is("meta->>set", null);
-  const { data } = await q;
+  const data = await q1<any[]>(`teamClipUrl(${team},${setId ?? "classic"})`, () => {
+    let q = sb.from("assets").select("url,meta").eq("kind", "animation")
+      .eq("meta->>team", team).order("created_at", { ascending: false }).limit(1);
+    q = setId ? q.eq("meta->>set", setId) : q.is("meta->>set", null);
+    return q;
+  });
   return data?.[0]?.url ?? null;
 }
 /* Which asset each PC plays for a deck event name. An explicit per-PC assignment
@@ -70,7 +95,8 @@ async function oneshotByPc(name: string, pcs: number[]) {
   const ids = [...new Set(pcs.map((pc) => states.get(pc)?.oneshots?.[name]).filter(Boolean))];
   const byId = new Map<string, any>();
   if (ids.length) {
-    const { data } = await sb.from("assets").select("*").in("id", ids as string[]);
+    const data = await q1<any[]>(`oneshotByPc(${name})`, () =>
+      sb.from("assets").select("*").in("id", ids as string[]));
     for (const a of data ?? []) if (!a.meta?.deleted) byId.set(a.id, a);
   }
   const fallback = await findAsset("animation", name);

@@ -542,6 +542,14 @@
     });
   }
 
+  /* A URL that has already failed is not going to start working, and re-asking costs a
+     real request every rotation cycle on every source. One orphaned banner — a row that
+     was purged while its entry survived in all five rotations — was measured generating
+     ~330 HTTP 400s an hour, 8,765 in 48 hours, which was 87% of ALL Supabase requests.
+     Remember the failure and never fetch that URL again this session; a genuinely
+     replaced file arrives under a new timestamped URL, and a reload clears this anyway. */
+  const deadMedia = new Set();
+
   const rotator = {
     list: [], i: -1, timer: null, shownId: null, gen: 0,
     setList(list) {
@@ -574,6 +582,8 @@
        sliding in blank. Waiting costs nothing visible: it happens during the dwell. */
     show(a, tried) {
       const gen = ++this.gen;
+      /* known-bad: move on without building an element, so nothing is requested at all */
+      if (a.url && deadMedia.has(a.url)) return this.skipTo(a, tried, gen);
       const b = document.createElement("div"); b.className = "b";
       if (a.meta?.type === "text" && !a.url) {
         b.innerHTML = `<div class="txt">${(a.meta.text||"").replace(/</g,"&lt;")}</div>`;
@@ -599,19 +609,25 @@
         this.timer = setTimeout(() => this.next(), C.bannerSeconds(a) * 1000);
       };
       const skip = () => {
-        if (gen !== this.gen) return;
-        console.warn("[acbz] banner unusable, skipping:", a.name);
-        if (tried + 1 < this.list.length) {       // move on while still off-canvas
-          this.i = (this.i + 1) % this.list.length;
-          this.show(this.list[this.i], tried + 1);
-        } else {                                  // nothing in the list loads — retry later
-          this.timer = setTimeout(() => this.next(), 5000);
-        }
+        if (a.url) deadMedia.add(a.url);          // never ask for this one again
+        console.warn("[acbz] banner unusable, skipping for the session:", a.name);
+        this.skipTo(a, tried, gen);
       };
 
       const media = b.querySelector("img,video");
       if (!media) return slide();                 // text banner: nothing to load
       mediaReady(media).then(slide, skip);
+    },
+
+    /* move to the next candidate while the failed one is still off-canvas */
+    skipTo(a, tried, gen) {
+      if (gen !== this.gen) return;
+      if (tried + 1 < this.list.length) {
+        this.i = (this.i + 1) % this.list.length;
+        this.show(this.list[this.i], tried + 1);
+      } else {                                    // nothing in the list loads — retry later
+        this.timer = setTimeout(() => this.next(), 5000);
+      }
     },
   };
 

@@ -119,6 +119,12 @@ if (frames.length) {
 
 console.log("\n=== a dead file must never enter the band ===");
 const DEAD = "http://localhost:8777/does-not-exist.png";
+/* Count how many times the browser actually ASKS for the dead URL. One orphaned banner
+   generated ~330 HTTP 400s an hour on the live rig — 8,765 in 48 hours, 87% of all
+   Supabase traffic — because every rotation cycle on every source re-requested it. The
+   rotator must remember the failure and stop asking. */
+let deadRequests = 0;
+p.on("request", (r) => { if (r.url() === DEAD) deadRequests++; });
 await p.evaluate((dead) => window.__push([
   window.__image("good", "http://localhost:8777/still.png", 2),
   window.__image("dead", dead, 2),
@@ -135,6 +141,9 @@ for (let i = 0; i < 260; i++) {
 }
 console.log(`  sources that reached the band: ${seen.map(u => u.split("/").pop()).join(", ")}`);
 ok(`the dead file never made it into the band`, !seen.includes(DEAD));
+console.log(`  the dead URL was requested ${deadRequests} time(s) over ~${Math.round(260 * 25 / 1000)}s`);
+ok(`it is asked for ONCE per session, not once per rotation (${deadRequests})`,
+  deadRequests <= 1);
 ok(`the good banner did render (${seen.length} source(s))`, seen.some(u => u.endsWith("still.png")));
 /* A restart is a backward jump WITHIN one continuous flight — the broken element is
    pulled and a replacement appended in the same tick, so there is never an idle frame
