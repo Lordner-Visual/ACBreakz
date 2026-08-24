@@ -9,7 +9,7 @@
    2 and 3 are races, so they start the other side FIRST and repeat — a single run
    that happens to miss the window proves nothing.
 
-   Snapshots all five PCs and restores them. */
+   Snapshots every PC (1-5 plus PC Test) and restores them. */
 import { readFileSync } from "fs";
 
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
@@ -30,7 +30,7 @@ const rest = (p) => fetch(`${env.SUPABASE_URL}/rest/v1/${p}`,
   { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } }).then(r => r.json());
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const PCS = [1, 2, 3, 4, 5];
+const PCS = [1, 2, 3, 4, 5, 6];   // 6 = PC Test: separate row, so it widens the race
 const TEAM = { 1: "atl", 2: "phi", 3: "mia", 4: "dal", 5: "wsh" };
 const ROUNDS = Number(process.argv[2]) || 8;
 
@@ -69,15 +69,16 @@ const missing = (landed) => PCS.filter(p => !landed.includes(p)).join(",");
 
 const SNAP = Object.fromEntries(await Promise.all(PCS.map(async pc =>
   [pc, (await rest(`stream_state?id=eq.${pc}&select=data`))[0].data])));
-console.log(`snapshot of all five PCs taken — restored at the end (${ROUNDS} rounds per race)\n`);
+console.log(`snapshot of every PC taken — restored at the end (${ROUNDS} rounds per race)\n`);
 const made = [];
 
 try {
   console.log("=== 1. five decks pressed simultaneously, nothing else running ===");
   await resetAll();
   const r1 = await pressAll();
-  ok(`all five presses landed (${r1.landed.length}/5${r1.landed.length < 5 ? " — LOST on PC " + missing(r1.landed) : ""})`,
-    r1.landed.length === 5);
+  /* count from PCS, not a literal — adding PC Test made a correct run report 6/5 and fail */
+  ok(`every press landed (${r1.landed.length}/${PCS.length}${r1.landed.length < PCS.length ? " — LOST on PC " + missing(r1.landed) : ""})`,
+    r1.landed.length === PCS.length);
   ok(`no request errored (${r1.errored.length})`, r1.errored.length === 0);
 
   console.log("\n=== 2. five presses while an asset sweep rewrites every PC ===");
@@ -144,7 +145,7 @@ try {
     [pc, (await rest(`stream_state?id=eq.${pc}&select=data`))[0].data])));
   const bare = (d) => { const { updatedAt, lastWriter, ...x } = d; return JSON.stringify(x); };
   const bad = PCS.filter(pc => bare(back[pc]) !== bare(SNAP[pc]));
-  ok(`all five PCs restored${bad.length ? " — MISMATCH on PC " + bad.join(",") : ""}`, bad.length === 0);
+  ok(`every PC restored${bad.length ? " — MISMATCH on PC " + bad.join(",") : ""}`, bad.length === 0);
 }
 
 console.log(fails ? `\nDONE with ${fails} FAILURES` : "\nDONE all ok");

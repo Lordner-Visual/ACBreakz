@@ -34,7 +34,8 @@ const TEAMS = (window.ACBZ_CFG && ACBZ_CFG.TEAMS) || {};
 const ORDER = (window.ACBZ_CFG && ACBZ_CFG.ORDER) || Object.keys(TEAMS);
 $("#team").innerHTML = ORDER.map((a) =>
   `<option value="${a}">${(TEAMS[a] && TEAMS[a].name) || a}</option>`).join("");
-$("#pc").innerHTML = [1, 2, 3, 4, 5].map((n) => `<option value="${n}">PC ${n}</option>`).join("");
+$("#pc").innerHTML = [1, 2, 3, 4, 5, 6].map((n) =>
+  `<option value="${n}">${n === 6 ? "PC Test" : "PC " + n}</option>`).join("");
 
 const push = () => ws && ws.send(JSON.stringify({
   event: "setSettings", context: uuid,

@@ -1,4 +1,4 @@
-/* Build one importable Stream Deck profile PER PC (1..5) for the ACBreakz cloud system.
+/* Build one importable Stream Deck profile PER PC (1..6; 6 is the PC Test staging rig).
    Every deck key is one API Ninja HTTPS request scoped to that PC, so the profiles are
    independent and portable. Output is gitignored: URLs embed the real DECK_KEY. */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync, existsSync,
@@ -38,6 +38,9 @@ console.log(`icon sets: normal/x/glow from ${ICONS}`);
 
 /* ---- action builders (every settings shape below was read off real, working files) ---- */
 const deckUrl = (q, pc) => `${BASE}&${q.replace(/ /g, "%20")}&pc=${pc}`;
+/* PC 6 is the staging rig and is called PC Test everywhere a human sees it — profile name,
+   file name and the scene key on the main page. The id stays 6 on the wire. */
+const pcLabel = (pc) => (Number(pc) === 6 ? "PC Test" : `PC${pc}`);
 
 /* Every value below was copied from a button API Ninja built itself. The file fields
    MUST be the sentinel "No file..." — an empty string makes the plugin treat it as a
@@ -165,7 +168,7 @@ const pos = (col, row) => `${col},${row}`;
 
 function buildProfile(pc) {
   const OUT_DIR  = `${OUT_ROOT}/build-pc${pc}`;
-  const OUT_FILE = `${OUT_ROOT}/ACBreakz Cloud PC${pc}.local.streamDeckProfile`;
+  const OUT_FILE = `${OUT_ROOT}/ACBreakz Cloud ${pcLabel(pc)}.local.streamDeckProfile`;
   rmSync(OUT_DIR, { recursive: true, force: true });
 
   const PROFILE_UUID = guid();
@@ -213,11 +216,15 @@ function buildProfile(pc) {
         if (k.UUID === "com.barraider.apininja" && !k.States[0].Image) k.States[0].Image = blank;
     };
     /* row 1: scenes */
-    [[`ACBreakz Cloud ${pc}`, `Cloud ${pc}`], ["Archived 1","Archived 1"],
+    [[pc === 6 ? "ACBreakz Cloud PC Test" : `ACBreakz Cloud ${pc}`,
+      pc === 6 ? "PC TEST" : `Cloud ${pc}`], ["Archived 1","Archived 1"],
      ["Archived 2","Archived 2"], ["Archived 3","Archived 3"]]
       .forEach(([scene, title], i) => { A[pos(i, 0)] = obsScene(scene, title); });
     /* top right: this PC's own control dashboard */
-    A[pos(7, 0)] = openUrl(`${SITE}/control/pc.html?pc=${pc}`, "CONTROL");
+    /* PC Test drives the STAGING control page, so control-page changes get proved there too.
+       The live PCs keep pointing at the deployed one. */
+    A[pos(7, 0)] = openUrl(
+      `${SITE}${pc === 6 ? "/staging" : ""}/control/pc.html?pc=${pc}`, "CONTROL");
     /* row 2: one-shot animations */
     [["Stash or Pass","Stash\nor Pass"], ["Spin 2 Pick 1","Spin 2\nPick 1"],
      ["Spin 3 Pick 1","Spin 3\nPick 1"], ["PYT","PYT"]]
@@ -267,7 +274,7 @@ function buildProfile(pc) {
   writeFileSync(join(profDir, "manifest.json"), JSON.stringify({
     AppIdentifier: "*",
     Device: { Model: "20GAT9902", UUID: randomUUID() },
-    Name: `ACBreakz Cloud PC${pc}`,
+    Name: `ACBreakz Cloud ${pcLabel(pc)}`,
     Pages: { Current: "00000000-0000-0000-0000-000000000000",
              Default: pageDirs[0].toLowerCase(),
              Pages: pageDirs.map(p => p.toLowerCase()) },
@@ -284,7 +291,7 @@ function buildProfile(pc) {
 }
 
 /* ---- zip each one (forward slashes + directory entries, as Elgato writes them) ---- */
-for (let pc = 1; pc <= 5; pc++) {
+for (let pc = 1; pc <= 6; pc++) {
   const { OUT_DIR, OUT_FILE } = buildProfile(pc);
   if (existsSync(OUT_FILE)) rmSync(OUT_FILE);
   const zip = new JSZip();

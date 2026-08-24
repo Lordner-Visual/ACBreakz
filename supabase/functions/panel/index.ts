@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
   const isOperator = !!OP_KEY && body.op === OP_KEY;
   if (isOperator) {
     const n = parseInt(String(body.pc), 10);
-    if (!(n >= 1 && n <= 5)) return json({ error: "operator calls must name one PC" }, 400);
+    if (!(n >= 1 && n <= 6)) return json({ error: "operator calls must name one PC" }, 400);
     const allowed =
       body.action === "state" || body.action === "patch" || body.action === "board" ||
       /* FX triggers (stingers, sounds, one-shots) for its own PC */
@@ -75,9 +75,14 @@ Deno.serve(async (req) => {
     if (error) console.error("assets_deselect failed", error.message);
   }
 
+  /* PC 6 ("PC Test") is addressable but deliberately NOT part of 'all'. A staging rig that
+     receives production broadcasts is not a staging rig — an ALL-PCs write mid-test would
+     stamp over whatever was being tried, and the test would look like it failed. Naming pc=6
+     explicitly is the only way to reach it. */
+  const BROADCAST = [1, 2, 3, 4, 5];
   const pcList = (v: unknown) => {
     const n = parseInt(String(v), 10);
-    return n >= 1 && n <= 5 ? [n] : [1, 2, 3, 4, 5];   // 'all' or missing -> every PC
+    return n >= 1 && n <= 6 ? [n] : BROADCAST;         // 'all' or missing -> every LIVE PC
   };
 
   /* "File into any section" makes a NEW ROW POINTING AT THE SAME FILE, so a storage
@@ -165,7 +170,7 @@ Deno.serve(async (req) => {
       if (!body.type) return json({ error: "type required" }, 400);
       const payload = { ...(body.payload ?? {}) };
       const n = parseInt(String(body.pc), 10);
-      if (n >= 1 && n <= 5) payload.pc = n;
+      if (n >= 1 && n <= 6) payload.pc = n;
       const { error } = await sb.from("events").insert({ type: body.type, payload });
       return error ? json({ error: error.message }, 500) : json({ ok: true });
     }

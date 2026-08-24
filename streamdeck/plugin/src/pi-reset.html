@@ -28,7 +28,8 @@
 let ws = null, uuid = null, action = null, settings = {};
 const $ = (s) => document.querySelector(s);
 
-$("#pc").innerHTML = [1, 2, 3, 4, 5].map((n) => `<option value="${n}">PC ${n}</option>`).join("");
+$("#pc").innerHTML = [1, 2, 3, 4, 5, 6].map((n) =>
+  `<option value="${n}">${n === 6 ? "PC Test" : "PC " + n}</option>`).join("");
 
 const push = () => ws && ws.send(JSON.stringify({
   event: "setSettings", context: uuid,

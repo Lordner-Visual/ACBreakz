@@ -36,7 +36,7 @@ const master = await names(m);
 console.log(`master composer: ${master.length} cards — ${JSON.stringify(master)}\n`);
 
 /* every PC dashboard must show exactly the same list */
-for (const pc of [1, 2, 3, 4, 5]) {
+for (const pc of [1, 2, 3, 4, 5, 6]) {
   const p = await ctx.newPage();
   await p.goto(`${HOSTED}/control/pc.html?pc=${pc}`, { waitUntil: "networkidle" });
   await p.waitForSelector("#ctlBoard .team", { timeout: 20000 });

@@ -1,4 +1,4 @@
-/* Verify all five per-PC Stream Deck profiles: layout, plugin wiring, PC scoping,
+/* Verify all six per-PC Stream Deck profiles (PC1-5 live, PC Test staging): layout, plugin wiring, PC scoping,
    and that the URLs baked into them actually work. */
 import { readFileSync } from "fs";
 import JSZip from "jszip";
@@ -9,8 +9,9 @@ const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").sp
 let fails = 0;
 const ok = (n, c) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}`); if (!c) fails++; };
 
-for (let pc = 1; pc <= 5; pc++) {
-  const file = `C:/ACBreakz-Cloud/streamdeck/ACBreakz Cloud PC${pc}.local.streamDeckProfile`;
+const pcLabel = (pc) => (pc === 6 ? "PC Test" : `PC${pc}`);
+for (let pc = 1; pc <= 6; pc++) {
+  const file = `C:/ACBreakz-Cloud/streamdeck/ACBreakz Cloud ${pcLabel(pc)}.local.streamDeckProfile`;
   const zip = await JSZip.loadAsync(readFileSync(file));
   const names = Object.keys(zip.files);
   const pages = [];
@@ -36,7 +37,7 @@ for (let pc = 1; pc <= 5; pc++) {
   pages.forEach(p => Object.values(p).forEach(collect));
   const urls = flat.filter(a => a.UUID === "com.barraider.apininja").map(a => a.Settings.url);
 
-  const head = `PC${pc}`;
+  const head = pcLabel(pc);
   if (pc === 1) {
     ok(`${head} zip uses forward slashes`, !names.some(n => n.includes("\\")));
     /* 4 scenes + 4 animations + 2 page jumps + 3 OBS + dashboard */
@@ -98,7 +99,9 @@ for (let pc = 1; pc <= 5; pc++) {
     ok(`${head} dashboard key uses the Website action (open handles files, not URLs)`,
       main["7,0"]?.UUID === "com.elgato.streamdeck.system.website" &&
       main["7,0"].Settings.openInBrowser === true &&
-      main["7,0"].Settings.path.endsWith(`/control/pc.html?pc=${pc}`));
+      main["7,0"].Settings.path.endsWith(`/control/pc.html?pc=${pc}`) &&
+      /* PC Test points at the staging copy; the live PCs must NOT */
+      (pc === 6) === main["7,0"].Settings.path.includes("/staging/"));
     ok(`${head} TEAMS -> page 2, HIGHLIGHTS -> page 3 (1-based)`,
       main["0,2"]?.Settings.PageIndex === 2 && main["1,2"]?.Settings.PageIndex === 3);
     /* team + highlight keys deliberately STAY on their page — a second deck drives
@@ -129,7 +132,13 @@ for (let pc = 1; pc <= 5; pc++) {
     plugKeys.length === 64 && plugKeys.every(k => Number(k.Settings?.pc) === pc));
   ok(`${head} profile name`, JSON.parse(await zip.file(
       names.find(n => n.endsWith(".sdProfile/manifest.json"))).async("string")).Name
-      === `ACBreakz Cloud PC${pc}`);
+      === `ACBreakz Cloud ${pcLabel(pc)}`);
+  /* Checked for EVERY pc, not just pc 1: the whole point is that PC Test drives the staging
+     copy of the control page while the live PCs drive the deployed one, and an assertion that
+     only ever runs on pc 1 can prove exactly one half of that. */
+  ok(`${head} dashboard key points at the ${pc === 6 ? "STAGING" : "live"} control page`,
+    main["7,0"]?.Settings?.path?.endsWith(`/control/pc.html?pc=${pc}`) === true &&
+    (pc === 6) === main["7,0"].Settings.path.includes("/staging/"));
 }
 
 /* live-fire a couple of PC-scoped URLs and confirm they only touch that PC */
