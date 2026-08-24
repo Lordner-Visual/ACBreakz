@@ -746,11 +746,14 @@
   /* Resolves when the media can actually be painted, rejects when it cannot. decode()
      covers fetch AND decode in one wait; the timeout stops one hung file freezing the
      whole rotation. */
-  function mediaReady(el, ms = 4000) {
+  /* 8s, not 4s, and the reason comes back with the rejection. A stream PC is uploading video
+     while these fetch, with three browser sources sharing the uplink, so 4s was tight enough
+     that ordinary load latency counted as "this file is broken". */
+  function mediaReady(el, ms = 8000) {
     return new Promise((res, rej) => {
-      const t = setTimeout(rej, ms);
+      const t = setTimeout(() => rej("timeout"), ms);
       const ok = () => { clearTimeout(t); res(); };
-      const no = () => { clearTimeout(t); rej(); };
+      const no = () => { clearTimeout(t); rej("error"); };
       if (el.tagName === "IMG") {
         if (el.decode) el.decode().then(ok, no);
         else if (el.complete && el.naturalWidth) ok();
@@ -762,13 +765,36 @@
     });
   }
 
-  /* A URL that has already failed is not going to start working, and re-asking costs a
-     real request every rotation cycle on every source. One orphaned banner — a row that
-     was purged while its entry survived in all five rotations — was measured generating
-     ~330 HTTP 400s an hour, 8,765 in 48 hours, which was 87% of ALL Supabase requests.
-     Remember the failure and never fetch that URL again this session; a genuinely
-     replaced file arrives under a new timestamped URL, and a reload clears this anyway. */
-  const deadMedia = new Set();
+  /* Failed URLs back off; they are NOT blacklisted for the session.
+
+     The original was a Set that never expired, on the reasoning that "a reload clears this
+     anyway" — but an OBS browser source is a session that runs for DAYS. So one slow load
+     (mediaReady rejected at 4s, while the same machine is uploading a stream) removed a
+     banner until somebody physically refreshed the source. That is exactly the "reset the
+     cache and it works for a while" report, and nobody can walk to five PCs to do it.
+
+     Backoff keeps the property that actually mattered. The orphaned banner that generated
+     ~330 requests an hour (8,765 in 48h, 87% of all Supabase traffic) settles at the 30
+     minute cap — about 2 requests an hour per source — while anything transient heals
+     itself within a rotation cycle or two. A hard error waits longer than a timeout,
+     because a 404 is more likely to still be a 404 than a slow fetch is to still be slow. */
+  const MEDIA_BACKOFF = [20e3, 60e3, 5 * 60e3, 15 * 60e3, 30 * 60e3];
+  const mediaFails = new Map();                 // url -> { until, n }
+  const isDeadNow = (url) => {
+    const e = mediaFails.get(url);
+    return !!e && Date.now() < e.until;
+  };
+  const markFailed = (url, hard) => {
+    const e = mediaFails.get(url) ?? { n: -1 };
+    e.n = Math.min(e.n + 1, MEDIA_BACKOFF.length - 1);
+    const wait = MEDIA_BACKOFF[hard ? Math.max(e.n, 2) : e.n];
+    e.until = Date.now() + wait;
+    mediaFails.set(url, e);
+    return wait;
+  };
+  /* one success wipes the history, so a file that was briefly unreachable is a first-class
+     citizen again rather than carrying a long backoff around for the rest of the day */
+  const markOk = (url) => { if (url) mediaFails.delete(url); };
 
   const rotator = {
     list: [], i: -1, timer: null, shownId: null, gen: 0,
@@ -803,7 +829,7 @@
     show(a, tried) {
       const gen = ++this.gen;
       /* known-bad: move on without building an element, so nothing is requested at all */
-      if (a.url && deadMedia.has(a.url)) return this.skipTo(a, tried, gen);
+      if (a.url && isDeadNow(a.url)) return this.skipTo(a, tried, gen);
       const b = document.createElement("div"); b.className = "b";
       if (a.meta?.type === "text" && !a.url) {
         b.innerHTML = `<div class="txt">${(a.meta.text||"").replace(/</g,"&lt;")}</div>`;
@@ -828,15 +854,17 @@
         this.shownId = a.id;
         this.timer = setTimeout(() => this.next(), C.bannerSeconds(a) * 1000);
       };
-      const skip = () => {
-        if (a.url) deadMedia.add(a.url);          // never ask for this one again
-        console.warn("[acbz] banner unusable, skipping for the session:", a.name);
+      const skip = (why) => {
+        if (a.url) {
+          const wait = markFailed(a.url, why === "error");
+          console.warn(`[acbz] banner "${a.name}" ${why}; retrying in ${Math.round(wait / 1000)}s`);
+        }
         this.skipTo(a, tried, gen);
       };
 
       const media = b.querySelector("img,video");
       if (!media) return slide();                 // text banner: nothing to load
-      mediaReady(media).then(slide, skip);
+      mediaReady(media).then(() => { markOk(a.url); slide(); }, skip);
     },
 
     /* move to the next candidate while the failed one is still off-canvas */
@@ -853,8 +881,34 @@
 
   /* ---------------- background (with reframe crop) ---------------- */
   let bgKey = null;
+  let bgWanted = null;
+
+  /* The background is built once per url+crop and then never looked at again — setBackground
+     early-returns on an unchanged key, which is the right call for avoiding a rebuild storm and
+     the wrong one when the single build FAILED. A blip during that one load left the frame
+     empty for the life of the source, with no retry: the other half of "I reset the OBS cache
+     and it came back".
+     So: check periodically that what is on screen is actually painting, and rebuild if not.
+     Cheap (a property read every 20s), silent when healthy, and it cannot loop — a rebuild only
+     happens when the element is genuinely broken, and a broken rebuild backs off with the same
+     table the banners use. */
+  const bgBroken = (el) => {
+    if (!el) return true;
+    if (el.tagName === "VIDEO") return !!el.error || el.readyState < 2;
+    return el.complete && !el.naturalWidth;      // decoded to nothing
+  };
+  if (BG_LAYER) setInterval(() => {
+    if (!bgWanted?.url || isDeadNow(bgWanted.url)) return;
+    const el = $("#bgFrame").querySelector("video,img");
+    if (!bgBroken(el)) { markOk(bgWanted.url); return; }
+    const wait = markFailed(bgWanted.url, !!el?.error);
+    console.warn(`[acbz] background not painting — rebuilding, next check backs off ${Math.round(wait / 1000)}s`);
+    bgKey = null;                                // defeat the early return
+    setBackground(bgWanted);
+  }, 20000);
   function setBackground(bg) {
     if (!BG_LAYER) return;      // the hud/fx sources never render it — do not fetch it
+    bgWanted = bg ?? null;      // what SHOULD be on screen, for the watchdog below
     const key = bg?.url ? bg.url + JSON.stringify(bg.crop ?? null) : null;
     if (key === bgKey) return; bgKey = key;
     const f = $("#bgFrame");
