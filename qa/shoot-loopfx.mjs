@@ -4,6 +4,9 @@
    Runs on one idle PC and restores it. */
 import { chromium } from "playwright";
 import { readFileSync } from "fs";
+/* refuses to run while a live PC looks busy — these suites mutate the production rows */
+import { assertIdle } from "./lib/live-guard.mjs";
+await assertIdle();
 
 const HOSTED = "https://lordner-visual.github.io/ACBreakz";
 const PC = Number(process.argv[2]) || 5;

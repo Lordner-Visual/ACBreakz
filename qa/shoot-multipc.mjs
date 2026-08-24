@@ -11,6 +11,9 @@
 
    Snapshots every PC (1-5 plus PC Test) and restores them. */
 import { readFileSync } from "fs";
+/* refuses to run while a live PC looks busy — these suites mutate the production rows */
+import { assertIdle } from "./lib/live-guard.mjs";
+await assertIdle();
 
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
   .filter(l => l.includes("=") && !l.startsWith("#"))

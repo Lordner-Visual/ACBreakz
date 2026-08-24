@@ -2,6 +2,7 @@
    and that the URLs baked into them actually work. */
 import { readFileSync } from "fs";
 import JSZip from "jszip";
+import { isIdle, liveness, describe } from "./lib/live-guard.mjs";
 
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
   .filter(l => l.includes("=") && !l.startsWith("#"))
@@ -141,6 +142,15 @@ for (let pc = 1; pc <= 6; pc++) {
     (pc === 6) === main["7,0"].Settings.path.includes("/staging/"));
 }
 
+/* Live-fire a couple of PC-scoped URLs. Everything above is a static read of the built
+   profiles and disturbs nothing, so only THIS part waits for the rigs to be idle — guarding
+   the whole suite would mean you cannot check a profile while anyone is streaming. */
+if (!await isIdle()) {
+  console.log(`
+SKIPPED the live-fire section — ${describe(await liveness())}.`);
+  console.log(fails ? `DONE with ${fails} FAILURES` : "DONE all ok (static checks only)");
+  process.exit(fails ? 1 : 0);
+}
 /* live-fire a couple of PC-scoped URLs and confirm they only touch that PC */
 const B = `${env.SUPABASE_URL}/functions/v1/deck?key=${env.DECK_KEY}`;
 const REST = { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${env.SUPABASE_ANON_KEY}` };

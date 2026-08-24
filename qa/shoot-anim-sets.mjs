@@ -7,6 +7,9 @@
    purges them afterwards — the reference-counted purge protects the shared files.
    Runs on PC 4 and PC 5 and restores both. */
 import { readFileSync } from "fs";
+/* refuses to run while a live PC looks busy — these suites mutate the production rows */
+import { assertIdle } from "./lib/live-guard.mjs";
+await assertIdle();
 
 const A = Number(process.argv[2]) || 5;      // the PC we switch
 const B = Number(process.argv[3]) || 4;      // the PC that must NOT move
