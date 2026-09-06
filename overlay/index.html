@@ -1216,9 +1216,24 @@
     rotator.setList(s.banners?.rotation || []);
   }
   const seen = new Set();
+  /* The age filter compared the PC OWN clock against the server timestamp, so a machine
+     running fast discarded every event as "stale" — silently, with nothing in any log, while
+     the deck, the server, the socket and the board were all provably healthy. Measured on a
+     live rig: PC4 sat at +141s and threw away every stinger and every sound.
+
+     Network latency is never negative, so the SMALLEST (now - created_at) this page has ever
+     seen is the best available estimate of its offset from the database clock. Measuring age
+     against that baseline keeps what the filter is FOR — ignore genuinely old events — while
+     making it immune to a skewed clock. The first event always passes, which is correct: it
+     is a real event, and it is what calibrates the baseline. */
+  let clockOffset = null;
   function handleEvent(ev) {
     if (!ev || seen.has(ev.id)) return; seen.add(ev.id);
-    if (ev.created_at && Date.now() - new Date(ev.created_at).getTime() > 20000) return;
+    if (ev.created_at) {
+      const raw = Date.now() - new Date(ev.created_at).getTime();
+      if (clockOffset === null || raw < clockOffset) clockOffset = raw;
+      if (raw - clockOffset > 20000) return;
+    }
     const p = ev.payload || {};
     if (p.pc && Number(p.pc) !== PC) return;        // v2: not for this PC
     switch (ev.type) {
