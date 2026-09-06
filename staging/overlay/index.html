@@ -1251,21 +1251,72 @@
   if (C.SUPABASE_URL && C.SUPABASE_ANON_KEY) {
     const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
     window.__sb = sb;
-    sb.from("stream_state").select("data").eq("id", PC).single()
-      .then(({data}) => applyState(data?.data));
-    sb.channel("db")
-      /* Filter server-side: unfiltered, all 15 sources (5 PCs x 3 layers) received every
-         PC's state and threw away 14 of 15. `events` cannot be filtered the same way —
-         it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
-         filters only work on real columns — so that one still discards client-side. */
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
-           filter:`id=eq.${PC}`}, (p)=>applyState(p.new.data))
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
-          (p)=>handleEvent(p.new))
-      .subscribe();
-    sb.channel("presence:overlays",{config:{presence:{key:`pc-${PC}-${layer}`}}})
-      .subscribe((st)=>{ if(st==="SUBSCRIBED")
-        sb.channel("presence:overlays").track({pc:PC, layer, at:Date.now()}); });
+      /* A dropped websocket is the ONE way this design goes stale, and nothing used to notice:
+         `.subscribe()` was called with no status handler, there was no resubscribe, and the row
+         was read exactly once at load. So when a socket died the page stayed alive and
+         perfectly wrong — the deck press still reached the server, board_action still ran,
+         deck_log still recorded it, and the stream showed nothing. Both the stinger graphic and
+         its sound ride this socket, so "stingers AND their sound stopped, but the deck still
+         works" is the signature; that PC vanishing from presence is the tell from outside.
+         Reloading fixed it, which is precisely the manual OBS cache reset we are retiring. */
+      let dbCh = null, presCh = null, retry = 0;
+
+      const readState = () => sb.from("stream_state").select("data").eq("id", PC).single()
+        .then(({ data }) => { if (data && data.data) applyState(data.data); })
+        .catch(() => {});
+
+      function subscribeDb() {
+        if (dbCh) { try { sb.removeChannel(dbCh); } catch (e) {} dbCh = null; }
+        dbCh = sb.channel("db")
+          /* Filter server-side: unfiltered, all 18 sources (6 PCs x 3 layers) received every
+             PC's state and threw away 17 of 18. `events` cannot be filtered the same way —
+             it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
+             filters only work on real columns — so that one still discards client-side. */
+          .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
+               filter:`id=eq.${PC}`}, (p)=>applyState(p.new.data))
+          .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
+              (p)=>handleEvent(p.new))
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") {
+              retry = 0;
+              readState();            // never trust the cached board across a gap
+            } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+              const wait = Math.min(30000, 1000 * Math.pow(2, retry++));
+              console.warn(`[acbz] realtime ${status} — resubscribing in ${Math.round(wait / 1000)}s`);
+              setTimeout(subscribeDb, wait);
+            }
+          });
+      }
+      function subscribePresence() {
+        if (presCh) { try { sb.removeChannel(presCh); } catch (e) {} presCh = null; }
+        /* hold the reference and track on IT — the old code called sb.channel(name) a second
+           time inside its own callback, which hands back a different channel object */
+        presCh = sb.channel("presence:overlays", { config: { presence: { key: `pc-${PC}-${layer}` } } });
+        presCh.subscribe((st) => { if (st === "SUBSCRIBED") presCh.track({ pc: PC, layer, at: Date.now() }); });
+      }
+      subscribeDb();
+      subscribePresence();
+
+      /* A channel can sit un-joined without ever reporting an error, and the socket can be down
+         while the page carries on happily. Cheap property reads every 20s; rebuilds only when
+         genuinely broken. This is also what puts a PC back on the presence list, which is how
+         you can tell from outside that a rig has gone deaf. */
+      setInterval(() => {
+        const socketOk = sb.realtime && sb.realtime.isConnected ? sb.realtime.isConnected() : true;
+        if (!socketOk || (dbCh && dbCh.state !== "joined")) {
+          console.warn("[acbz] realtime unhealthy — rebuilding subscription");
+          subscribeDb();
+        }
+        if (!socketOk || (presCh && presCh.state !== "joined")) subscribePresence();
+      }, 20000);
+
+      /* Belt and braces: a channel can report "joined" and still deliver nothing. Re-reading one
+         small row every 3 minutes bounds how long a source can be silently stale. Safe to
+         repeat — applyState is idempotent, applyBoardParts early-returns on an unchanged key,
+         and rotator.setList ignores an identical list, so it cannot restart the banners or
+         re-arm a dim. It does NOT replay events: a stinger missed while deaf is gone, but the
+         board, banners and styling all self-correct. */
+      setInterval(readState, 180000);
   } else {
     try { applyState(JSON.parse(localStorage.getItem("acbz-state"))); } catch(e){}
     const bus = new BroadcastChannel("acbz-bus");
