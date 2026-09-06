@@ -1260,6 +1260,12 @@
          works" is the signature; that PC vanishing from presence is the tell from outside.
          Reloading fixed it, which is precisely the manual OBS cache reset we are retiring. */
       let dbCh = null, presCh = null, retry = 0;
+      /* Sampled fingerprint of the running page. Presence is the only channel back from a
+         stream PC, so it is the only way to answer "did that rig actually take the new build?"
+         without walking to it. Sampling every 101st char keeps it O(n/101). */
+      const BUILD = (() => { const h0 = document.documentElement.innerHTML; let h = 0;
+        for (let i = 0; i < h0.length; i += 101) h = (Math.imul(31, h) + h0.charCodeAt(i)) | 0;
+        return (h >>> 0).toString(36).slice(0, 6); })();
 
       const readState = () => sb.from("stream_state").select("data").eq("id", PC).single()
         .then(({ data }) => { if (data && data.data) applyState(data.data); })
@@ -1292,10 +1298,21 @@
         /* hold the reference and track on IT — the old code called sb.channel(name) a second
            time inside its own callback, which hands back a different channel object */
         presCh = sb.channel("presence:overlays", { config: { presence: { key: `pc-${PC}-${layer}` } } });
-        presCh.subscribe((st) => { if (st === "SUBSCRIBED") presCh.track({ pc: PC, layer, at: Date.now() }); });
+        presCh.subscribe((st) => { if (st === "SUBSCRIBED") trackSelf(); });
+      }
+      /* Report the DATA channel state too. presence and db are separate channels on one
+         socket, so presence can be perfectly healthy while db is not joined and no event ever
+         arrives - which looks exactly like "the stingers stopped" from the operator chair.
+         Re-tracked on a timer so `at` stays fresh enough to expose a skewed PC clock:
+         handleEvent discards any event more than 20s old BY THE LOCAL CLOCK. */
+      function trackSelf() {
+        if (!presCh) return;
+        try { presCh.track({ pc: PC, layer, at: Date.now(), build: BUILD,
+                             db: dbCh ? dbCh.state : "none" }); } catch (e) {}
       }
       subscribeDb();
       subscribePresence();
+      setInterval(trackSelf, 30000);
 
       /* A channel can sit un-joined without ever reporting an error, and the socket can be down
          while the page carries on happily. Cheap property reads every 20s; rebuilds only when
