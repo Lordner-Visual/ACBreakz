@@ -1387,6 +1387,20 @@
          re-arm a dim. It does NOT replay events: a stinger missed while deaf is gone, but the
          board, banners and styling all self-correct. */
       setInterval(readState, 180000);
+
+      /* Diagnostic hooks. The realtime bookkeeping lives in a closure, so when the
+         joined-but-silent detector failed to fire there was no way to ask WHY without
+         redeploying — which is how a five-minute check became a twenty-minute one.
+         __acbzDiag() reports the state; __acbzPoll() runs the poll on demand instead of
+         waiting out the 3-minute timer. Both are read-only and cost nothing when unused. */
+      window.__acbzDiag = () => ({
+        lastSeenUpdatedAt, lastStateAt, lastEventAt,
+        sinceStateMs: lastStateAt ? Date.now() - lastStateAt : null,
+        sinceEventMs: lastEventAt ? Date.now() - lastEventAt : null,
+        db: dbCh ? dbCh.state : "none", pres: presCh ? presCh.state : "none",
+        pgBindings: dbCh && dbCh.bindings ? (dbCh.bindings.postgres_changes || []).length : -1,
+      });
+      window.__acbzPoll = readState;
   } else {
     try { applyState(JSON.parse(localStorage.getItem("acbz-state"))); } catch(e){}
     const bus = new BroadcastChannel("acbz-bus");
