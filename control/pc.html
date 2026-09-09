@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../overlay/config.js"></script>
 <script src="op.js"></script>
+<script src="composer.js"></script>
 <style>
   :root{--navy-deep:#071527;--navy:#0B1E33;--steel:#274A66;--teal:#0D3540;
     --copper:#B87333;--gold:#D9A441;--bone:#EFE9DC;--volt:#35A7FF;--danger:#E5484D;--ok:#3FB68B}
@@ -146,13 +147,38 @@
 </section>
 
 <section id="tab-banners">
-  <h2>Banner composer — type it, save it, add it to this PC's rotation</h2>
+  <h2>Banner composer — type it, style it, add it to this PC’s rotation</h2>
   <canvas id="compCanvas" width="1080" height="97"
     style="width:100%;max-width:1080px;border:1px solid #1E3A52;border-radius:8px;background:#06111b"></canvas>
-  <div class="row" style="margin-top:8px">
-    <input type="text" id="compText" placeholder="Type the banner text" style="flex:1;min-width:240px">
+  <div class="row" style="margin-top:8px;align-items:flex-start">
+    <textarea id="compText" rows="2" placeholder='Type the banner text — press Enter for a second line'
+      style="flex:1;min-width:260px;resize:vertical;font:inherit"></textarea>
     <button class="btn gold" id="compSave">Save to library</button>
     <span class="tag" id="compDur">7s on stream</span>
+  </div>
+  <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap">
+    <label class="tag">Font
+      <select id="compFont" style="margin-left:6px"></select></label>
+    <label class="tag">Style
+      <select id="compPreset" style="margin-left:6px"></select></label>
+    <label class="tag">Text <input type="color" id="compColor" value="#EFE9DC" style="margin-left:6px;width:34px;padding:0"></label>
+    <label class="tag">Accent <input type="color" id="compAccent" value="#35A7FF" style="margin-left:6px;width:34px;padding:0"></label>
+    <label class="tag"><input type="checkbox" id="compUpper" checked> UPPERCASE</label>
+    <label class="tag"><input type="checkbox" id="compScrim" checked> Darken behind</label>
+  </div>
+  <div class="row" style="margin-top:6px;gap:10px;flex-wrap:wrap">
+    <label class="tag"><input type="checkbox" id="compAuto" checked> Auto-fit size</label>
+    <label class="tag">Size <input type="range" id="compSize" min="10" max="140" value="44" style="width:120px;margin-left:6px">
+      <b id="compSizeV">44</b></label>
+    <label class="tag">Line spacing <input type="range" id="compLine" min="70" max="200" value="102" style="width:110px;margin-left:6px">
+      <b id="compLineV">1.02</b></label>
+    <label class="tag">Kerning <input type="range" id="compTrack" min="-6" max="24" value="1" style="width:110px;margin-left:6px">
+      <b id="compTrackV">1</b></label>
+    <label class="tag">Height <input type="range" id="compScaleY" min="60" max="180" value="100" style="width:110px;margin-left:6px">
+      <b id="compScaleYV">1.00</b></label>
+    <label class="tag">Shift up/down <input type="range" id="compShiftY" min="-40" max="40" value="0" style="width:110px;margin-left:6px">
+      <b id="compShiftYV">0</b></label>
+    <button class="btn" id="compReset">Reset styling</button>
   </div>
   <h2>Composer background</h2>
   <div class="row" id="compBGs" style="gap:6px"></div>
@@ -308,38 +334,72 @@
     $("#ctlBoard").appendChild(d);
   });
 
-  /* ---------- banner composer (same renderer as the master panel) ---------- */
-  const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {} };
+  /* ---------- banner composer ----------
+     Rendering lives in control/composer.js, shared with the master panel so the two cannot
+     drift. The function stays named draw() because render() and the BG picker already call it.
+     Only the SAVE path differs here: an operator uploads through a signed url from the panel
+     fn rather than holding a write key. */
+  const CZ = window.ACBZ_COMPOSER;
+  const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {}, s: CZ.settingsFrom({}) };
   const cimg = (url) => { if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin="anonymous";
     i.src = url; i.onload = draw; comp.imgs[url] = i; } return comp.imgs[url]; };
-  function draw(){
-    const ctx = comp.canvas.getContext("2d"), W=1080, H=97;
-    ctx.clearRect(0,0,W,H);
-    if (comp.bgUrl && cimg(comp.bgUrl).naturalWidth) {
-      const im = comp.imgs[comp.bgUrl], s = Math.max(W/im.naturalWidth, H/im.naturalHeight);
-      ctx.drawImage(im, (W-im.naturalWidth*s)/2, (H-im.naturalHeight*s)/2, im.naturalWidth*s, im.naturalHeight*s);
-    } else {
-      const g = ctx.createLinearGradient(0,0,W,0);
-      g.addColorStop(0,"#071527"); g.addColorStop(.5,"#274A66"); g.addColorStop(1,"#071527");
-      ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-    }
-    const sc = ctx.createLinearGradient(0,0,0,H);
-    sc.addColorStop(0,"rgba(4,10,18,.36)"); sc.addColorStop(1,"rgba(4,10,18,.62)");
-    ctx.fillStyle=sc; ctx.fillRect(0,0,W,H);
-    const text = ($("#compText").value.trim() || "YOUR BANNER TEXT").toUpperCase();
-    let size = 44; ctx.textAlign="center"; ctx.textBaseline="middle";
-    do { ctx.font = `700 ${size}px "Arial Black","Segoe UI",sans-serif`; size -= 2; }
-    while (ctx.measureText(text).width > W-80 && size > 16);
-    ctx.save(); ctx.shadowColor="rgba(53,167,255,.65)"; ctx.shadowBlur=18;
-    ctx.fillStyle="#EFE9DC"; ctx.fillText(text, W/2, H/2+2); ctx.restore();
-    ctx.save(); ctx.shadowColor="#000"; ctx.shadowOffsetY=3;
-    ctx.fillStyle="#EFE9DC"; ctx.fillText(text, W/2, H/2+2); ctx.restore();
+
+  const compFontSel = $("#compFont"), compPresetSel = $("#compPreset");
+  compFontSel.innerHTML = Object.entries(CZ.FONTS)
+    .map(([k, f]) => `<option value="${k}">${esc(f.label)}</option>`).join("");
+  compPresetSel.innerHTML = Object.entries(CZ.PRESETS)
+    .map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
+
+  function readCompUI(){
+    comp.s = CZ.settingsFrom({
+      text: $("#compText").value,
+      font: compFontSel.value, preset: compPresetSel.value,
+      color: $("#compColor").value, accent: $("#compAccent").value,
+      upper: $("#compUpper").checked, scrim: $("#compScrim").checked,
+      autofit: $("#compAuto").checked,
+      size: +$("#compSize").value,
+      lineHeight: +$("#compLine").value / 100,
+      tracking: +$("#compTrack").value,
+      scaleY: +$("#compScaleY").value / 100,
+      offsetY: +$("#compShiftY").value,
+    });
+    $("#compSizeV").textContent   = comp.s.size;
+    $("#compLineV").textContent   = comp.s.lineHeight.toFixed(2);
+    $("#compTrackV").textContent  = comp.s.tracking;
+    $("#compScaleYV").textContent = comp.s.scaleY.toFixed(2);
+    $("#compShiftYV").textContent = (comp.s.offsetY > 0 ? "+" : "") + comp.s.offsetY;
+    $("#compSize").disabled = comp.s.autofit;
+    return comp.s;
+  }
+  async function draw(){
+    const s = readCompUI();
+    /* a web font that has not arrived yet bakes the WRONG typeface into a PNG the operator
+       cannot tell is wrong — always await it before painting */
+    await CZ.ensureFont(s.font, s.autofit ? 140 : s.size);
+    const im = comp.bgUrl ? cimg(comp.bgUrl) : null;
+    const out = CZ.draw(comp.canvas.getContext("2d"),
+      { W: 1080, H: 97, bgImage: im && im.naturalWidth ? im : null, settings: s });
+    if (s.autofit) $("#compSizeV").textContent = out.size + " (auto)";
     const t = $("#compText").value.trim();
     $("#compDur").textContent = C.bannerSeconds({meta:{type:"text",text:t||"x"}}) + "s on stream";
   }
-  $("#compText").oninput = draw;
+  for (const id of ["#compText","#compFont","#compPreset","#compColor","#compAccent","#compUpper",
+                    "#compScrim","#compAuto","#compSize","#compLine","#compTrack","#compScaleY","#compShiftY"]) {
+    const el = $(id); el.oninput = draw; el.onchange = draw;
+  }
+  $("#compReset").onclick = () => {
+    const d = CZ.DEFAULTS;
+    compFontSel.value = d.font; compPresetSel.value = d.preset;
+    $("#compColor").value = d.color; $("#compAccent").value = d.accent;
+    $("#compUpper").checked = d.upper; $("#compScrim").checked = d.scrim;
+    $("#compAuto").checked = d.autofit; $("#compSize").value = d.size;
+    $("#compLine").value = Math.round(d.lineHeight*100); $("#compTrack").value = d.tracking;
+    $("#compScaleY").value = Math.round(d.scaleY*100); $("#compShiftY").value = d.offsetY;
+    draw();
+  };
   $("#compSave").onclick = () => {
     const text = $("#compText").value.trim(); if (!text) return toast("Type the banner text first");
+    const style = Object.assign({}, comp.s, { text });      // the recipe, for re-editing later
     comp.canvas.toBlob(async (blob) => {
       const path = `banners/composed-${Date.now()}.png`;
       const {data:signed, error:sErr} = await call({ action:"sign_upload", path });
@@ -350,7 +410,8 @@
       if (error) return toast("Upload failed: " + error.message);
       const url = sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl;
       const {error:aErr} = await call({ action:"asset",
-        asset:{ kind:"banner", name:text.slice(0,40), url, meta:{type:"text", text} } });
+        asset:{ kind:"banner", name:text.replace(/\n/g," ").slice(0,40), url,
+                meta:{type:"text", text, style} } });
       if (aErr) return toast("Save failed: " + aErr.message);
       await loadAssets(); toast("Saved — add it to the rotation below");
     }, "image/png");

@@ -22,7 +22,13 @@ import { createHash } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const ROOT = process.env.ACBZ_ROOT ?? "C:/ACBreakz-Cloud";
-const PAIRS = [["staging/overlay", "overlay"], ["staging/control", "control"]];
+const ALL_PAIRS = [["staging/overlay", "overlay"], ["staging/control", "control"]];
+/* --only control ships a panel change WITHOUT touching a live stream: OBS loads overlay/, not
+   control/, so a control-only promotion cannot reload anything on air. That distinction is the
+   difference between "wait for the show to end" and "ship it now". */
+const ONLY = (() => { const i = process.argv.indexOf("--only"); return i >= 0 ? process.argv[i + 1] : null; })();
+const PAIRS = ONLY ? ALL_PAIRS.filter(([, to]) => to === ONLY) : ALL_PAIRS;
+if (ONLY && !PAIRS.length) { console.log(`--only ${ONLY}: expected "overlay" or "control"`); process.exit(1); }
 const LIVE_PCS = [1, 2, 3, 4, 5];          // PC 6 is the staging rig; it is never "live"
 const IDLE_MINUTES = Number(process.env.ACBZ_IDLE_MINUTES ?? 30);
 const MARKER = `${ROOT}/staging/PROMOTE_AT`;
@@ -112,7 +118,12 @@ console.log(`  overlay sources present: ${onlineLive.length ? onlineLive.map(p =
 console.log(`  boards touched in the last ${IDLE_MINUTES}m: ` +
   (recent.length ? recent.map(r => `PC${r.id} ${Math.round((now - Date.parse(r.updated_at)) / 60000)}m ago`).join(", ") : "none"));
 
-const busy = onlineLive.length > 0 || recent.length > 0;
+const touchesOverlay = changes.some(c => c.to.startsWith("overlay/"));
+/* Refuse only when a reload is actually possible. A control-only promotion changes pages that
+   no OBS source has open, so blocking it on "a PC looks live" would be superstition. */
+const busy = touchesOverlay && (onlineLive.length > 0 || recent.length > 0);
+if (!touchesOverlay && changes.length)
+  console.log("  (control-only: no OBS source loads these, so nothing on air reloads)");
 if (CHECK) {
   console.log(`\nverdict: ${busy ? "NOT SAFE — something looks live" : "safe to promote"}`);
   process.exit(0);
