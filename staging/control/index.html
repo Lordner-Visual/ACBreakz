@@ -248,6 +248,8 @@
       <b id="compTrackV">1</b></label>
     <label class="tag">Height <input type="range" id="compScaleY" min="60" max="180" value="100" style="width:110px;margin-left:6px">
       <b id="compScaleYV">1.00</b></label>
+    <label class="tag">Shift up/down <input type="range" id="compShiftY" min="-40" max="40" value="0" style="width:110px;margin-left:6px">
+      <b id="compShiftYV">0</b></label>
     <button class="btn" id="compReset">Reset styling</button>
   </div>
   <h2>Composer background — template, upload, or AI art</h2>
@@ -1020,11 +1022,13 @@
       lineHeight: +$("#compLine").value / 100,
       tracking: +$("#compTrack").value,
       scaleY: +$("#compScaleY").value / 100,
+      offsetY: +$("#compShiftY").value,
     });
     $("#compSizeV").textContent   = comp.s.size;
     $("#compLineV").textContent   = comp.s.lineHeight.toFixed(2);
     $("#compTrackV").textContent  = comp.s.tracking;
     $("#compScaleYV").textContent = comp.s.scaleY.toFixed(2);
+    $("#compShiftYV").textContent = (comp.s.offsetY > 0 ? "+" : "") + comp.s.offsetY;
     $("#compSize").disabled = comp.s.autofit;
     return comp.s;
   }
@@ -1058,7 +1062,7 @@
     wireDeletes(); wireHides();
   }
   for (const id of ["#compText","#compFont","#compPreset","#compColor","#compAccent","#compUpper",
-                    "#compScrim","#compAuto","#compSize","#compLine","#compTrack","#compScaleY"]) {
+                    "#compScrim","#compAuto","#compSize","#compLine","#compTrack","#compScaleY","#compShiftY"]) {
     const el = $(id); el.oninput = drawComposer; el.onchange = drawComposer;
   }
   $("#compReset").onclick = () => {
@@ -1068,7 +1072,7 @@
     $("#compUpper").checked = d.upper; $("#compScrim").checked = d.scrim;
     $("#compAuto").checked = d.autofit; $("#compSize").value = d.size;
     $("#compLine").value = Math.round(d.lineHeight*100); $("#compTrack").value = d.tracking;
-    $("#compScaleY").value = Math.round(d.scaleY*100);
+    $("#compScaleY").value = Math.round(d.scaleY*100); $("#compShiftY").value = d.offsetY;
     drawComposer();
   };
   $("#compSave").onclick = () => {

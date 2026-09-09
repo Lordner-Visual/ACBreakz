@@ -170,7 +170,7 @@
 
   const DEFAULTS = {
     text: "", font: "system", preset: "classic",
-    size: 44, autofit: true, lineHeight: 1.02, tracking: 1, scaleY: 1,
+    size: 44, autofit: true, lineHeight: 1.02, tracking: 1, scaleY: 1, offsetY: 0,
     upper: true, color: "#EFE9DC", accent: "#35A7FF", scrim: true,
   };
   const settingsFrom = (o) => Object.assign({}, DEFAULTS, o || {});
@@ -236,6 +236,9 @@
     const painter = (PRESETS[s.preset] || PRESETS.classic).paint;
 
     ctx.save();
+    /* Nudge first, in REAL pixels: inside the scaleY transform an offset would be multiplied
+       by the stretch, so the same slider would move the text further at 1.8x than at 0.6x. */
+    if (s.offsetY) ctx.translate(0, s.offsetY);
     /* "font height": stretch vertically about the band's middle without touching width */
     if (s.scaleY !== 1) { ctx.translate(0, H / 2); ctx.scale(1, s.scaleY); ctx.translate(0, -H / 2); }
     lines.forEach((line, i) => {
