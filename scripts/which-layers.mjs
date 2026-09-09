@@ -33,7 +33,7 @@ await new Promise((resolve) => {
           const sk = m.at - Date.now();
           if (!skew.has(pc) || Math.abs(sk) < Math.abs(skew.get(pc))) skew.set(pc, sk);
         }
-        if (m.build) info.set(pc, { build: m.build, db: m.db });
+        if (m.build) info.set(pc, { build: m.build, db: m.db, evAge: m.evAge, stAge: m.stAge });
       }
   };
   ch.on("presence", { event: "sync" }, read).subscribe((s) => {
@@ -56,7 +56,13 @@ for (const pc of [1, 2, 3, 4, 5, 6]) {
     : sk > 20000 ? `   CLOCK +${Math.round(sk / 1000)}s  <-- DROPS EVERY STINGER`
     : Math.abs(sk) < 60000 ? `   clock ${sk > 0 ? "+" : ""}${Math.round(sk / 1000)}s`
     : `   last tracked ${Math.round(-sk / 60000)}m ago`;
-  const build = nfo ? `   build=${nfo.build}` + (nfo.db && nfo.db !== "joined" ? `  DATA CHANNEL ${nfo.db} <-- deaf` : "  data ok")
+  /* evAge/stAge = seconds since this rig last RECEIVED a realtime message. Rising without
+     limit while the server log shows traffic is the definition of a deaf rig. */
+  const heard = !nfo ? "" :
+    (nfo.stAge == null && nfo.evAge == null) ? "   heard nothing yet"
+      : `   last heard state ${nfo.stAge == null ? "never" : nfo.stAge + "s"}` +
+        `, event ${nfo.evAge == null ? "never" : nfo.evAge + "s"}`;
+  const build = nfo ? `   build=${nfo.build}` + (nfo.db && nfo.db !== "joined" ? `  DATA CHANNEL ${nfo.db} <-- deaf` : "  data ok") + heard
                     : "   build=? (pre-instrumentation)";
   console.log(`  PC${pc === 6 ? " Test" : pc}  [${want.map(l => s.has(l) || s.has("all") ? l : "----").join(" ")}]` +
     (missing.length ? `   <-- MISSING: ${missing.join(", ")}` : "   all three up") + build + clock);

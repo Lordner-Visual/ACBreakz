@@ -1275,12 +1275,20 @@
          works" is the signature; that PC vanishing from presence is the tell from outside.
          Reloading fixed it, which is precisely the manual OBS cache reset we are retiring. */
       let dbCh = null, presCh = null, retry = 0;
+      let lastEventAt = 0, lastStateAt = 0;
       /* Sampled fingerprint of the running page. Presence is the only channel back from a
          stream PC, so it is the only way to answer "did that rig actually take the new build?"
          without walking to it. Sampling every 101st char keeps it O(n/101). */
-      const BUILD = (() => { const h0 = document.documentElement.innerHTML; let h = 0;
-        for (let i = 0; i < h0.length; i += 101) h = (Math.imul(31, h) + h0.charCodeAt(i)) | 0;
-        return (h >>> 0).toString(36).slice(0, 6); })();
+      /* Fingerprint of the SOURCE file, not the live DOM. The first cut hashed
+         document.documentElement.innerHTML, which mutates every time a board class, a banner
+         element or a video src changes — so two rigs on identical code reported different
+         "builds" and the field was worse than useless, it was misleading. Filled in
+         asynchronously from the same no-store fetch the self-update poller uses. */
+      let BUILD = "?";
+      fetch("index.html?cb=" + Date.now(), { cache: "no-store" }).then(r => r.text()).then((t) => {
+        let h = 0; for (let i = 0; i < t.length; i += 101) h = (Math.imul(31, h) + t.charCodeAt(i)) | 0;
+        BUILD = (h >>> 0).toString(36).slice(0, 6);
+      }).catch(() => {});
 
       const readState = () => sb.from("stream_state").select("data").eq("id", PC).single()
         .then(({ data }) => { if (data && data.data) applyState(data.data); })
@@ -1294,9 +1302,9 @@
              it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
              filters only work on real columns — so that one still discards client-side. */
           .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
-               filter:`id=eq.${PC}`}, (p)=>applyState(p.new.data))
+               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now(); applyState(p.new.data); })
           .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
-              (p)=>handleEvent(p.new))
+              (p)=>{ lastEventAt = Date.now(); handleEvent(p.new); })
           .subscribe((status) => {
             if (status === "SUBSCRIBED") {
               retry = 0;
@@ -1323,7 +1331,13 @@
       function trackSelf() {
         if (!presCh) return;
         try { presCh.track({ pc: PC, layer, at: Date.now(), build: BUILD,
-                             db: dbCh ? dbCh.state : "none" }); } catch (e) {}
+                             db: dbCh ? dbCh.state : "none",
+                             /* seconds since this page last RECEIVED a realtime message of each
+                                kind. A rig that is deaf shows these climbing without limit while
+                                the server log proves traffic was sent to it. */
+                             evAge: lastEventAt ? Math.round((Date.now() - lastEventAt) / 1000) : null,
+                             stAge: lastStateAt ? Math.round((Date.now() - lastStateAt) / 1000) : null,
+                           }); } catch (e) {}
       }
       subscribeDb();
       subscribePresence();
