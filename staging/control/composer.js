@@ -218,7 +218,9 @@
     const maxW = W - 80, maxH = H - 10;
     let size = clamp(s.size | 0, 8, 200);
     if (s.autofit) {
-      size = Math.min(200, Math.max(8, size));
+      /* Start LARGE and shrink. Starting from the slider only ever shrank, so "auto-fit" left
+         a short line floating at 44px in a band it could have filled. */
+      size = 160;
       for (; size > 8; size -= 1) {
         setFont(size);
         const widest = Math.max.apply(null, lines.map(l => ctx.measureText(l).width));
