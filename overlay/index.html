@@ -1276,6 +1276,9 @@
          Reloading fixed it, which is precisely the manual OBS cache reset we are retiring. */
       let dbCh = null, presCh = null, retry = 0;
       let lastEventAt = 0, lastStateAt = 0;
+      /* newest data.updatedAt realtime has actually DELIVERED — the yardstick for catching a
+         channel that reports "joined" while delivering nothing */
+      let lastSeenUpdatedAt = 0;
       /* Sampled fingerprint of the running page. Presence is the only channel back from a
          stream PC, so it is the only way to answer "did that rig actually take the new build?"
          without walking to it. Sampling every 101st char keeps it O(n/101). */
@@ -1291,7 +1294,23 @@
       }).catch(() => {});
 
       const readState = () => sb.from("stream_state").select("data").eq("id", PC).single()
-        .then(({ data }) => { if (data && data.data) applyState(data.data); })
+        .then(({ data }) => {
+          if (!data || !data.data) return;
+          const u = Number(data.data.updatedAt) || 0;
+          /* THE case the health tick cannot see. A channel can sit in state "joined" and quietly
+             deliver nothing at all — measured live: PC2 took 25 dispatched stingers over an hour
+             and rendered none, while reporting joined with a healthy clock, and only a reload
+             fixed it. Checking the channel state is useless here because the state is the thing
+             that is wrong. So: if the row has moved on past anything realtime handed us AND
+             realtime has been silent, the socket is lying — tear the channel down and rebuild. */
+          if (u > lastSeenUpdatedAt && lastStateAt && Date.now() - lastStateAt > 60000) {
+            console.warn("[acbz] realtime reports joined but missed a write — rebuilding");
+            lastSeenUpdatedAt = u;
+            subscribeDb();
+          }
+          if (u > lastSeenUpdatedAt) lastSeenUpdatedAt = u;
+          applyState(data.data);
+        })
         .catch(() => {});
 
       function subscribeDb() {
@@ -1302,12 +1321,17 @@
              it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
              filters only work on real columns — so that one still discards client-side. */
           .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
-               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now(); applyState(p.new.data); })
+               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now();
+                 const u = Number(p.new.data && p.new.data.updatedAt) || 0;
+                 if (u > lastSeenUpdatedAt) lastSeenUpdatedAt = u;
+                 applyState(p.new.data); })
           .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
-              (p)=>{ lastEventAt = Date.now(); handleEvent(p.new); })
+              (p)=>{ lastEventAt = Date.now(); lastStateAt = lastStateAt || Date.now();
+                 handleEvent(p.new); })
           .subscribe((status) => {
             if (status === "SUBSCRIBED") {
               retry = 0;
+              lastStateAt = Date.now();   // a fresh join is not silence; do not self-rebuild on it
               readState();            // never trust the cached board across a gap
             } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
               const wait = Math.min(30000, 1000 * Math.pow(2, retry++));
@@ -1363,6 +1387,20 @@
          re-arm a dim. It does NOT replay events: a stinger missed while deaf is gone, but the
          board, banners and styling all self-correct. */
       setInterval(readState, 180000);
+
+      /* Diagnostic hooks. The realtime bookkeeping lives in a closure, so when the
+         joined-but-silent detector failed to fire there was no way to ask WHY without
+         redeploying — which is how a five-minute check became a twenty-minute one.
+         __acbzDiag() reports the state; __acbzPoll() runs the poll on demand instead of
+         waiting out the 3-minute timer. Both are read-only and cost nothing when unused. */
+      window.__acbzDiag = () => ({
+        lastSeenUpdatedAt, lastStateAt, lastEventAt,
+        sinceStateMs: lastStateAt ? Date.now() - lastStateAt : null,
+        sinceEventMs: lastEventAt ? Date.now() - lastEventAt : null,
+        db: dbCh ? dbCh.state : "none", pres: presCh ? presCh.state : "none",
+        pgBindings: dbCh && dbCh.bindings ? (dbCh.bindings.postgres_changes || []).length : -1,
+      });
+      window.__acbzPoll = readState;
   } else {
     try { applyState(JSON.parse(localStorage.getItem("acbz-state"))); } catch(e){}
     const bus = new BroadcastChannel("acbz-bus");
