@@ -1406,6 +1406,32 @@
          board, banners and styling all self-correct. */
       setInterval(readState, 180000);
 
+      /* THE case the message-triggered reconcile cannot cover. A hard rate limit can drop
+         EVERY message, and then scheduleReconcile() never runs because the handler that calls
+         it never runs. Measured on the rig: 32 simultaneous restores left all 32 teams stuck
+         dimmed indefinitely while the server said nobody was eliminated — the exact "teams
+         would not go back on the board" report.
+
+         So the safety net must not depend on realtime at all. Poll a TINY projection of the
+         board — "select board:data->board" is a couple of hundred bytes, not the whole document
+         with its embedded asset rows — and escalate to a full read only when it disagrees with
+         what we last applied. On 18 sources at 15s that is well under a gigabyte a month, and
+         it costs nothing at all while the board is in sync. */
+      const boardSig = (b) => JSON.stringify([
+        Object.keys((b && b.picked) || {}).sort(),
+        Object.keys((b && b.highlighted) || {}).sort()]);
+      setInterval(async () => {
+        try {
+          const { data } = await sb.from("stream_state").select("board:data->board")
+            .eq("id", PC).single();
+          if (!data) return;
+          if (boardSig(data.board) !== boardSig(lastState && lastState.board)) {
+            console.warn("[acbz] board disagrees with the server — re-reading");
+            readState();
+          }
+        } catch (e) { /* offline: the next tick tries again */ }
+      }, 15000);
+
       /* Diagnostic hooks. The realtime bookkeeping lives in a closure, so when the
          joined-but-silent detector failed to fire there was no way to ask WHY without
          redeploying — which is how a five-minute check became a twenty-minute one.
