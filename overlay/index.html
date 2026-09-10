@@ -1293,6 +1293,23 @@
         BUILD = (h >>> 0).toString(36).slice(0, 6);
       }).catch(() => {});
 
+      /* Realtime delivery is CAPPED SERVER-SIDE at ~10 messages/second per client, and
+         raising the client eventsPerSecond does not lift it — measured: at 100/s the peak
+         still pinned to exactly 10/s. Every press costs TWO messages (the stream_state UPDATE
+         plus the events INSERT), so restoring 32 teams one key at a time asks for ~64 and the
+         rig receives a quarter of them. The dropped ones are why "the teams did not go back on
+         the board": the board is only as correct as the LAST message that survived.
+
+         So stop depending on every message arriving. stream_state carries the WHOLE board, so
+         one authoritative re-read after the burst settles fixes any number of losses. Debounced,
+         so a 32-press flurry costs exactly one extra read, not 32. Events cannot be recovered
+         this way — a stinger dropped by the cap is simply gone — but the BOARD self-corrects. */
+      let reconcileTimer = null;
+      const scheduleReconcile = () => {
+        clearTimeout(reconcileTimer);
+        reconcileTimer = setTimeout(() => readState(), 1500);
+      };
+
       const readState = () => sb.from("stream_state").select("data").eq("id", PC).single()
         .then(({ data }) => {
           if (!data || !data.data) return;
@@ -1321,12 +1338,13 @@
              it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
              filters only work on real columns — so that one still discards client-side. */
           .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
-               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now();
+               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now(); scheduleReconcile();
                  const u = Number(p.new.data && p.new.data.updatedAt) || 0;
                  if (u > lastSeenUpdatedAt) lastSeenUpdatedAt = u;
                  applyState(p.new.data); })
           .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
               (p)=>{ lastEventAt = Date.now(); lastStateAt = lastStateAt || Date.now();
+                 scheduleReconcile();
                  handleEvent(p.new); })
           .subscribe((status) => {
             if (status === "SUBSCRIBED") {
@@ -1387,6 +1405,32 @@
          re-arm a dim. It does NOT replay events: a stinger missed while deaf is gone, but the
          board, banners and styling all self-correct. */
       setInterval(readState, 180000);
+
+      /* THE case the message-triggered reconcile cannot cover. A hard rate limit can drop
+         EVERY message, and then scheduleReconcile() never runs because the handler that calls
+         it never runs. Measured on the rig: 32 simultaneous restores left all 32 teams stuck
+         dimmed indefinitely while the server said nobody was eliminated — the exact "teams
+         would not go back on the board" report.
+
+         So the safety net must not depend on realtime at all. Poll a TINY projection of the
+         board — "select board:data->board" is a couple of hundred bytes, not the whole document
+         with its embedded asset rows — and escalate to a full read only when it disagrees with
+         what we last applied. On 18 sources at 15s that is well under a gigabyte a month, and
+         it costs nothing at all while the board is in sync. */
+      const boardSig = (b) => JSON.stringify([
+        Object.keys((b && b.picked) || {}).sort(),
+        Object.keys((b && b.highlighted) || {}).sort()]);
+      setInterval(async () => {
+        try {
+          const { data } = await sb.from("stream_state").select("board:data->board")
+            .eq("id", PC).single();
+          if (!data) return;
+          if (boardSig(data.board) !== boardSig(lastState && lastState.board)) {
+            console.warn("[acbz] board disagrees with the server — re-reading");
+            readState();
+          }
+        } catch (e) { /* offline: the next tick tries again */ }
+      }, 15000);
 
       /* Diagnostic hooks. The realtime bookkeeping lives in a closure, so when the
          joined-but-silent detector failed to fire there was no way to ask WHY without
