@@ -1293,6 +1293,23 @@
         BUILD = (h >>> 0).toString(36).slice(0, 6);
       }).catch(() => {});
 
+      /* Realtime delivery is CAPPED SERVER-SIDE at ~10 messages/second per client, and
+         raising the client eventsPerSecond does not lift it — measured: at 100/s the peak
+         still pinned to exactly 10/s. Every press costs TWO messages (the stream_state UPDATE
+         plus the events INSERT), so restoring 32 teams one key at a time asks for ~64 and the
+         rig receives a quarter of them. The dropped ones are why "the teams did not go back on
+         the board": the board is only as correct as the LAST message that survived.
+
+         So stop depending on every message arriving. stream_state carries the WHOLE board, so
+         one authoritative re-read after the burst settles fixes any number of losses. Debounced,
+         so a 32-press flurry costs exactly one extra read, not 32. Events cannot be recovered
+         this way — a stinger dropped by the cap is simply gone — but the BOARD self-corrects. */
+      let reconcileTimer = null;
+      const scheduleReconcile = () => {
+        clearTimeout(reconcileTimer);
+        reconcileTimer = setTimeout(() => readState(), 1500);
+      };
+
       const readState = () => sb.from("stream_state").select("data").eq("id", PC).single()
         .then(({ data }) => {
           if (!data || !data.data) return;
@@ -1321,12 +1338,13 @@
              it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
              filters only work on real columns — so that one still discards client-side. */
           .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
-               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now();
+               filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now(); scheduleReconcile();
                  const u = Number(p.new.data && p.new.data.updatedAt) || 0;
                  if (u > lastSeenUpdatedAt) lastSeenUpdatedAt = u;
                  applyState(p.new.data); })
           .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
               (p)=>{ lastEventAt = Date.now(); lastStateAt = lastStateAt || Date.now();
+                 scheduleReconcile();
                  handleEvent(p.new); })
           .subscribe((status) => {
             if (status === "SUBSCRIBED") {
