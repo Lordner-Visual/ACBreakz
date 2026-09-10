@@ -1333,16 +1333,24 @@
       function subscribeDb() {
         if (dbCh) { try { sb.removeChannel(dbCh); } catch (e) {} dbCh = null; }
         dbCh = sb.channel("db")
-          /* Filter server-side: unfiltered, all 18 sources (6 PCs x 3 layers) received every
-             PC's state and threw away 17 of 18. `events` cannot be filtered the same way —
-             it is (id, type, payload, created_at) with the pc inside the jsonb, and realtime
-             filters only work on real columns — so that one still discards client-side. */
+          /* BOTH are filtered server-side now. Unfiltered, all 18 sources (6 PCs x 3 layers)
+             received every PC's traffic and discarded 17 of 18 — and realtime delivery is
+             capped around 10 messages/second per client, so that waste was spending a scarce
+             budget and is what put MessagePerSecondRateLimitReached within reach at all.
+             `events` used to be unfilterable because its pc lived inside the jsonb and realtime
+             filters only work on real columns; V17 gave it a real `pc` column. pc=0 means
+             BROADCAST — realtime has no "is null" operator, so in.(0,N) is the only way to say
+             "mine or everyone's", which is exactly what the client-side check below meant.
+             That check STAYS: it costs nothing and it is what keeps this correct if a filter is
+             ever mistyped. `qa/shoot-events-filter.mjs` proves the grammar rather than assuming
+             it — a rejected filter would silently deliver NOTHING. */
           .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state",
                filter:`id=eq.${PC}`}, (p)=>{ lastStateAt = Date.now(); scheduleReconcile();
                  const u = Number(p.new.data && p.new.data.updatedAt) || 0;
                  if (u > lastSeenUpdatedAt) lastSeenUpdatedAt = u;
                  applyState(p.new.data); })
-          .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},
+          .on("postgres_changes",{event:"INSERT",schema:"public",table:"events",
+               filter:`pc=in.(0,${PC})`},
               (p)=>{ lastEventAt = Date.now(); lastStateAt = lastStateAt || Date.now();
                  scheduleReconcile();
                  handleEvent(p.new); })
