@@ -1397,13 +1397,27 @@
          while the page carries on happily. Cheap property reads every 20s; rebuilds only when
          genuinely broken. This is also what puts a PC back on the presence list, which is how
          you can tell from outside that a rig has gone deaf. */
+      /* "joining" is a NORMAL transient state, and tearing a channel down mid-join guarantees the
+         join never completes. The first cut rebuilt on a SINGLE sample of state !== "joined",
+         which turned a slow join into a permanent one — measured live: PC2 and PC4 both sat in
+         "joining" indefinitely, deaf, while this tick kept restarting them. It interacts badly
+         with the joined-but-silent detector too, since that also calls subscribeDb(): one starts
+         a join and the other kills it. So require CONSECUTIVE unhealthy ticks before acting. */
+      let dbBadSince = 0, presBadSince = 0;
+      const overdue = (since) => since && Date.now() - since > 45000;
       setInterval(() => {
         const socketOk = sb.realtime && sb.realtime.isConnected ? sb.realtime.isConnected() : true;
-        if (!socketOk || (dbCh && dbCh.state !== "joined")) {
-          console.warn("[acbz] realtime unhealthy — rebuilding subscription");
-          subscribeDb();
+
+        if (socketOk && dbCh && dbCh.state === "joined") dbBadSince = 0;
+        else if (!dbBadSince) dbBadSince = Date.now();
+        else if (overdue(dbBadSince)) {
+          console.warn("[acbz] realtime unhealthy for 45s — rebuilding subscription");
+          dbBadSince = 0; subscribeDb();
         }
-        if (!socketOk || (presCh && presCh.state !== "joined")) subscribePresence();
+
+        if (socketOk && presCh && presCh.state === "joined") presBadSince = 0;
+        else if (!presBadSince) presBadSince = Date.now();
+        else if (overdue(presBadSince)) { presBadSince = 0; subscribePresence(); }
       }, 20000);
 
       /* Belt and braces: a channel can report "joined" and still deliver nothing. Re-reading one
@@ -1420,21 +1434,24 @@
          dimmed indefinitely while the server said nobody was eliminated — the exact "teams
          would not go back on the board" report.
 
-         So the safety net must not depend on realtime at all. Poll a TINY projection of the
-         board — "select board:data->board" is a couple of hundred bytes, not the whole document
-         with its embedded asset rows — and escalate to a full read only when it disagrees with
-         what we last applied. On 18 sources at 15s that is well under a gigabyte a month, and
-         it costs nothing at all while the board is in sync. */
-      const boardSig = (b) => JSON.stringify([
-        Object.keys((b && b.picked) || {}).sort(),
-        Object.keys((b && b.highlighted) || {}).sort()]);
+         So the safety net must not depend on realtime at all. Poll a TINY projection and escalate
+         to a full read only when it disagrees with what we last applied.
+
+         Poll `updatedAt`, NOT the board. The first cut polled "board:data->board" and so healed
+         ONLY the board: a deaf rig picked its eliminations back up while a newly selected banner,
+         background or board style never arrived — reported as "the banner is not updating", with
+         the new banner provably sitting in the row the whole time. `updatedAt` is stamped
+         server-side by state_stamp() on EVERY write, so one number covers every key, and it is
+         smaller than the board projection it replaces. */
       setInterval(async () => {
         try {
-          const { data } = await sb.from("stream_state").select("board:data->board")
+          const { data } = await sb.from("stream_state").select("updatedAt:data->updatedAt")
             .eq("id", PC).single();
           if (!data) return;
-          if (boardSig(data.board) !== boardSig(lastState && lastState.board)) {
-            console.warn("[acbz] board disagrees with the server — re-reading");
+          const server = Number(data.updatedAt) || 0;
+          const applied = Number(lastState && lastState.updatedAt) || 0;
+          if (server > applied) {
+            console.warn("[acbz] row is newer than what we applied — re-reading");
             readState();
           }
         } catch (e) { /* offline: the next tick tries again */ }
