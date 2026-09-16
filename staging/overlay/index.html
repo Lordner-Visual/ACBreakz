@@ -15,7 +15,10 @@
   ?pc=1..6 selects WHICH stream this is (6 = PC Test) (each PC has its own board/banners/
   background/styles; the asset library is shared). &debug=1 draws guides.
 -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- PINNED. "@2" floats to whatever supabase-js publishes next, so the realtime internals this
+     page's reconnect logic depends on could change on every PC at its next reload with no
+     deploy of ours. Bump deliberately, and re-run qa/shoot-rebuild-loop.mjs when you do. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{
@@ -417,6 +420,22 @@
      applyState/applyBoardParts must still track state identically on all three. */
   const BG_LAYER  = (layer === "bg"  || layer === "all");
   const HUD_LAYER = (layer === "hud" || layer === "all");
+  const FX_LAYER  = (layer === "fx"  || layer === "all");
+
+  /* Every reload this page does to ITSELF goes through here and leaves a note, keyed per
+     source, so the next boot can report why it happened (presence `rl`) and knows the FX set
+     it is about to warm was fetched seconds ago — the clips are still in the HTTP cache, or
+     over the cache-size cliff where warming never helped, so re-warming would only spend
+     egress. localStorage rather than sessionStorage so it holds whatever CEF does with a
+     reloaded browsing context. */
+  const RELOAD_KEY = `acbz-selfreload-${PC}-${layer}`;
+  let lastReload = null;
+  try { lastReload = JSON.parse(localStorage.getItem(RELOAD_KEY) || "null"); } catch (e) {}
+  function selfReload(why) {
+    try { localStorage.setItem(RELOAD_KEY, JSON.stringify({ why, at: Date.now() })); } catch (e) {}
+    console.warn(`[acbz] reloading: ${why}`);
+    location.reload();
+  }
 
   /* ---------------- board cells (v2: all logos always visible) ---------------- */
   const boardEl = $("#board");
@@ -925,24 +944,30 @@
   }
 
   /* ---------------- FX ---------------- */
-  const fxQ = []; let fxBusy = false;
+  const fxQ = []; let fxBusy = false, fxJob = 0, fxSince = 0;
+  /* what the FX lane has actually done since this page loaded — reported through presence, so
+     "the FX source stopped working" can be told apart from "it never heard the press" */
+  const fxStats = { played: 0, stuck: 0, dropped: 0, lastAt: 0 };
   /* keep a reference until it finishes — a bare `new Audio().play()` can be collected
      mid-load, which silently aborts the request and eats the sound */
   const sfxLive = new Set();
   /* Only the FX source makes sound. Otherwise all three browser sources play the same
      clip at once (and you still hear audio even when the FX source is missing, which
      makes a missing layer look like a broken animation). */
-  const AUDIO_LAYER = (layer === "fx" || layer === "all");
+  const AUDIO_LAYER = FX_LAYER;
   function sfx(url, vol=1){
     if(!url || !AUDIO_LAYER) return;
     try{
       const a = new Audio(url); a.volume = vol; sfxLive.add(a);
       const drop = () => sfxLive.delete(a);
-      a.onended = a.onerror = drop; setTimeout(drop, 15000);
-      a.play().catch(drop);
+      /* release the media player the moment the sound is over instead of whenever GC gets to
+         it: an FX source runs for days and creates one of these for every press */
+      const release = () => { drop(); try { a.removeAttribute("src"); a.load(); } catch (e) {} };
+      a.onended = a.onerror = release; setTimeout(drop, 15000);
+      a.play().catch(release);
     }catch(e){}
   }
-  function runFx(job){ fxQ.push(job); pump(); }
+  function runFx(job){ job.at = Date.now(); fxQ.push(job); pump(); }
   const fxV = $("#fxVideo"), fxVBox = $("#fxVidBox");
   const fxI = $("#fxImg"),   fxIBox = $("#fxImgBox");
   fxV.addEventListener("timeupdate", () => {   // safety fade even if the file lacks one
@@ -957,7 +982,17 @@
     if (isImg) node.style.setProperty("--rfz", z);
     else node.style.transform = z > 1 ? `scale(${z})` : "";
   }
+  let vidGen = 0;                 // which clip currently owns #fxVideo
+  function unloadFxVideo() {
+    fxV.onplaying = fxV.onended = fxV.onerror = null;
+    fxVBox.style.display = "none"; fxV.removeAttribute("src");
+    /* load() with no src is what actually tears down the fetch and the decoder; removing
+       the attribute alone leaves both alive until something else happens to the element */
+    try { fxV.load(); } catch (e) {}
+    fxV.style.opacity = "1";
+  }
   function playVideo(url, boxed, done, full, crop, onStart){
+    const gen = ++vidGen;
     const box = !!boxed && !full;
     fxVBox.classList.toggle("boxed", box);
     fxVBox.classList.toggle("full", !!full);
@@ -968,18 +1003,35 @@
     /* A hung buffer fires stalled/waiting, never error — without this the queue's
        one-at-a-time gate would stay closed forever and every later FX would silently
        pile up behind it. */
-    let settled = false;
+    let settled = false, lastT = -1, stillFor = 0;
     const finish = () => { if (settled) return; settled = true;
-      clearTimeout(watchdog);
-      fxVBox.style.display = "none"; fxV.removeAttribute("src"); fxV.style.opacity = "1"; done(); };
-    const watchdog = setTimeout(() => {
+      clearTimeout(startDog); clearTimeout(capDog); clearInterval(progressDog);
+      if (gen === vidGen) unloadFxVideo();      // never tear down a newer clip's element
+      done(); };
+    const startDog = setTimeout(() => {
       if (!fxV.currentTime) { console.warn("[acbz] clip never started, giving up:", url); finish(); }
     }, 8000);
-    fxV.addEventListener("playing", () => { clearTimeout(watchdog); onStart && onStart(); }, { once: true });
+    /* ...and once it HAS started. The old watchdog was cleared by the `playing` event, so a
+       buffer that ran dry MID-clip (a stream PC fetches while it uploads) left nothing
+       watching: no ended, no error, the gate shut, and every later stinger AND its sound
+       queued behind it until someone reloaded the source. */
+    const progressDog = setInterval(() => {
+      if (gen !== vidGen) return finish();      // a newer clip took the element
+      if (!fxV.currentTime) return;             // not started yet: startDog's job
+      if (fxV.currentTime !== lastT) { lastT = fxV.currentTime; stillFor = 0; return; }
+      if (++stillFor >= 5) { console.warn("[acbz] clip stopped advancing, giving up:", url); finish(); }
+    }, 1000);
+    const capDog = setTimeout(() => {            // no stinger or one-shot runs anywhere near this
+      console.warn("[acbz] clip ran past 60s, giving up:", url); finish();
+    }, 60000);
+    /* a property, not addEventListener({once}): a listener left by a clip that never started
+       used to survive and fire for the NEXT clip */
+    fxV.onplaying = () => { clearTimeout(startDog); const f = onStart; onStart = null; f && f(); };
     fxV.onended = fxV.onerror = finish;
     /* an unmuted clip can have play() refused outright; the graphic still matters more
        than its audio, so fall back to muted rather than showing nothing */
     fxV.play().catch(() => {
+      if (settled || gen !== vidGen) return;    // our own unload interrupted it
       fxV.muted = true;
       fxV.play().catch(() => finish());
     });
@@ -1002,10 +1054,38 @@
     setTimeout(() => b.classList.add("fadeout"), ms - 400);
     setTimeout(() => { b.style.display="none"; b.innerHTML=""; b.classList.remove("fadeout"); done && done(); }, ms);
   }
+  /* A queued job this old is a backlog, not a reaction to a press — playing it now would put a
+     stinger on screen for something the audience saw half a minute ago. */
+  const FX_STALE_MS = 30000;
   function pump(){
-    if (fxBusy || !fxQ.length) return; fxBusy = true;
-    const job = fxQ.shift();
-    const done = () => { fxBusy = false; pump(); };
+    if (fxBusy) return;
+    let job;
+    while ((job = fxQ.shift()) && Date.now() - job.at > FX_STALE_MS) {
+      fxStats.dropped++; console.warn("[acbz] dropping a stale FX job:", job.team || job.url);
+    }
+    if (!job) return;
+    fxBusy = true; fxSince = Date.now(); fxStats.played++; fxStats.lastAt = fxSince;
+    const id = ++fxJob;
+    /* once per job, and only while that job still owns the lane — after the gate watchdog
+       below has forced it open, a late callback must not start a second clip on top */
+    const done = () => { if (id !== fxJob || !fxBusy) return; fxBusy = false; pump(); };
+    try { runJob(job, done); }
+    catch (e) { console.warn("[acbz] FX job threw, skipping it:", e); done(); }
+  }
+  /* The last line of defence. Every path above ends on its own, but an FX source runs for days
+     and the cost of one path that does not is every stinger and every sound until a reload.
+     Nothing this lane plays is anywhere near 45s long. */
+  setInterval(() => {
+    if (!fxBusy || Date.now() - fxSince < 45000) return;
+    console.warn("[acbz] FX lane held for 45s — forcing it open");
+    fxStats.stuck++;
+    vidGen++; unloadFxVideo();
+    fxIBox.style.display = "none"; fxI.classList.remove("go");
+    fxJob++; fxBusy = false; pump();
+  }, 5000);
+  window.__acbzFx = () => ({ busy: fxBusy, busyMs: fxBusy ? Date.now() - fxSince : 0,
+                             queued: fxQ.length, ...fxStats });
+  function runJob(job, done){
     sfx(job.sfxUrl);
     const full = job.fit === "full";
     if (job.styleUrl && job.logoOverlay) {          // v2 style: one base + team logo on top
@@ -1055,7 +1135,9 @@
       const v = Object.assign(document.createElement("video"),
         { src: url, muted: true, playsInline: true, preload: "auto" });
       v.style.cssText = "position:absolute;width:1px;height:1px;opacity:0;pointer-events:none";
-      const finish = () => { clearTimeout(t); v.removeAttribute("src"); v.remove(); done(); };
+      let over = false;           // canplaythrough, error and the timeout can all arrive; count ONE
+      const finish = () => { if (over) return; over = true; clearTimeout(t);
+        v.removeAttribute("src"); try { v.load(); } catch (e) {} v.remove(); done(); };
       const t = setTimeout(finish, 30000);
       v.addEventListener("canplaythrough", finish, { once: true });
       v.addEventListener("error", finish, { once: true });
@@ -1069,7 +1151,16 @@
       warmOne(url).then(() => { warmRunning--; pumpWarm(); });
     }
   }
+  /* a reload this page did to itself (maintenance, health, new build) lands seconds after the
+     set was warmed — see selfReload */
+  let skipWarm = !!lastReload && Date.now() - lastReload.at < 120000;
   function warmUrls(urls) {
+    if (skipWarm) {
+      skipWarm = false;
+      urls.forEach(u => u && warmed.add(u));
+      console.log(`[acbz] self-reload (${lastReload.why}) — FX set is already warm, not refetching`);
+      return;
+    }
     let added = 0;
     for (const u of urls) {
       if (!u || warmed.has(u)) continue;
@@ -1083,7 +1174,7 @@
      the deck function — the set-less set is Classic Stingers. */
   let warmKey = null;
   async function warmForState(s) {
-    if (!(layer === "fx" || layer === "all")) return;
+    if (!FX_LAYER) return;
     if (!window.__sb) return;
     const setId = s?.animStyle?.meta?.set ?? null;
     const key = setId + "|" + JSON.stringify(s?.oneshots ?? {});
@@ -1276,6 +1367,12 @@
          Reloading fixed it, which is precisely the manual OBS cache reset we are retiring. */
       let dbCh = null, presCh = null, retry = 0;
       let lastEventAt = 0, lastStateAt = 0;
+      const BOOT = Date.now();
+      /* newest moment this page learned of an event for its PC by ANY route (realtime or the
+         backstop below) — the maintenance reload waits for this to go quiet */
+      let lastActivityAt = 0;
+      const rebuilds = [], misses = [];        // timestamps, for the breaker and presence
+      const inLast = (arr, ms) => arr.filter(t => Date.now() - t < ms).length;
       /* newest data.updatedAt realtime has actually DELIVERED — the yardstick for catching a
          channel that reports "joined" while delivering nothing */
       let lastSeenUpdatedAt = 0;
@@ -1321,18 +1418,59 @@
              that is wrong. So: if the row has moved on past anything realtime handed us AND
              realtime has been silent, the socket is lying — tear the channel down and rebuild. */
           if (u > lastSeenUpdatedAt && lastStateAt && Date.now() - lastStateAt > 60000) {
-            console.warn("[acbz] realtime reports joined but missed a write — rebuilding");
             lastSeenUpdatedAt = u;
-            subscribeDb();
+            rebuildDb("reports joined but missed a write");
           }
           if (u > lastSeenUpdatedAt) lastSeenUpdatedAt = u;
           applyState(data.data);
         })
         .catch(() => {});
 
-      function subscribeDb() {
-        if (dbCh) { try { sb.removeChannel(dbCh); } catch (e) {} dbCh = null; }
-        dbCh = sb.channel("db")
+      /* THE DAILY "FX SOURCE STOPPED WORKING" BUG, and I shipped it with the reconnect on 09-06.
+         The status handler answered CLOSED by scheduling a rebuild — but a rebuild calls
+         removeChannel() on the old channel, and supabase-js reports that removal to the old
+         channel's handler as... CLOSED. So every rebuild scheduled the next one, about once a
+         second, forever, and each further network blip started ANOTHER loop alongside it.
+         Measured in the platform logs: every PC making 8,000-13,000 full state reads an hour,
+         ~1.2 million a day (expected ~1,500), including overnight with nobody streaming.
+         The channel spent its life leaving and re-joining, so postgres_changes events — the
+         stingers and their sound — were mostly missed, while the board, banners and background
+         looked perfect because every re-join re-read the row. PC1 went 4.3 hours without
+         hearing one of 289 eliminations while presence said "data ok". A cache reset "fixed"
+         it only because a reload is a clean page, until the next blip. Reproduced with one
+         dropped socket in qa/shoot-rebuild-loop.mjs.
+
+         Three rules now: (1) a handler only acts for the channel that is CURRENT, so a removal
+         we caused can never schedule anything; (2) at most one rebuild is ever pending, and
+         rebuilds are at least 5s apart whoever asks for them; (3) the backoff only resets once
+         a join has HELD for a minute, so a channel that joins and immediately dies backs off
+         instead of spinning. Each channel also gets a unique topic: sb.channel(name) hands back
+         an existing channel of that name, and removeChannel() is async, so re-using "db" handed
+         the rebuild the very channel it was in the middle of leaving. */
+      let dbGen = 0, resubTimer = null, lastRebuildAt = 0, joinedAt = 0;
+      function rebuildDb(why) {
+        if (resubTimer) return;                              // one pending rebuild, ever
+        if (joinedAt && Date.now() - joinedAt > 60000) retry = 0;
+        const backoff = Math.min(30000, 1000 * Math.pow(2, retry++));
+        const wait = Math.max(backoff, lastRebuildAt + 5000 - Date.now());
+        console.warn(`[acbz] realtime ${why} — rebuilding in ${Math.round(wait / 1000)}s`);
+        resubTimer = setTimeout(() => { resubTimer = null; subscribeDb(why); }, wait);
+      }
+      function subscribeDb(why) {
+        clearTimeout(resubTimer); resubTimer = null;
+        if (why) { rebuilds.push(Date.now()); lastRebuildAt = Date.now(); }
+        joinedAt = 0;
+        /* dbCh must stop pointing at the old channel BEFORE removeChannel(): supabase-js fires
+           the old channel's CLOSED synchronously inside that call, and while dbCh still named
+           it, the guard below read it as current and scheduled the next rebuild — the same
+           loop, just on the 5s spacing instead of 1s. Measured, not guessed. */
+        const old = dbCh; dbCh = null;
+        if (old) {
+          const drop = () => { try { old.teardown(); } catch (e) {} };
+          sb.removeChannel(old).then((s) => { if (s !== "ok") drop(); }, drop);
+        }
+        const ch = dbCh = sb.channel(`db-${layer}-${++dbGen}`);
+        ch
           /* BOTH are filtered server-side now. Unfiltered, all 18 sources (6 PCs x 3 layers)
              received every PC's traffic and discarded 17 of 18 — and realtime delivery is
              capped around 10 messages/second per client, so that waste was spending a scarce
@@ -1351,27 +1489,37 @@
                  applyState(p.new.data); })
           .on("postgres_changes",{event:"INSERT",schema:"public",table:"events",
                filter:`pc=in.(0,${PC})`},
-              (p)=>{ lastEventAt = Date.now(); lastStateAt = lastStateAt || Date.now();
+              (p)=>{ lastEventAt = lastActivityAt = Date.now(); lastStateAt = lastStateAt || Date.now();
                  scheduleReconcile();
                  handleEvent(p.new); })
           .subscribe((status) => {
+            if (ch !== dbCh) return;      // a channel we already replaced: its CLOSED is our own doing
             if (status === "SUBSCRIBED") {
-              retry = 0;
+              joinedAt = Date.now();
               lastStateAt = Date.now();   // a fresh join is not silence; do not self-rebuild on it
               readState();            // never trust the cached board across a gap
             } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-              const wait = Math.min(30000, 1000 * Math.pow(2, retry++));
-              console.warn(`[acbz] realtime ${status} — resubscribing in ${Math.round(wait / 1000)}s`);
-              setTimeout(subscribeDb, wait);
+              rebuildDb(status);
             }
           });
       }
-      function subscribePresence() {
-        if (presCh) { try { sb.removeChannel(presCh); } catch (e) {} presCh = null; }
-        /* hold the reference and track on IT — the old code called sb.channel(name) a second
-           time inside its own callback, which hands back a different channel object */
-        presCh = sb.channel("presence:overlays", { config: { presence: { key: `pc-${PC}-${layer}` } } });
-        presCh.subscribe((st) => { if (st === "SUBSCRIBED") trackSelf(); });
+      let presBusy = false;
+      async function subscribePresence() {
+        if (presBusy) return; presBusy = true;
+        try {
+          /* the topic is fixed (which-layers reads it) and sb.channel() returns a same-named
+             channel that is still LEAVING — so the old one must be completely gone first */
+          const old = presCh; presCh = null;
+          if (old) {
+            try { if (await sb.removeChannel(old) !== "ok") old.teardown(); }
+            catch (e) { try { old.teardown(); } catch (_) {} }
+          }
+          /* hold the reference and track on IT — the old code called sb.channel(name) a second
+             time inside its own callback, which hands back a different channel object */
+          const ch = presCh = sb.channel("presence:overlays",
+            { config: { presence: { key: `pc-${PC}-${layer}` } } });
+          ch.subscribe((st) => { if (ch === presCh && st === "SUBSCRIBED") trackSelf(); });
+        } finally { presBusy = false; }
       }
       /* Report the DATA channel state too. presence and db are separate channels on one
          socket, so presence can be perfectly healthy while db is not joined and no event ever
@@ -1387,6 +1535,14 @@
                                 the server log proves traffic was sent to it. */
                              evAge: lastEventAt ? Math.round((Date.now() - lastEventAt) / 1000) : null,
                              stAge: lastStateAt ? Math.round((Date.now() - lastStateAt) / 1000) : null,
+                             /* stAge alone cannot expose a rebuild loop — every re-join stamps
+                                it, so a spinning rig read "state 0s, data ok". These can. */
+                             up: Math.round((Date.now() - BOOT) / 1000),
+                             rb: inLast(rebuilds, 3600000),   // realtime rebuilds, last hour
+                             miss: inLast(misses, 3600000),   // events only the backstop caught
+                             fx: FX_LAYER ? window.__acbzFx() : undefined,
+                             rl: lastReload ? { why: lastReload.why,
+                                   ago: Math.round((Date.now() - lastReload.at) / 1000) } : null,
                            }); } catch (e) {}
       }
       subscribeDb();
@@ -1411,8 +1567,7 @@
         if (socketOk && dbCh && dbCh.state === "joined") dbBadSince = 0;
         else if (!dbBadSince) dbBadSince = Date.now();
         else if (overdue(dbBadSince)) {
-          console.warn("[acbz] realtime unhealthy for 45s — rebuilding subscription");
-          dbBadSince = 0; subscribeDb();
+          dbBadSince = 0; rebuildDb("unhealthy for 45s");
         }
 
         if (socketOk && presCh && presCh.state === "joined") presBadSince = 0;
@@ -1468,8 +1623,81 @@
         sinceEventMs: lastEventAt ? Date.now() - lastEventAt : null,
         db: dbCh ? dbCh.state : "none", pres: presCh ? presCh.state : "none",
         pgBindings: dbCh && dbCh.bindings ? (dbCh.bindings.postgres_changes || []).length : -1,
+        topic: dbCh ? dbCh.topic : null, rebuilds: rebuilds.length, misses: misses.length,
+        pendingRebuild: !!resubTimer, upMs: Date.now() - BOOT,
       });
       window.__acbzPoll = readState;
+
+      /* ---- the stinger backstop (FX source only) ----
+         Every net above protects the STATE row, and the state row cannot carry a stinger: an
+         event missed while realtime is deaf is simply gone, and "deaf" has now had three
+         different causes (a dead socket, a channel that reported joined and delivered nothing,
+         and our own rebuild loop). So stop trusting any single cause to be the last one and ask
+         the database directly. Every 5s, one indexed query for events newer than the newest
+         this page knows of — an empty array almost always, a few hundred bytes. Anything it
+         finds that realtime has not delivered 1.5s later was MISSED: play it (handleEvent's age
+         filter still refuses a stale one), count it for presence, and rebuild the channel.
+         Worst case a stinger lands ~6s late instead of never. The seen-set makes a race between
+         the two routes harmless — whichever arrives second is ignored. Only the FX source pays
+         for this: the board, banners and background already self-correct from the row. */
+      let evCursor = null;                     // ms of the newest event we know exists for this PC
+      async function pollEvents() {
+        try {
+          if (evCursor === null) {             // first run: learn where "now" is, replay nothing
+            const { data, error } = await sb.from("events").select("created_at")
+              .in("pc", [0, PC]).order("created_at", { ascending: false }).limit(1);
+            if (!error) evCursor = data && data[0] ? Date.parse(data[0].created_at) + 1 : 0;
+            return;
+          }
+          const { data, error } = await sb.from("events").select("id,type,payload,created_at")
+            .in("pc", [0, PC]).gt("created_at", new Date(evCursor).toISOString())
+            .order("created_at", { ascending: true }).limit(20);
+          if (error || !data || !data.length) return;
+          /* +1ms: Date.parse drops the microseconds, and without it the newest row comes back on
+             every poll forever */
+          evCursor = Math.max(evCursor, ...data.map(e => Date.parse(e.created_at) + 1));
+          lastActivityAt = Date.now();
+          if (data.every(e => seen.has(e.id))) return;
+          await new Promise(r => setTimeout(r, 1500));   // let a merely-slower socket win
+          const missed = data.filter(e => !seen.has(e.id));
+          if (!missed.length) return;
+          misses.push(Date.now());
+          console.warn(`[acbz] realtime missed ${missed.length} event(s) — playing them from the backstop`);
+          missed.forEach(handleEvent);
+          rebuildDb("missed events");
+        } catch (e) { /* offline: the next poll tries again */ }
+      }
+      if (FX_LAYER) { pollEvents(); setInterval(pollEvents, 5000); }
+
+      /* ---- circuit breaker (every source) ----
+         If rebuilding is not converging, or events keep going missing despite it, a clean page is
+         the one remedy left — it is exactly what the manual OBS cache reset was doing. Bounded:
+         at most once per 30 minutes per source, and never across a stinger in flight. Had this
+         existed, the rebuild loop would have cost one reload instead of a week. */
+      setInterval(() => {
+        const rb = inLast(rebuilds, 600000), ms = inLast(misses, 600000);
+        if (rb < 10 && ms < 5) return;
+        if (lastReload && /^health/.test(lastReload.why) && Date.now() - lastReload.at < 1800000) return;
+        if (fxBusy || fxQ.length) return;
+        selfReload(`health: ${rb} realtime rebuilds and ${ms} missed-event polls in 10 min`);
+      }, 30000);
+
+      /* ---- maintenance reload (FX source only) ----
+         An OBS browser source is a single page that runs for days, and the FX source is the one
+         that creates and destroys media players all day long. Rather than wait to find the next
+         thing that degrades over that span, it starts clean on its own: after 12h up, once the
+         PC has been quiet for 15 minutes with nothing playing — so it happens between breaks or
+         overnight, never mid-stinger. A loop left running is not interrupted before 36h. Costs
+         ~nothing: the source is transparent, state is re-read from the row, and the FX set is
+         not re-downloaded (skipWarm). `?maint=<ms>` shortens the clock for QA only. */
+      const MAINT_MS = Number(new URLSearchParams(location.search).get("maint")) || 12 * 3600e3;
+      const MAINT_IDLE = Math.min(15 * 60e3, MAINT_MS / 4);
+      if (FX_LAYER) setInterval(() => {
+        const up = Date.now() - BOOT, idle = Date.now() - Math.max(lastActivityAt, BOOT);
+        if (fxBusy || fxQ.length || idle < MAINT_IDLE) return;
+        if (up > MAINT_MS && !loopKey) selfReload(`maintenance: up ${Math.round(up / 3600e3 * 10) / 10}h, quiet`);
+        else if (up > MAINT_MS * 3) selfReload(`maintenance: up ${Math.round(up / 3600e3 * 10) / 10}h, quiet (loop running)`);
+      }, 30000);
   } else {
     try { applyState(JSON.parse(localStorage.getItem("acbz-state"))); } catch(e){}
     const bus = new BroadcastChannel("acbz-bus");
@@ -1500,8 +1728,7 @@
       try {
         const now = await read();
         if (baseline === null) baseline = now;
-        else if (now !== baseline) { console.log("[acbz] new build detected, reloading");
-          location.reload(); }
+        else if (now !== baseline) selfReload("update: new build");
       } catch (e) { /* offline: keep the current build running */ }
     };
     tick(); setInterval(tick, 45000);

@@ -12,7 +12,8 @@ import { createServer } from "http";
 import { readFileSync, existsSync } from "fs";
 import { extname, join, resolve } from "path";
 
-const ROOT = "C:/ACBreakz-Cloud/overlay";
+/* ACBZ_OVERLAY_ROOT=C:/ACBreakz-Cloud/staging/overlay runs the offline suites against staging */
+const ROOT = process.env.ACBZ_OVERLAY_ROOT || "C:/ACBreakz-Cloud/overlay";
 const FIX = "C:/ACBreakz-Cloud/qa/fixtures";
 const PORT = Number(process.argv[2]) || 8777;
 const TYPES = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css",
