@@ -18,7 +18,7 @@
 // Secrets: supabase secrets set PANEL_KEY=<random32> PANEL_PASSWORD=<password>
 // ============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { authorized, configured, issueToken, passwordOk } from "../_shared/auth.ts";
+import { authorized, clientKey, configured, issueToken, passwordOk } from "../_shared/auth.ts";
 
 const sb = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -37,9 +37,44 @@ Deno.serve(async (req) => {
 
   if (!configured()) return json({ error: "panel auth not configured on the server" }, 500);
 
-  /* login is the one unauthenticated action — it is what mints the token */
+  /* login is the one unauthenticated action — it is what mints the token.
+     V19: it is also the one action anybody on the internet can call, and PANEL_PASSWORD is a short
+     PIN, so every attempt goes through login_begin/login_finish (supabase/migrate-v19-login-
+     lockout.sql): 10 wrong passwords from one client locks that client out (15 min, doubling to
+     24h), 50 across everyone pauses new sign-ins (1h, doubling to 6h). Every attempt is COUNTED
+     AS WRONG before the password is compared and only a correct one refunds it, so a burst of
+     simultaneous guesses cannot slip past the count and a lost call can only over-count. If the
+     guard itself cannot be reached this fails CLOSED — an unguarded PIN is exactly what this
+     replaced — while sessions already issued keep working. */
   if (body.action === "login") {
-    if (!passwordOk(body.password)) return json({ error: "wrong password" }, 401);
+    const client = clientKey(req);
+    const wait = (s: number) => s >= 5400 ? `${Math.round(s / 3600)} hours`
+      : s >= 90 ? `${Math.ceil(s / 60)} minutes` : `${Math.max(1, s)} seconds`;
+    const lockedMsg = (scope: string, secs: number) => scope === "global"
+      ? `Too many wrong passwords on this panel — new sign-ins are paused for ${wait(secs)}. Devices already signed in keep working.`
+      : `Too many wrong passwords — try again in ${wait(secs)}.`;
+
+    const gate = await sb.rpc("login_begin", { p_client: client });
+    if (gate.error || !gate.data) {
+      console.error("login_begin failed", gate.error?.message);
+      return json({ error: "Sign-in is unavailable right now — try again in a minute." }, 503);
+    }
+    if (!gate.data.allowed) {
+      const secs = Number(gate.data.retry_after) || 60;
+      return json({ error: lockedMsg(gate.data.scope, secs), locked: true,
+                    scope: gate.data.scope, retryAfter: secs }, 429);
+    }
+    const g = gate.data;
+    if (!passwordOk(body.password)) {
+      /* already counted by login_begin — nothing left to settle, so nothing that can go missing */
+      return json({ error: "wrong password", triesLeft: g.tries_left ?? null, locked: !!g.locked,
+                    scope: g.scope ?? null, retryAfter: g.retry_after ?? null,
+                    detail: g.locked ? lockedMsg(g.scope, Number(g.retry_after) || 60) : undefined }, 401);
+    }
+    /* Right password: refund the attempt. If that call fails the attempt simply stays counted —
+       over-counting a correct login is harmless, and the caller has proved they hold the PIN. */
+    const ok = await sb.rpc("login_succeed", { p_client: client, p_tripped_global: !!g.tripped_global });
+    if (ok.error) console.error("login_succeed failed", ok.error.message);
     return json({ ok: true, token: await issueToken() });
   }
   /* Operator scope: the per-PC dashboards ship an OP_KEY so they work with no login.
