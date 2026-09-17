@@ -89,6 +89,11 @@ for (const pc of [1, 2, 3, 4, 5, 6, 7]) {
     if (m.rl) bits.push(`last self-reload: ${m.rl.why} (${hrs(m.rl.ago)} ago)`);
     const warn = m.rb > 20 ? "   <-- REBUILD LOOP" : m.fx?.busy && m.fx.busyMs > 45000 ? "   <-- FX LANE STUCK" : "";
     console.log(`        ${layer.padEnd(3)} ${bits.join(" · ")}${warn}`);
+    /* each connection drop with its cause fingerprint (builds from 2026-09-17 on): close code or
+       "heartbeat timeout", socket state, seconds since the last heartbeat reply and its latency */
+    for (const d of m.drops || [])
+      console.log(`              drop ${new Date(d.t).toISOString().slice(11, 19)}Z  ${d.sig}  ` +
+        `[socket ${d.cs}, last heartbeat ${d.hb ?? "?"}s ago @${d.ms ?? "?"}ms, ${d.vis}${d.net === false ? ", OFFLINE" : ""}]`);
   }
 
   /* the database's side of the story: events addressed to this PC that arrived after its FX

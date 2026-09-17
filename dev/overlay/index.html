@@ -1416,7 +1416,16 @@
 
   /* ---------------- transport: Supabase or same-browser preview ---------------- */
   if (C.SUPABASE_URL && C.SUPABASE_ANON_KEY) {
-    const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+    /* Heartbeat bookkeeping for the drop fingerprint below. realtime-js sends a heartbeat every 25s
+       and treats ONE unanswered heartbeat as a dead link; how long ago the last reply came back is
+       what separates "the link stalled" from "the connection was cut while healthy". */
+    let hbSentAt = 0, hbOkAt = 0, hbMs = null;
+    const onHeartbeat = (st) => {
+      if (st === "sent") hbSentAt = Date.now();
+      else if (st === "ok") { hbOkAt = Date.now(); hbMs = hbSentAt ? hbOkAt - hbSentAt : null; }
+    };
+    const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY,
+      { realtime: { heartbeatCallback: onHeartbeat } });
     window.__sb = sb;
       /* A dropped websocket is the ONE way this design goes stale, and nothing used to notice:
          `.subscribe()` was called with no status handler, there was no resubscribe, and the row
@@ -1509,13 +1518,43 @@
          an existing channel of that name, and removeChannel() is async, so re-using "db" handed
          the rebuild the very channel it was in the middle of leaving. */
       let dbGen = 0, resubTimer = null, lastRebuildAt = 0, joinedAt = 0;
-      function rebuildDb(why) {
+
+      /* WHY a connection went down. "dropped" alone could not tell apart the causes that fit the
+         data (2026-09-17 investigation: reconnects ~0.3-1 per socket-hour on every PC and site, in
+         both OBS and the Stream Deck plugin, and none from a plain Node client on the office network
+         over the same hour): a connection cut upstream while healthy, a stalled link (heartbeat
+         timeout), a server close with a code (1001 going away, 1011 crash, 1012 restart), or a
+         channel-level error on a socket that stayed up. supabase-js puts the difference in the
+         callback's err, which this page used to throw away. Every drop is kept separately (the
+         incident log merges repeats and so loses the timestamps a simultaneity check needs), with the
+         socket state, the age of the last heartbeat reply and its latency, page visibility and the
+         browser's own online flag. Read-only: nothing here changes how a drop is handled. */
+      const drops = [];
+      const dropSig = (status, err) => {
+        if (!err) return status === "TIMED_OUT" ? "join timed out" : status === "CLOSED" ? "closed" : "no detail";
+        const msg = String((err && err.message) || err);
+        const c = err && err.cause;
+        if (c && typeof c.code === "number") return `socket closed ${c.code}${c.reason ? " " + String(c.reason).slice(0, 40) : ""}`;
+        if (/heartbeat timeout/i.test(msg)) return "heartbeat timeout";
+        if (c && c.reason) return `channel error: ${String(c.reason).slice(0, 40)}`;
+        if (c && c.type) return `transport ${c.type}`;          // a DOM Event: the network path failed (1006)
+        return msg.slice(0, 60);
+      };
+      function noteDrop(kind, detail) {
+        const d = { t: Date.now(), kind, sig: detail,
+          cs: sb.realtime && sb.realtime.connectionState ? sb.realtime.connectionState() : "?",
+          hb: hbOkAt ? Math.round((Date.now() - hbOkAt) / 1000) : null, ms: hbMs,
+          vis: document.visibilityState, net: navigator.onLine };
+        drops.push(d); if (drops.length > 12) drops.shift();
+        return d;
+      }
+      function rebuildDb(why, sig) {
         if (resubTimer) return;                              // one pending rebuild, ever
         if (joinedAt && Date.now() - joinedAt > 60000) retry = 0;
         const backoff = Math.min(30000, 1000 * Math.pow(2, retry++));
         const wait = Math.max(backoff, lastRebuildAt + 5000 - Date.now());
         console.warn(`[acbz] realtime ${why} — rebuilding in ${Math.round(wait / 1000)}s`);
-        incident("realtime", `live connection ${({ CHANNEL_ERROR: "dropped", TIMED_OUT: "timed out", CLOSED: "closed" })[why] || why} — reconnected`);
+        incident("realtime", `live connection ${({ CHANNEL_ERROR: "dropped", TIMED_OUT: "timed out", CLOSED: "closed" })[why] || why}${sig ? ` (${sig})` : ""} — reconnected`);
         resubTimer = setTimeout(() => { resubTimer = null; subscribeDb(why); }, wait);
       }
       function subscribeDb(why) {
@@ -1555,14 +1594,21 @@
                  if (p.new && p.new.type !== "health_ping") lastActivityAt = Date.now();  // a check is not a press
                  scheduleReconcile();
                  handleEvent(p.new); })
-          .subscribe((status) => {
+          /* the only signal the client gets when the server-side Postgres poller re-subscribes or
+             fails; routine "Subscribed to PostgreSQL" acknowledgements (status ok) are ignored */
+          .on("system", {}, (m) => {
+            if (ch === dbCh && m && m.status && m.status !== "ok")
+              noteDrop("system", `${m.extension || "system"}: ${String(m.message || m.status).slice(0, 60)}`);
+          })
+          .subscribe((status, err) => {
             if (ch !== dbCh) return;      // a channel we already replaced: its CLOSED is our own doing
             if (status === "SUBSCRIBED") {
               joinedAt = Date.now();
               lastStateAt = Date.now();   // a fresh join is not silence; do not self-rebuild on it
               readState();            // never trust the cached board across a gap
             } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-              rebuildDb(status);
+              const d = noteDrop(status, dropSig(status, err));   // recorded even if a rebuild is already pending
+              rebuildDb(status, d.sig);
             }
           });
       }
@@ -1614,6 +1660,7 @@
                                    bad: rotator.list.filter(a => a.url && isDeadNow(a.url)).length } : undefined,
                              inc: incidents.slice(-8),
                              pong: lastPong,
+                             drops: drops.slice(-6),
                            }); } catch (e) {}
       }
       let lastPong = null;
@@ -1691,6 +1738,7 @@
          __acbzDiag() reports the state; __acbzPoll() runs the poll on demand instead of
          waiting out the 3-minute timer. Both are read-only and cost nothing when unused. */
       window.__acbzDiag = () => ({
+        drops: drops.slice(), hbOkAgoMs: hbOkAt ? Date.now() - hbOkAt : null, hbMs,
         lastSeenUpdatedAt, lastStateAt, lastEventAt,
         sinceStateMs: lastStateAt ? Date.now() - lastStateAt : null,
         sinceEventMs: lastEventAt ? Date.now() - lastEventAt : null,
