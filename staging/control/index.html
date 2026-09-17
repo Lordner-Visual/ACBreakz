@@ -182,7 +182,7 @@
   <select id="pcSel">
     <option value="1">PC 1</option><option value="2">PC 2</option><option value="3">PC 3</option>
     <option value="4">PC 4</option><option value="5">PC 5</option>
-    <option value="6">PC Test</option><option value="all">ALL PCs (1-5)</option>
+    <option value="6">PC Test</option><option value="7">Dev</option><option value="all">ALL PCs (1-6)</option>
   </select>
   <div id="presence">connecting…</div>
 </header>
@@ -579,10 +579,10 @@
 (() => {
   const C = window.ACBZ, $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
   const LS = localStorage;
-  /* PC 6 is the staging rig and is shown by name everywhere. ALL PCs deliberately means
-     1-5 only — a broadcast that also hit the test rig would stamp over whatever is being
-     tried on it. */
-  const pcName = (p) => p === "all" ? "ALL PCs" : p === "6" ? "PC Test" : "PC " + p;
+  /* PC 7 ("Dev") is the test rig and is shown by name everywhere. ALL PCs deliberately means
+     1-6 only — a broadcast that also hit Dev would stamp over whatever is being tried on it.
+     PC 6 keeps the name "PC Test" until it is renamed on its machine, but it is a live PC. */
+  const pcName = (p) => p === "all" ? "ALL PCs" : p === "6" ? "PC Test" : p === "7" ? "Dev" : "PC " + p;
   const toast = (m) => { const t=$("#toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",3000); };
   const esc = (s) => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
@@ -1506,7 +1506,7 @@
           <div class="name">${esc(a.name)}</div>
           <div class="row">
             <button class="btn ${on?"ghost":""}" data-use="${a.id}">${on?"In use on "+pcName(PC):"Use on this PC"}</button>
-            <button class="btn ghost" data-useall="${a.id}">Use on live PCs (1-5)</button>
+            <button class="btn ghost" data-useall="${a.id}">Use on live PCs (1-6)</button>
           </div></div></div>`; }).join("")
       : `<span class="tag">Nothing uploaded for this event yet.</span>`;
     $$("#epList [data-use]").forEach(b => b.onclick = async () => {
@@ -1515,13 +1515,14 @@
     });
     $$("#epList [data-useall]").forEach(b => b.onclick = async () => {
       busy(b, true); await assignEventEverywhere(epEvent, b.dataset.useall); busy(b, false);
-      renderEventList(); renderEventGrid(); toast("Assigned on live PCs 1-5");
+      renderEventList(); renderEventGrid(); toast("Assigned on live PCs 1-6");
     });
   }
   /* each PC keeps its own map, so merge per PC rather than overwriting the whole key */
   async function assignEventEverywhere(ev, id){
     const { data: rows } = await sb.from("stream_state").select("id,data");
-    for (const r of rows ?? []) {
+    /* live PCs only: Dev (7) is the test rig and is left out of every "all PCs" write */
+    for (const r of (rows ?? []).filter(r => r.id !== 7)) {
       const next = { ...(r.data?.oneshots ?? {}), [ev]: id };
       await panelCall({ action:"patch", pc:String(r.id), clientId:CLIENT_ID, patch:{ oneshots: next } });
     }
@@ -1881,14 +1882,17 @@
      the remote equivalent of OBS's "Refresh cache of current page". Only broken sources are
      reloaded, and it re-checks afterwards; what a reload cannot reach gets written steps. */
   const Status = (() => {
-    const PCS = [1, 2, 3, 4, 5, 6];
+    const PCS = [1, 2, 3, 4, 5, 6, 7];
     const LAYERS = [["bg", "Background"], ["hud", "Board & banners"], ["fx", "Stingers & sound"]];
     const OBS = { bg: "BG", hud: "HUD", fx: "FX" };
     const RANK = { ok: 0, info: 0, warn: 1, fail: 2 };
-    const ROOT = location.href.replace(/(staging\/)?control\/[^]*$/, "");
-    const nm = (pc) => pc === 6 ? "PC Test" : "PC " + pc;
-    const scene = (pc) => `ACBreakz Cloud ${pc === 6 ? "PC Test" : pc}`;
-    const srcUrl = (pc, l) => `${ROOT}${pc === 6 ? "staging/" : ""}overlay/?layer=${l}&pc=${pc}`;
+    const ROOT = location.href.replace(/(staging\/|dev\/)?control\/[^]*$/, "");
+    const nm = (pc) => pc === 6 ? "PC Test" : pc === 7 ? "Dev" : "PC " + pc;
+    const scene = (pc) => `ACBreakz Cloud ${pc === 6 ? "PC Test" : pc === 7 ? "Dev" : pc}`;
+    /* PC Test's OBS still loads the legacy staging/ path (kept identical to live by promote.mjs);
+       Dev loads dev/, where every change is tried first */
+    const DIR = (pc) => pc === 6 ? "staging/" : pc === 7 ? "dev/" : "";
+    const srcUrl = (pc, l) => `${ROOT}${DIR(pc)}overlay/?layer=${l}&pc=${pc}`;
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const ago = (ms) => ms < 60e3 ? `${Math.max(0, Math.round(ms / 1000))}s`
       : ms < 3600e3 ? `${Math.round(ms / 60e3)}m` : ms < 86400e3 ? `${(ms / 3600e3).toFixed(1)}h`
@@ -1901,7 +1905,7 @@
       src: {},        // "pc-layer" -> { m (newest meta), copies, seenAt, dupSince }
       rows: {},       // pc -> { updatedAt, gotAt }
       act: {},        // pc -> { at, how }
-      builds: {},     // live | staging -> sampled hash of the deployed overlay
+      builds: {},     // live | staging | dev -> sampled hash of the deployed overlay
       pagesOk: null,
       cloud: null,    // last health check's cloud results
       check: {},      // pc -> { at, pongs:{layer:{via,ms}}, missed:{layer:n}, files:[{what,ok}] }
@@ -1965,7 +1969,7 @@
       return (h >>> 0).toString(36).slice(0, 6); };
     async function pollBuilds() {
       let ok = true;
-      for (const [k, p] of [["live", "overlay/"], ["staging", "staging/overlay/"]]) {
+      for (const [k, p] of [["live", "overlay/"], ["staging", "staging/overlay/"], ["dev", "dev/overlay/"]]) {
         try {
           const r = await fetch(`${ROOT}${p}index.html?cb=${Date.now()}`, { cache: "no-store" });
           if (r.ok) S.builds[k] = hashOf(await r.text()); else ok = false;
@@ -2001,7 +2005,7 @@
       const actAgo = act?.at ? now - act.at : Infinity;
       const online = LAYERS.filter(([l]) => S.src[`${pc}-${l}`]).length;
       const live = !online ? "offline" : actAgo < 30 * 60e3 ? "live" : "idle";
-      const expected = pc === 6 ? S.builds.staging : S.builds.live;
+      const expected = pc === 6 ? S.builds.staging : pc === 7 ? S.builds.dev : S.builds.live;
       const rowNow = S.rows[pc];
       const chk = S.check[pc] && now - S.check[pc].at < 15 * 60e3 ? S.check[pc] : null;
       const probs = [], layers = {};

@@ -238,8 +238,8 @@
   const toast = (m) => { const t=$("#toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",2600); };
 
-  const PC = String(Math.min(6, Math.max(1, parseInt(new URLSearchParams(location.search).get("pc"), 10) || 1)));
-  $("#pcTag").textContent = PC === "6" ? "PC TEST" : "PC " + PC;
+  const PC = String(Math.min(7, Math.max(1, parseInt(new URLSearchParams(location.search).get("pc"), 10) || 1)));
+  $("#pcTag").textContent = PC === "6" ? "PC TEST" : PC === "7" ? "DEV" : "PC " + PC;
   document.title = `ACBreakz · PC ${PC}`;
 
   const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
