@@ -95,8 +95,10 @@ for (const pc of [1, 2, 3, 4, 5, 6]) {
      source last heard one. evAge is a DURATION measured on that PC, so it is skew-free; 10s of
      grace covers the gap between an insert and its delivery. */
   const fxm = layers.get("fx") ?? layers.get("all");
-  if (fxm && fxm.evAge != null && fxm.evAge > 10) {
-    const since = new Date(Date.now() - fxm.evAge * 1000 + 10000).toISOString();
+  /* never heard one since it loaded: count from the load instead (up is also a duration) */
+  const quietFor = fxm ? (fxm.evAge ?? fxm.up) : null;
+  if (quietFor != null && quietFor > 10) {
+    const since = new Date(Date.now() - quietFor * 1000 + 10000).toISOString();
     const { count } = await sb.from("events").select("id", { count: "exact", head: true })
       .in("pc", [0, pc]).gt("created_at", since);
     if (count) console.log(`        fx  ${count} event(s) sent to ${name} after its FX source last heard one` +
