@@ -11,7 +11,7 @@ window.ACBZ = (() => {
     SUPABASE_URL: "https://jqowngdkgnfhaworyppo.supabase.co",
     SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxb3duZ2RrZ25maGF3b3J5cHBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTgyNjMsImV4cCI6MjEwMTczNDI2M30.2M5RRKfBbgtBwVv5QvKI4Hu88Xdzh5xAhZvBxNdD4qo", // anon public key (safe to ship in overlay)
 
-    DEVICE: Math.min(6, Math.max(1, parseInt(qs.get("pc"), 10) || 1)), // ?pc=1..6 — each PC is its own stream; 6 = PC Test
+    DEVICE: Math.min(7, Math.max(1, parseInt(qs.get("pc"), 10) || 1)), // ?pc=1..7 — each PC is its own stream; 6 = PC Test (live), 7 = Dev
     LAYER:  qs.get("layer") || "all", // bg | hud | fx | all
 
     /* --- Exact geometry from layout_key (1080x1920 canvas) --- */
