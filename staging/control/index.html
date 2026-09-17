@@ -1920,9 +1920,11 @@
       fixing: {},     // pc -> { at, layers, stage, err, still }
       since: {},      // "pc|key" -> { t, logged }
       log: [],
+      seenOnline: {}, // pc -> last time this browser saw any of its sources running (persisted)
       open: new Set(),
     };
     try { S.log = JSON.parse(LS.getItem("acbz-status-log") || "[]"); } catch (e) {}
+    try { S.seenOnline = JSON.parse(LS.getItem("acbz-status-seen") || "{}"); } catch (e) {}
     function note(pc, layer, sev, text) {
       S.log.push({ t: Date.now(), pc, l: layer, sev, text });
       S.log = S.log.slice(-300);
@@ -1949,6 +1951,8 @@
         if (S.src[k] && S.src[k].m.at === n.m.at) n.seenAt = S.src[k].seenAt;
       }
       S.src = next;
+      for (const k in next) S.seenOnline[k.split("-")[0]] = now;
+      try { LS.setItem("acbz-status-seen", JSON.stringify(S.seenOnline)); } catch (e) {}
       soon();
     }
     function row(pc, updatedAt) {
@@ -2028,8 +2032,16 @@
 
       if (!online) {
         LAYERS.forEach(([l]) => layers[l] = { sev: "off", text: "not running" });
-        if (actAgo < 15 * 60e3)
-          add("fail", null, `nothing is running in OBS, but it had a press ${ago(actAgo)} ago`, "reload", STEPS.offline(pc));
+        /* Offline on its own is normal: a stream ends and OBS closes. It is a FAILURE only when the
+           deck was pressed AFTER the overlays went away — someone is running a show nobody can see.
+           The first cut flagged any press in the last 15 minutes, so a streamer who pressed a key and
+           then signed off showed red for a quarter of an hour. "After" needs to know when the sources
+           were last seen, and that is only known if this browser was watching at the time: a stale
+           sighting (the panel was closed during the show) proves nothing, so it raises nothing. */
+        const seen = Number(S.seenOnline[pc]) || 0;
+        if (act?.at && seen && act.at > seen + 60e3 && act.at - seen < 20 * 60e3 && actAgo < 15 * 60e3)
+          add("fail", null, `its Stream Deck was pressed ${ago(actAgo)} ago, after its overlays stopped running in OBS`,
+              "reload", STEPS.offline(pc));
         return { pc, live, online, layers, probs, sev: probs.length ? "fail" : "off", act, actAgo };
       }
 
@@ -2313,7 +2325,8 @@
         <div class="sthead"><b>${nm(pc)}</b>${pill(ev)}</div>
         <div class="stsub">${sub}</div>
         ${srcRows}${box}
-        <details class="sthist" data-sthist="${pc}"${open}><summary>Recent issues (${hist.length})</summary>
+        <details class="sthist" data-sthist="${pc}"${open}><summary>History (${hist.length})</summary>
+          ${hist.length ? `<div class="h"><i>Entries from the PC are things it ran into and repaired on its own; (panel) entries are actions taken from here.</i></div>` : ""}
           ${hist.length ? hist.map(h => `<div class="h">${when(h.t)} — ${h.text}</div>`).join("") : `<div class="h">Nothing recorded.</div>`}
         </details></div>`;
     }
@@ -2393,6 +2406,8 @@
     }
     return { start, presence, row, render, runCheck, fix, evaluate, report, _S: S };
   })();
+  /* read-only diagnostic hook, like the overlay's __acbzDiag: lets a test drive evaluate() directly */
+  window.__acbzStatus = Status;
 
   /* ---------- settings ---------- */
   $("#signOut").onclick = () => signOut("Signed out.");
