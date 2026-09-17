@@ -1957,13 +1957,18 @@
         const [d, e] = await Promise.all([
           /* only presses that CHANGED something: a no-op call (a script probing the broadcast list,
              a retired action) is logged too, and would make an idle PC read LIVE for 30 minutes */
-          sb.from("deck_log").select("at").eq("pc", pc).eq("changed", true).order("at", { ascending: false }).limit(1),
+          sb.from("deck_log").select("at,writer").eq("pc", pc).eq("changed", true).order("at", { ascending: false }).limit(1),
           sb.from("events").select("created_at").eq("pc", pc).neq("type", "health_ping")
             .order("created_at", { ascending: false }).limit(1),
         ]);
         const dAt = Date.parse(d.data?.[0]?.at ?? "") || 0;
         const eAt = Date.parse(e.data?.[0]?.created_at ?? "") || 0;
-        if (dAt || eAt) S.act[pc] = dAt >= eAt ? { at: dAt, how: "Stream Deck" } : { at: eAt, how: "panel or deck" };
+        /* deck_log records every board change, whoever made it: writer "deck" is a Stream Deck key,
+           anything else is a control page's client id */
+        const w = d.data?.[0]?.writer;
+        if (dAt || eAt) S.act[pc] = dAt >= eAt
+          ? { at: dAt, how: w === "deck" ? "Stream Deck" : w === "server" ? "server" : "control panel" }
+          : { at: eAt, how: "an animation or sound key" };
       }));
     }
     /* the same sampled hash the overlay reports as `build` */
