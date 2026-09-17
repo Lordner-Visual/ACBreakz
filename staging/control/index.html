@@ -131,6 +131,7 @@
   nav button .badge{display:inline-block;min-width:18px;margin-left:7px;padding:0 5px;border-radius:9px;
     background:var(--danger);color:#fff;font-size:11px;line-height:18px;text-align:center}
   nav button .badge.warn{background:#B7791F}
+  nav button .badge[hidden]{display:none}   /* display:inline-block above would otherwise beat [hidden] */
   .stbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px solid #1E3A52;
     border-radius:12px;background:#0A1C2C}
   .stspace{flex:1}
