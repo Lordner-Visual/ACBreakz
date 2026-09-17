@@ -1,4 +1,7 @@
 /* Control experiment: do long-lived realtime websockets drop from THIS network with no OBS/browser involved?
+   2026-09-17 result from the office network: 7 sockets x 55 min, 0 drops, 0 missed heartbeats, max 23ms —
+   while the Dev OBS on the same network dropped once in ~1.3 source-hours.
+     node qa/shoot-rt-soak.mjs [minutes] [logfile]
    A) 4 supabase-js 2.116 clients (same library the overlays pin), each subscribed to postgres_changes on the Dev row
    B) 3 raw WebSockets speaking Phoenix directly, with our own 25s heartbeat — isolates the library
    Logs every open/close (code, reason, wasClean), heartbeat round-trips and misses, for MINUTES. */
