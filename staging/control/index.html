@@ -666,9 +666,16 @@
       if (booted) return location.reload();   // re-signed in mid-session — resync
       return unlock();
     }
-    let message = error?.message;
-    try { const b = await error?.context?.json(); if (b?.error) message = b.error; } catch(e){}
-    $("#lockMsg").textContent = message === "wrong password" ? "Wrong password." : (message || "Could not sign in.");
+    let message = error?.message, info = null;
+    try { info = await error?.context?.json(); if (info?.error) message = info.error; } catch(e){}
+    /* V19 lockout: 10 wrong passwords locks sign-in (the server says for how long). Warn in the
+       last few tries so a genuine typo streak does not walk straight into a 15-minute wait. */
+    const left = info?.triesLeft;
+    $("#lockMsg").textContent = message !== "wrong password" ? (message || "Could not sign in.")
+      : info?.locked ? `Wrong password. ${info.detail || "Sign-in is locked for a while."}`
+      : typeof left === "number" && left <= 3
+        ? `Wrong password — ${left} ${left === 1 ? "try" : "tries"} left before sign-in locks.`
+        : "Wrong password.";
     $("#lockPw").value = ""; $("#lockPw").focus();
   };
 
