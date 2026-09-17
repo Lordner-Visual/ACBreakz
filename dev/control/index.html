@@ -1955,7 +1955,9 @@
     async function pollActivity() {
       await Promise.all(PCS.map(async (pc) => {
         const [d, e] = await Promise.all([
-          sb.from("deck_log").select("at").eq("pc", pc).order("at", { ascending: false }).limit(1),
+          /* only presses that CHANGED something: a no-op call (a script probing the broadcast list,
+             a retired action) is logged too, and would make an idle PC read LIVE for 30 minutes */
+          sb.from("deck_log").select("at").eq("pc", pc).eq("changed", true).order("at", { ascending: false }).limit(1),
           sb.from("events").select("created_at").eq("pc", pc).neq("type", "health_ping")
             .order("created_at", { ascending: false }).limit(1),
         ]);
