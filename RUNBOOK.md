@@ -126,6 +126,11 @@ modified. The cloud system keeps running in the background; switch back any time
   Tokens are signed with `PANEL_KEY + PANEL_PASSWORD`, so **rotating either secret signs
   every device out instantly**:
   `supabase secrets set PANEL_PASSWORD=<new>` (then redeploy is not needed).
+  **Login lockout (V19):** 10 wrong passwords from one connection locks it out for 15 minutes
+  (doubling on repeats, up to 24 hours); 50 wrong across everyone pauses new sign-ins for an hour
+  (up to 6). Devices already signed in, the per-PC dashboards and Stream Decks are never affected.
+  To unlock by hand (e.g. staff locked themselves out): run `delete from public.panel_login_guard;`
+  in the Supabase SQL editor.
   The overlay is deliberately NOT password-gated — it is read-only and must load
   unattended in OBS.
 - **Budget ledger:** `BUDGET.md`. AI images ≈$0.03 each (fal.ai FLUX).
