@@ -176,17 +176,20 @@ try {
   console.log("\n5. maintenance reload (?maint=40000)");
   let opened = await open("&maint=40000");
   page = opened.page;
-  const warmBefore = opened.media.total;
-  let reloaded = false;
-  page.on("framenavigated", (fr) => { if (fr === page.mainFrame()) reloaded = true; });
+  /* read the first-load count AT the reload — reading it as soon as the page joins raced the
+     warm, which starts a moment later, and reported 0 */
+  let reloaded = false, warmBefore = 0;
+  page.on("framenavigated", (fr) => {
+    if (fr === page.mainFrame() && !reloaded) { warmBefore = opened.media.total; opened.media.total = 0; reloaded = true; }
+  });
   const m0 = Date.now();
   while (!reloaded && Date.now() - m0 < 120000) await sleep(1000);
   ok("reloaded itself once up and quiet", reloaded, `after ${((Date.now() - m0) / 1000).toFixed(0)}s`);
-  opened.media.total = 0;
   await until(page, () => window.__acbzDiag && window.__acbzDiag().db === "joined", null, 30000);
   await sleep(8000);
   const rl = await page.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-6-fx")));
   ok("recorded why", /^maintenance/.test(rl?.why ?? ""), rl?.why);
+  ok("the first load DID warm (so the check below means something)", warmBefore > 0);
   ok("did NOT re-download the FX set after the reload", opened.media.total === 0,
      `${warmBefore} clip request(s) on first load, ${opened.media.total} after the reload`);
   await page.close();
