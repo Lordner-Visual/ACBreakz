@@ -432,9 +432,27 @@
   let lastReload = null;
   try { lastReload = JSON.parse(localStorage.getItem(RELOAD_KEY) || "null"); } catch (e) {}
   function selfReload(why) {
+    incident("reload", why);
     try { localStorage.setItem(RELOAD_KEY, JSON.stringify({ why, at: Date.now() })); } catch (e) {}
     console.warn(`[acbz] reloading: ${why}`);
     location.reload();
+  }
+
+  /* Incident log for the control panel's Status tab: "when did it fail" has to survive the
+     very reload that fixed it, so it lives in localStorage (per source) and rides presence.
+     A repeat of the same thing within 30 minutes bumps a counter instead of adding a line, so a
+     dead banner retrying twice an hour cannot push everything else out of the last 12. */
+  const INC_KEY = `acbz-inc-${PC}-${layer}`;
+  let incidents = [];
+  try { incidents = JSON.parse(localStorage.getItem(INC_KEY) || "[]"); } catch (e) {}
+  function incident(c, d) {
+    const now = Date.now();
+    incidents = incidents.filter(e => now - e.t < 48 * 3600e3);
+    const same = incidents.find(e => e.c === c && e.d === d && now - e.t < 30 * 60e3);
+    if (same) { same.t = now; same.n = (same.n || 1) + 1; }
+    else incidents.push({ f: now, t: now, n: 1, c, d: String(d).slice(0, 120) });
+    incidents = incidents.slice(-12);
+    try { localStorage.setItem(INC_KEY, JSON.stringify(incidents)); } catch (e) {}
   }
 
   /* ---------------- board cells (v2: all logos always visible) ---------------- */
@@ -877,6 +895,7 @@
         if (a.url) {
           const wait = markFailed(a.url, why === "error");
           console.warn(`[acbz] banner "${a.name}" ${why}; retrying in ${Math.round(wait / 1000)}s`);
+          incident("banner", `banner "${a.name}" would not load (${why})`);
         }
         this.skipTo(a, tried, gen);
       };
@@ -922,6 +941,7 @@
     if (!bgBroken(el)) { markOk(bgWanted.url); return; }
     const wait = markFailed(bgWanted.url, !!el?.error);
     console.warn(`[acbz] background not painting — rebuilding, next check backs off ${Math.round(wait / 1000)}s`);
+    incident("background", "background was not showing — rebuilt it");
     bgKey = null;                                // defeat the early return
     setBackground(bgWanted);
   }, 20000);
@@ -1009,7 +1029,8 @@
       if (gen === vidGen) unloadFxVideo();      // never tear down a newer clip's element
       done(); };
     const startDog = setTimeout(() => {
-      if (!fxV.currentTime) { console.warn("[acbz] clip never started, giving up:", url); finish(); }
+      if (!fxV.currentTime) { console.warn("[acbz] clip never started, giving up:", url);
+        incident("clip", `a stinger never started: ${url.split("/").pop()}`); finish(); }
     }, 8000);
     /* ...and once it HAS started. The old watchdog was cleared by the `playing` event, so a
        buffer that ran dry MID-clip (a stream PC fetches while it uploads) left nothing
@@ -1019,10 +1040,12 @@
       if (gen !== vidGen) return finish();      // a newer clip took the element
       if (!fxV.currentTime) return;             // not started yet: startDog's job
       if (fxV.currentTime !== lastT) { lastT = fxV.currentTime; stillFor = 0; return; }
-      if (++stillFor >= 5) { console.warn("[acbz] clip stopped advancing, giving up:", url); finish(); }
+      if (++stillFor >= 5) { console.warn("[acbz] clip stopped advancing, giving up:", url);
+        incident("clip", `a stinger froze mid-play: ${url.split("/").pop()}`); finish(); }
     }, 1000);
     const capDog = setTimeout(() => {            // no stinger or one-shot runs anywhere near this
-      console.warn("[acbz] clip ran past 60s, giving up:", url); finish();
+      console.warn("[acbz] clip ran past 60s, giving up:", url);
+      incident("clip", `a stinger ran past 60s: ${url.split("/").pop()}`); finish();
     }, 60000);
     /* a property, not addEventListener({once}): a listener left by a clip that never started
        used to survive and fire for the NEXT clip */
@@ -1062,6 +1085,7 @@
     let job;
     while ((job = fxQ.shift()) && Date.now() - job.at > FX_STALE_MS) {
       fxStats.dropped++; console.warn("[acbz] dropping a stale FX job:", job.team || job.url);
+      incident("dropped", "a stinger waited over 30s in the queue and was skipped");
     }
     if (!job) return;
     fxBusy = true; fxSince = Date.now(); fxStats.played++; fxStats.lastAt = fxSince;
@@ -1078,6 +1102,7 @@
   setInterval(() => {
     if (!fxBusy || Date.now() - fxSince < 45000) return;
     console.warn("[acbz] FX lane held for 45s — forcing it open");
+    incident("stuck", "the stinger lane was stuck for 45s — forced it open");
     fxStats.stuck++;
     vidGen++; unloadFxVideo();
     fxIBox.style.display = "none"; fxI.classList.remove("go");
@@ -1305,6 +1330,38 @@
     lastHlKey = hlKey;
     if (partsChanged || hlChanged) restartEffects();
     rotator.setList(s.banners?.rotation || []);
+    handleCmd(s.cmd);
+  }
+
+  /* ---------------- remote commands (control panel → Status tab) ----------------
+     The panel's Fix / Reload buttons write data.cmd = {id, action, layers, at} into this PC's
+     state row. The row is the one route that reaches a source even when realtime is broken —
+     the 15s updatedAt watchdog re-reads it no matter what — which is exactly the source that
+     needs fixing. A command is acted on once: handled ids persist in localStorage, and the
+     first state a page ever applies only RECORDS the command already sitting there (it was
+     for the page this one replaced — acting on it would reload forever). A copy older than
+     5 minutes is ignored, so a stale document written back later cannot trigger a reload. */
+  const CMD_KEY = `acbz-cmd-${PC}-${layer}`;
+  let cmdBooted = false;
+  function handleCmd(cmd) {
+    const boot = !cmdBooted; cmdBooted = true;
+    if (!cmd || !cmd.id) return;
+    let handled = [];
+    try { handled = JSON.parse(localStorage.getItem(CMD_KEY) || "[]"); } catch (e) {}
+    if (handled.includes(cmd.id)) return;
+    try { localStorage.setItem(CMD_KEY, JSON.stringify([...handled, cmd.id].slice(-20))); } catch (e) {}
+    if (boot) return;
+    if (Array.isArray(cmd.layers) && layer !== "all" && !cmd.layers.includes(layer)) return;
+    if (Math.abs(Date.now() - Number(cmd.at || 0)) > 5 * 60e3) return;
+    if (cmd.action === "reload") remoteReload(cmd);
+  }
+  async function remoteReload(cmd) {
+    /* never cut a stinger off: give the lane up to 10s to finish */
+    for (let i = 0; i < 20 && (fxBusy || fxQ.length); i++) await new Promise(r => setTimeout(r, 500));
+    /* this is the OBS "Refresh cache of current page" button: re-fetch our own files past the
+       HTTP cache before reloading, so a bad cached copy cannot survive the fix */
+    try { await Promise.all(["index.html", "config.js"].map(f => fetch(f, { cache: "reload" }))); } catch (e) {}
+    selfReload(`remote: ${cmd.why || "reload"} (from the control panel)`);
   }
   const seen = new Set();
   /* The age filter compared the PC OWN clock against the server timestamp, so a machine
@@ -1318,7 +1375,8 @@
      making it immune to a skewed clock. The first event always passes, which is correct: it
      is a real event, and it is what calibrates the baseline. */
   let clockOffset = null;
-  function handleEvent(ev) {
+  let onPong = null;                  // set by the transport: answer a health check over presence
+  function handleEvent(ev, via = "realtime") {
     if (!ev || seen.has(ev.id)) return; seen.add(ev.id);
     if (ev.created_at) {
       const raw = Date.now() - new Date(ev.created_at).getTime();
@@ -1350,6 +1408,9 @@
                 crop: p.crop }); break;
       case "play_sfx": sfx(p.url); break;
       case "banner_skip": rotator.next(); break;
+      /* the Status tab's health check: prove the stinger path end to end (panel -> edge fn ->
+         events -> this page) and say which route it came in on */
+      case "health_ping": onPong && onPong({ id: p.id, via, at: Date.now() }); break;
     }
   }
 
@@ -1454,6 +1515,7 @@
         const backoff = Math.min(30000, 1000 * Math.pow(2, retry++));
         const wait = Math.max(backoff, lastRebuildAt + 5000 - Date.now());
         console.warn(`[acbz] realtime ${why} — rebuilding in ${Math.round(wait / 1000)}s`);
+        incident("realtime", `live connection ${({ CHANNEL_ERROR: "dropped", TIMED_OUT: "timed out", CLOSED: "closed" })[why] || why} — reconnected`);
         resubTimer = setTimeout(() => { resubTimer = null; subscribeDb(why); }, wait);
       }
       function subscribeDb(why) {
@@ -1489,7 +1551,8 @@
                  applyState(p.new.data); })
           .on("postgres_changes",{event:"INSERT",schema:"public",table:"events",
                filter:`pc=in.(0,${PC})`},
-              (p)=>{ lastEventAt = lastActivityAt = Date.now(); lastStateAt = lastStateAt || Date.now();
+              (p)=>{ lastEventAt = Date.now(); lastStateAt = lastStateAt || Date.now();
+                 if (p.new && p.new.type !== "health_ping") lastActivityAt = Date.now();  // a check is not a press
                  scheduleReconcile();
                  handleEvent(p.new); })
           .subscribe((status) => {
@@ -1543,8 +1606,18 @@
                              fx: FX_LAYER ? window.__acbzFx() : undefined,
                              rl: lastReload ? { why: lastReload.why,
                                    ago: Math.round((Date.now() - lastReload.at) / 1000) } : null,
+                             /* for the Status tab */
+                             ua: Number(lastState && lastState.updatedAt) || 0,   // newest state APPLIED
+                             bg: BG_LAYER ? { ok: bgWanted && bgWanted.url
+                                   ? !bgBroken($("#bgFrame").querySelector("video,img")) : null } : undefined,
+                             ban: HUD_LAYER ? { n: rotator.list.length,
+                                   bad: rotator.list.filter(a => a.url && isDeadNow(a.url)).length } : undefined,
+                             inc: incidents.slice(-8),
+                             pong: lastPong,
                            }); } catch (e) {}
       }
+      let lastPong = null;
+      onPong = (pong) => { lastPong = pong; trackSelf(); };
       subscribeDb();
       subscribePresence();
       setInterval(trackSelf, 30000);
@@ -1656,14 +1729,19 @@
           /* +1ms: Date.parse drops the microseconds, and without it the newest row comes back on
              every poll forever */
           evCursor = Math.max(evCursor, ...data.map(e => Date.parse(e.created_at) + 1));
-          lastActivityAt = Date.now();
+          if (data.some(e => e.type !== "health_ping")) lastActivityAt = Date.now();
           if (data.every(e => seen.has(e.id))) return;
           await new Promise(r => setTimeout(r, 1500));   // let a merely-slower socket win
           const missed = data.filter(e => !seen.has(e.id));
           if (!missed.length) return;
-          misses.push(Date.now());
+          /* a health check's own ping is reported by the check itself (answered via backstop);
+             counting it here too would show one problem twice */
+          if (missed.some(e => e.type !== "health_ping")) {
+            misses.push(Date.now());
+            incident("missed", "live updates missed a stinger — played it late from the backup check");
+          }
           console.warn(`[acbz] realtime missed ${missed.length} event(s) — playing them from the backstop`);
-          missed.forEach(handleEvent);
+          missed.forEach(e => handleEvent(e, "backstop"));
           rebuildDb("missed events");
         } catch (e) { /* offline: the next poll tries again */ }
       }

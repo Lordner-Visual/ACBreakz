@@ -127,6 +127,52 @@
     padding:13px 12px;font-size:16px;width:100%;text-align:center;letter-spacing:3px}
   #lockMsg{min-height:18px;color:var(--danger)}
   html.locked body{overflow:hidden}
+  /* status tab */
+  nav button .badge{display:inline-block;min-width:18px;margin-left:7px;padding:0 5px;border-radius:9px;
+    background:var(--danger);color:#fff;font-size:11px;line-height:18px;text-align:center}
+  nav button .badge.warn{background:#B7791F}
+  .stbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px solid #1E3A52;
+    border-radius:12px;background:#0A1C2C}
+  .stspace{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;
+    font-weight:800;letter-spacing:.4px;border:1px solid #2A4A63;background:#0E2436;color:#B9CBDB;white-space:nowrap}
+  .pill.ok{border-color:var(--ok);color:#8FE3C3;background:rgba(63,182,139,.12)}
+  .pill.warn{border-color:#C9892B;color:#F3C77A;background:rgba(201,137,43,.12)}
+  .pill.fail{border-color:var(--danger);color:#FF9EA1;background:rgba(229,72,77,.14)}
+  .pill.live{border-color:#FF6B70;color:#fff;background:#8E2328}
+  .stcloud{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:#9FB6C9}
+  .stcloud span{display:inline-flex;align-items:center;gap:6px}
+  .stgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;margin-top:12px}
+  @media(max-width:420px){.stgrid{grid-template-columns:1fr}}
+  .stcard{background:#0A1C2C;border:1px solid #1E3A52;border-left:5px solid #3A4E60;border-radius:14px;padding:12px}
+  .stcard.ok{border-left-color:var(--ok)}.stcard.warn{border-left-color:#C9892B}
+  .stcard.fail{border-left-color:var(--danger)}
+  .sthead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sthead b{font-size:17px;margin-right:2px}
+  .stsub{font-size:12px;color:#8FA8BC;margin:5px 0 6px}
+  .stsrc{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #15314A;font-size:13px}
+  .stsrc .nm{width:118px;flex:none;font-weight:700;color:#DCE8F2}
+  .stsrc .st{flex:1;min-width:0;color:#B9CBDB}
+  .dot{width:10px;height:10px;border-radius:50%;background:#4A5D6E;flex:none}
+  .dot.ok{background:var(--ok)}.dot.warn{background:#E0A43A}.dot.fail{background:var(--danger)}
+  .lnk{background:none;border:1px solid #24455F;color:#9FC3E0;border-radius:8px;padding:4px 8px;
+    font-size:11px;cursor:pointer;flex:none}
+  .lnk:disabled{opacity:.5;cursor:default}
+  .stbox{margin-top:9px;padding:9px 11px;border-radius:10px;font-size:13px;line-height:1.4;
+    background:rgba(229,72,77,.08);border:1px solid rgba(229,72,77,.35)}
+  .stbox.warn{background:rgba(201,137,43,.08);border-color:rgba(201,137,43,.35)}
+  .stbox.info{background:rgba(53,167,255,.07);border-color:rgba(53,167,255,.35)}
+  .stbox.okbox{background:rgba(63,182,139,.08);border-color:rgba(63,182,139,.35)}
+  .stbox ul,.stbox ol{margin:4px 0 2px 20px}
+  .stbox li{margin:3px 0}
+  .stbox .when{color:#8FA8BC;font-size:11px}
+  .stbox h4{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8FA8BC;margin:8px 0 2px}
+  .stbox .row{margin-top:8px}
+  .sthist{margin-top:9px;font-size:12px;color:#9FB6C9}
+  .sthist summary{cursor:pointer;color:#8FA8BC}
+  .sthist .h{padding:4px 0;border-top:1px dashed #15314A}
+  .sthist .h i{font-style:normal;color:#7E97AB}
+  .stnote{margin-top:14px;max-width:780px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -147,6 +193,7 @@
   <button data-tab="bgs">Backgrounds</button>
   <button data-tab="style">Board Style</button>
   <button data-tab="ai">AI</button>
+  <button data-tab="status" id="statusTabBtn">Status<span class="badge" id="statusBadge" hidden></span></button>
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
@@ -424,6 +471,26 @@
   <div class="row" style="margin-top:10px"><button class="btn ghost" id="aiRefClose">Close</button>
     <span class="tag" id="aiRefMsg"></span></div>
 </div></div>
+
+<section id="tab-status">
+  <div class="stbar">
+    <span class="pill" id="stOverall">Checking…</span>
+    <span class="tag" id="stChecked">Watching every PC live. A health check also sends a test signal down the stinger path.</span>
+    <span class="stspace"></span>
+    <button class="btn" id="stCheck">Run health check</button>
+    <button class="btn gold" id="stFixAll" disabled>Fix all problems</button>
+    <button class="btn ghost" id="stCopy">Copy report</button>
+  </div>
+  <div class="stcloud" id="stCloud"></div>
+  <div class="stgrid" id="stGrid"></div>
+  <p class="tag stnote">
+    <b>LIVE</b> means the PC's OBS overlays are running and it has had a press in the last 30 minutes —
+    nothing can see whether OBS is actually streaming. <b>Fix</b> reloads only the broken sources from here,
+    the same as “Refresh cache of current page” in OBS. The Stingers source reloads invisibly; reloading
+    Background or Board makes them blink for about a second. Anything a reload cannot reach — OBS closed,
+    a source deleted or hidden, a wrong clock — shows the steps to do on that PC.
+  </p>
+</section>
 
 <section id="tab-settings">
   <h2>This device</h2>
@@ -1795,6 +1862,519 @@
     renderCompBGs(); drawComposer();
   }
 
+  /* ---------- status ----------
+     One page that answers "is every PC working, and if not, what do I do" without anyone
+     having to run a script or reset an OBS cache by hand.
+
+     LIVE view: every overlay source reports itself on presence:overlays every 30s — build,
+     data connection, reconnects, stingers missed and recovered, whether its background is
+     painting, which state it has applied, and its own incident log (kept in the PC's
+     localStorage, so it survives the reload that fixed it).
+     HEALTH CHECK: sends a health_ping EVENT to each PC through the panel function — the exact
+     route a stinger takes — and waits for every source to answer over presence, saying whether
+     it arrived live or only via the FX source's backup poll. It also checks the database, the
+     deployed pages, events a PC was sent but never heard, and that selected media files exist.
+     FIX: writes data.cmd = {reload} into that PC's state row. The row is the one path that
+     reaches a source even when its live connection is broken (the overlay re-reads it every
+     15s regardless), and the source then re-fetches its own files past the cache and reloads —
+     the remote equivalent of OBS's "Refresh cache of current page". Only broken sources are
+     reloaded, and it re-checks afterwards; what a reload cannot reach gets written steps. */
+  const Status = (() => {
+    const PCS = [1, 2, 3, 4, 5, 6];
+    const LAYERS = [["bg", "Background"], ["hud", "Board & banners"], ["fx", "Stingers & sound"]];
+    const OBS = { bg: "BG", hud: "HUD", fx: "FX" };
+    const RANK = { ok: 0, info: 0, warn: 1, fail: 2 };
+    const ROOT = location.href.replace(/(staging\/)?control\/[^]*$/, "");
+    const nm = (pc) => pc === 6 ? "PC Test" : "PC " + pc;
+    const scene = (pc) => `ACBreakz Cloud ${pc === 6 ? "PC Test" : pc}`;
+    const srcUrl = (pc, l) => `${ROOT}${pc === 6 ? "staging/" : ""}overlay/?layer=${l}&pc=${pc}`;
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const ago = (ms) => ms < 60e3 ? `${Math.max(0, Math.round(ms / 1000))}s`
+      : ms < 3600e3 ? `${Math.round(ms / 60e3)}m` : ms < 86400e3 ? `${(ms / 3600e3).toFixed(1)}h`
+      : `${Math.round(ms / 86400e3)}d`;
+    const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit" });
+
+    const S = {
+      chan: null,
+      src: {},        // "pc-layer" -> { m (newest meta), copies, seenAt, dupSince }
+      rows: {},       // pc -> { updatedAt, gotAt }
+      act: {},        // pc -> { at, how }
+      builds: {},     // live | staging -> sampled hash of the deployed overlay
+      pagesOk: null,
+      cloud: null,    // last health check's cloud results
+      check: {},      // pc -> { at, pongs:{layer:{via,ms}}, missed:{layer:n}, files:[{what,ok}] }
+      checking: false,
+      fixing: {},     // pc -> { at, layers, stage, err, still }
+      since: {},      // "pc|key" -> { t, logged }
+      log: [],
+      open: new Set(),
+    };
+    try { S.log = JSON.parse(LS.getItem("acbz-status-log") || "[]"); } catch (e) {}
+    function note(pc, layer, sev, text) {
+      S.log.push({ t: Date.now(), pc, l: layer, sev, text });
+      S.log = S.log.slice(-300);
+      try { LS.setItem("acbz-status-log", JSON.stringify(S.log)); } catch (e) {}
+    }
+
+    /* ---- inputs ---- */
+    function presence(state) {
+      const now = Date.now(), next = {};
+      for (const metas of Object.values(state || {})) for (const m of metas) {
+        if (m?.pc == null || !m.layer) continue;
+        const k = `${m.pc}-${m.layer === "all" ? "fx" : m.layer}`;
+        const prev = S.src[k];
+        if (next[k]) { next[k].copies++; if ((m.at || 0) > (next[k].m.at || 0)) next[k].m = m; continue; }
+        next[k] = { m, copies: 1,
+          /* when the panel first saw THIS report — a source whose report stops changing has
+             stopped running its timers, which is what a frozen page looks like from outside */
+          seenAt: prev && prev.m.at === m.at ? prev.seenAt : now,
+          dupSince: prev?.dupSince ?? 0 };
+      }
+      for (const k in next) {
+        const n = next[k];
+        n.dupSince = n.copies > 1 ? (n.dupSince || now) : 0;
+        if (S.src[k] && S.src[k].m.at === n.m.at) n.seenAt = S.src[k].seenAt;
+      }
+      S.src = next;
+      soon();
+    }
+    function row(pc, updatedAt) {
+      const u = Number(updatedAt) || 0;
+      if (!S.rows[pc] || u > S.rows[pc].updatedAt) S.rows[pc] = { updatedAt: u, gotAt: Date.now() };
+    }
+    async function pollRows() {
+      const { data } = await sb.from("stream_state").select("id,updatedAt:data->updatedAt");
+      (data || []).forEach(r => row(r.id, r.updatedAt));
+    }
+    async function pollActivity() {
+      await Promise.all(PCS.map(async (pc) => {
+        const [d, e] = await Promise.all([
+          sb.from("deck_log").select("at").eq("pc", pc).order("at", { ascending: false }).limit(1),
+          sb.from("events").select("created_at").eq("pc", pc).neq("type", "health_ping")
+            .order("created_at", { ascending: false }).limit(1),
+        ]);
+        const dAt = Date.parse(d.data?.[0]?.at ?? "") || 0;
+        const eAt = Date.parse(e.data?.[0]?.created_at ?? "") || 0;
+        if (dAt || eAt) S.act[pc] = dAt >= eAt ? { at: dAt, how: "Stream Deck" } : { at: eAt, how: "panel or deck" };
+      }));
+    }
+    /* the same sampled hash the overlay reports as `build` */
+    const hashOf = (t) => { let h = 0; for (let i = 0; i < t.length; i += 101) h = (Math.imul(31, h) + t.charCodeAt(i)) | 0;
+      return (h >>> 0).toString(36).slice(0, 6); };
+    async function pollBuilds() {
+      let ok = true;
+      for (const [k, p] of [["live", "overlay/"], ["staging", "staging/overlay/"]]) {
+        try {
+          const r = await fetch(`${ROOT}${p}index.html?cb=${Date.now()}`, { cache: "no-store" });
+          if (r.ok) S.builds[k] = hashOf(await r.text()); else ok = false;
+        } catch (e) { ok = false; }
+      }
+      S.pagesOk = ok;
+    }
+
+    /* ---- evaluation ---- */
+    const STEPS = {
+      refresh: (pc, ls) => [
+        `On ${nm(pc)}, in OBS scene “${scene(pc)}”, right-click ${ls.map(l => `“${OBS[l]}”`).join(" and ")} → Properties → <b>Refresh cache of current page</b>.`,
+        `Still red a minute later? Close OBS completely and open it again.`],
+      missing: (pc, l) => [
+        `On ${nm(pc)}, open OBS and select scene “${scene(pc)}”.`,
+        `Make sure the “${OBS[l]}” source exists and its eye icon is ON.`,
+        `Right-click “${OBS[l]}” → Properties. The URL must be <code>${esc(srcUrl(pc, l))}</code>.`,
+        `In the same window press <b>Refresh cache of current page</b>.`],
+      offline: (pc) => [
+        `Only matters if ${nm(pc)} should be streaming right now.`,
+        `Check the PC is on and online, then open OBS and select scene “${scene(pc)}”.`,
+        `Give it a minute. If it is still offline, right-click “BG”, “HUD” and “FX” → Properties → <b>Refresh cache of current page</b>.`],
+      clock: (pc) => [
+        `On ${nm(pc)}: Windows Settings → Time &amp; language → Date &amp; time → turn on <b>Set time automatically</b>, then press <b>Sync now</b>.`],
+      banner: (pc) => [`Open the <b>Banners</b> tab with ${nm(pc)} selected and remove or re-upload the banner that will not load.`],
+      file: (pc, what) => [`${esc(what)} points at a file that no longer exists — pick it again in its tab for ${nm(pc)}, or remove it.`],
+      dup: (pc, l) => [`Two “${OBS[l]}” sources are running for ${nm(pc)} — look in OBS for a copy in another scene or a second OBS window, and remove the extra.`],
+    };
+
+    function evaluate(pc) {
+      const now = Date.now();
+      const act = S.act[pc];
+      const actAgo = act?.at ? now - act.at : Infinity;
+      const online = LAYERS.filter(([l]) => S.src[`${pc}-${l}`]).length;
+      const live = !online ? "offline" : actAgo < 30 * 60e3 ? "live" : "idle";
+      const expected = pc === 6 ? S.builds.staging : S.builds.live;
+      const rowNow = S.rows[pc];
+      const chk = S.check[pc] && now - S.check[pc].at < 15 * 60e3 ? S.check[pc] : null;
+      const probs = [], layers = {};
+      const add = (sev, layer, text, fix, steps) =>
+        probs.push({ key: `${layer || "pc"}|${text.replace(/\d+/g, "#")}`, sev, layer, text, fix, steps });
+
+      if (!online) {
+        LAYERS.forEach(([l]) => layers[l] = { sev: "off", text: "not running" });
+        if (actAgo < 15 * 60e3)
+          add("fail", null, `nothing is running in OBS, but it had a press ${ago(actAgo)} ago`, "reload", STEPS.offline(pc));
+        return { pc, live, online, layers, probs, sev: probs.length ? "fail" : "off", act, actAgo };
+      }
+
+      let skew = null;
+      for (const [l, label] of LAYERS) {
+        const s = S.src[`${pc}-${l}`];
+        let sev = "ok";
+        const bad = (v, text, fix = "reload", steps) => {
+          if (RANK[v] > RANK[sev]) sev = v;
+          add(v, l, `${label}: ${text}`, fix, steps);
+        };
+        if (!s) {
+          layers[l] = { sev: "fail", text: "not running in OBS" };
+          add("fail", l, `${label}: not running in OBS`, "reload", STEPS.missing(pc, l));
+          continue;
+        }
+        const m = s.m;
+        if (typeof m.at === "number") {
+          const sk = m.at - s.seenAt;
+          if (skew === null || Math.abs(sk) < Math.abs(skew)) skew = sk;
+        }
+        /* `inc` arrived with health checks: a source without it cannot answer a ping, and saying it
+           "did not answer" would call a version gap a failure */
+        const canPing = Array.isArray(m.inc);
+        if (m.up == null || !canPing) bad("warn", "running an old version without health checks — Fix updates it");
+        else if (expected && m.build && m.build !== "?" && m.build !== expected && m.up > 180)
+          bad("warn", "running an old version — it did not update itself");
+        if (now - s.seenAt > 120e3) bad("fail", `stopped reporting ${ago(now - s.seenAt)} ago — the page looks frozen`);
+        if (m.db && m.db !== "joined")
+          bad(m.db === "joining" ? "warn" : "fail",
+              m.db === "joining" ? "reconnecting to live updates" : "not connected to live updates");
+        if (m.rb >= 5) bad("warn", `connection unstable — reconnected ${m.rb} times in the last hour`);
+        if (l === "fx" && m.miss) bad("warn", `live updates missed ${m.miss} stinger check(s) in the last hour — played late from the backup`);
+        if (l === "fx" && m.fx?.busy && m.fx.busyMs > 45000) bad("fail", "the stinger lane is stuck");
+        if (rowNow && m.up != null && typeof m.ua === "number" && m.ua < rowNow.updatedAt && now - rowNow.gotAt > 45000)
+          bad("fail", "is not showing the latest changes");
+        if (l === "bg" && m.bg?.ok === false) bad("fail", "the background is not showing");
+        if (l === "hud" && m.ban?.bad) bad("warn", `${m.ban.bad} banner file(s) will not load`, null, STEPS.banner(pc));
+        if (s.dupSince && now - s.dupSince > 90e3) bad("warn", `${s.copies} copies are running`, null, STEPS.dup(pc, l));
+        if (chk && canPing) {
+          const p = chk.pongs[l];
+          if (!p) bad("fail", "did not answer the health check");
+          else if (p.via === "backstop") bad("warn", "live updates are not reaching it — only the backup check answered");
+          if (chk.missed[l]) bad("fail", `was sent ${chk.missed[l]} stinger event(s) it never heard`);
+        }
+        let text;
+        if (sev === "ok") {
+          const bits = [];
+          if (l === "hud" && m.ban) bits.push(`${m.ban.n} banner${m.ban.n === 1 ? "" : "s"} rotating`);
+          if (l === "fx" && m.fx) bits.push(`${m.fx.played} played`);
+          if (l === "fx" && m.evAge != null) bits.push(`last event ${ago(m.evAge * 1000)} ago`);
+          if (chk?.pongs[l]) bits.push(`answered in ${(chk.pongs[l].ms / 1000).toFixed(1)}s`);
+          if (m.up != null) bits.push(`up ${ago(m.up * 1000)}`);
+          text = "OK" + (bits.length ? " · " + bits.join(" · ") : "");
+        } else {
+          text = probs.filter(p => p.layer === l).sort((a, b) => RANK[b.sev] - RANK[a.sev])[0].text.replace(`${label}: `, "");
+        }
+        layers[l] = { sev, text };
+      }
+      if (skew !== null && Math.abs(skew) > 90e3)
+        add("warn", null, `its clock is ${Math.round(Math.abs(skew) / 1000)}s ${skew > 0 ? "fast" : "slow"}`, null, STEPS.clock(pc));
+      for (const f of chk?.files || []) if (f.ok === false)
+        add("warn", null, `${f.what} is missing its file`, null, STEPS.file(pc, f.what));
+      const sev = probs.reduce((w, p) => RANK[p.sev] > RANK[w] ? p.sev : w, "ok");
+      return { pc, live, online, layers, probs, sev, act, actAgo };
+    }
+
+    /* problems get a first-noticed time, and land in the history once they have lasted 30s
+       (a reconnect that heals itself in 10s is not worth a line) */
+    function track(ev) {
+      const now = Date.now(), keys = new Set();
+      for (const p of ev.probs) {
+        const k = `${ev.pc}|${p.key}`; keys.add(k);
+        const s = S.since[k] ??= { t: now, logged: false, text: p.text, layer: p.layer };
+        p.since = s.t;
+        if (!s.logged && now - s.t > 30e3) { s.logged = true; note(ev.pc, p.layer, p.sev, p.text); }
+      }
+      for (const k of Object.keys(S.since)) if (k.startsWith(ev.pc + "|") && !keys.has(k)) {
+        if (S.since[k].logged) note(ev.pc, S.since[k].layer, "ok", "Resolved: " + S.since[k].text);
+        delete S.since[k];
+      }
+    }
+
+    /* ---- health check ---- */
+    async function runCheck(pcs = PCS) {
+      if (S.checking) return;
+      S.checking = true; render();
+      const cloud = { at: Date.now() };
+      try {
+        let rows = [];
+        try {
+          const t = Date.now();
+          const { data, error } = await sb.from("stream_state")
+            .select("id,updatedAt:data->updatedAt,background:data->background,banners:data->banners,loopFx:data->loopFx");
+          if (error) throw error;
+          rows = data || [];
+          rows.forEach(r => row(r.id, r.updatedAt));
+          cloud.db = { ok: true, text: `database answered in ${Date.now() - t}ms` };
+        } catch (e) { cloud.db = { ok: false, text: "database did not answer: " + (e.message || e) }; }
+        await Promise.all([pollBuilds(), pollActivity().catch(() => {})]);
+        cloud.pages = { ok: !!S.pagesOk, text: S.pagesOk ? "overlay pages reachable" : "overlay pages did not load" };
+        cloud.rt = { ok: S.chan?.state === "joined", text: S.chan?.state === "joined" ? "live channel connected" : "this panel's live channel is not connected" };
+
+        /* the ping: panel -> panel fn -> events insert -> realtime (or the FX backup poll) -> overlay -> presence */
+        const ids = {}, sentAt = {};
+        cloud.fn = { ok: true, text: "panel function answered" };
+        await Promise.all(pcs.filter(pc => LAYERS.some(([l]) => S.src[`${pc}-${l}`])).map(async (pc) => {
+          const id = crypto.randomUUID();
+          sentAt[pc] = Date.now();
+          const { error } = await panelCall({ action: "event", pc, type: "health_ping", payload: { id } });
+          if (error) cloud.fn = { ok: false, text: "panel function failed: " + error.message };
+          else ids[pc] = id;
+        }));
+        const pongs = {};
+        const deadline = Date.now() + 12000;
+        while (Date.now() < deadline) {
+          let waiting = false;
+          for (const pc of Object.keys(ids)) for (const [l] of LAYERS) {
+            const s = S.src[`${pc}-${l}`];
+            if (!s) continue;
+            pongs[pc] ??= {};
+            if (s.m.pong?.id === ids[pc]) pongs[pc][l] ??= { via: s.m.pong.via, ms: Date.now() - sentAt[pc] };
+            else waiting = true;
+          }
+          if (!waiting) break;
+          await sleep(300);
+        }
+
+        for (const pc of pcs) {
+          const res = { at: Date.now(), pongs: pongs[pc] || {}, missed: {}, files: [] };
+          /* stinger events the FX source was sent after it last heard one */
+          const fx = S.src[`${pc}-fx`]?.m;
+          const quiet = fx ? Math.min(fx.evAge ?? fx.up ?? 0, fx.up ?? 0) : 0;
+          if (fx && quiet > 15) {
+            const { count } = await sb.from("events").select("id", { count: "exact", head: true })
+              .in("pc", [0, pc]).neq("type", "health_ping")
+              .gt("created_at", new Date(Date.now() - quiet * 1000 + 10000).toISOString());
+            if (count) res.missed.fx = count;
+          }
+          /* selected media: a background, loop or banner whose file is gone renders as nothing */
+          const r = rows.find(x => x.id === pc);
+          const media = [];
+          if (r?.background?.url) media.push([`the background “${r.background.name ?? "?"}”`, r.background.url]);
+          if (r?.loopFx?.url) media.push([`the looping animation “${r.loopFx.name ?? "?"}”`, r.loopFx.url]);
+          for (const b of r?.banners?.rotation || []) if (b?.url) media.push([`banner “${b.name ?? "?"}”`, b.url]);
+          res.files = await Promise.all(media.map(async ([what, u]) => {
+            try {
+              const resp = await fetch(u, { headers: { Range: "bytes=0-0" }, cache: "no-store" });
+              return { what, ok: resp.ok };
+            } catch (e) { return { what, ok: null }; }       // network/CORS: unknown, not missing
+          }));
+          S.check[pc] = res;
+        }
+        S.cloud = cloud;
+        LS.setItem("acbz-status-lastcheck", String(Date.now()));
+      } finally { S.checking = false; render(); }
+    }
+
+    /* ---- fix ---- */
+    function fixPlan(ev) {
+      return [...new Set(ev.probs.filter(p => p.fix === "reload").map(p => p.layer || null)
+        .flatMap(l => l ? [l] : LAYERS.map(([x]) => x)))];
+    }
+    async function fix(pc, layers, { why = "fix", ask = true } = {}) {
+      if (!layers.length || S.fixing[pc]?.stage === "reloading" || S.fixing[pc]?.stage === "checking") return;
+      const ev = evaluate(pc);
+      const visible = layers.filter(l => l !== "fx");
+      if (ask && ev.live === "live" && visible.length &&
+          !confirm(`${nm(pc)} looks LIVE.\n\nReloading ${visible.map(l => OBS[l]).join(" and ")} makes it blink for about a second on stream` +
+                   `${layers.includes("fx") ? " (FX reloads invisibly)" : ""}.\n\nReload now?`)) return;
+      S.fixing[pc] = { at: Date.now(), layers, stage: "sending" }; render();
+      const cmd = { id: crypto.randomUUID(), action: "reload", layers, at: Date.now(), why };
+      const { error } = await panelCall({ action: "patch", pc, clientId: CLIENT_ID, patch: { cmd } });
+      if (error) { S.fixing[pc] = { ...S.fixing[pc], stage: "error", err: error.message }; render(); return; }
+      note(pc, null, "info", `Remote reload sent to ${layers.map(l => OBS[l]).join(", ")}`);
+      S.fixing[pc].stage = "reloading"; render();
+      const deadline = Date.now() + 45000;
+      while (Date.now() < deadline) {
+        const back = layers.every(l => {
+          const m = S.src[`${pc}-${l}`]?.m;
+          return m && m.rl && /^remote/.test(m.rl.why) && m.rl.ago < 180 && m.up != null && m.up < 180;
+        });
+        if (back) break;
+        await sleep(1000);
+      }
+      S.fixing[pc].stage = "checking"; render();
+      await sleep(4000);                       // let the fresh pages join before testing them
+      await runCheck([pc]);
+      const still = evaluate(pc).probs.filter(p => p.sev === "fail" && (!p.layer || layers.includes(p.layer)));
+      S.fixing[pc] = { ...S.fixing[pc], stage: still.length ? "failed" : "done", still, doneAt: Date.now() };
+      note(pc, null, still.length ? "fail" : "ok", still.length
+        ? `Remote reload did not fix: ${still.map(p => p.text).join("; ")}` : "Remote reload fixed it");
+      render();
+    }
+    async function fixAll() {
+      const plans = PCS.map(pc => [pc, evaluate(pc)]).filter(([, ev]) => ev.online && fixPlan(ev).length)
+        .map(([pc, ev]) => ({ pc, ev, layers: fixPlan(ev) }));
+      if (!plans.length) return toast("Nothing a remote reload can fix");
+      const liveVisible = plans.filter(p => p.ev.live === "live" && p.layers.some(l => l !== "fx"));
+      const msg = plans.map(p => `${nm(p.pc)}: reload ${p.layers.map(l => OBS[l]).join(", ")}`).join("\n") +
+        (liveVisible.length ? `\n\n${liveVisible.map(p => nm(p.pc)).join(", ")} look${liveVisible.length === 1 ? "s" : ""} LIVE — ` +
+          `a Background/Board reload blinks for about a second.` : "");
+      if (!confirm(msg + "\n\nGo?")) return;
+      await Promise.all(plans.map(p => fix(p.pc, p.layers, { why: "fix all", ask: false })));
+    }
+
+    /* ---- render ---- */
+    let renderTimer = null;
+    const soon = () => { clearTimeout(renderTimer); renderTimer = setTimeout(render, 250); };
+    const dot = (sev) => `<i class="dot ${sev === "off" ? "" : sev}"></i>`;
+    function pill(ev) {
+      if (ev.live === "offline") return `<span class="pill">OFFLINE</span>`;
+      const state = ev.live === "live" ? `<span class="pill live">● LIVE</span>` : `<span class="pill">ONLINE · IDLE</span>`;
+      const health = ev.sev === "ok" ? `<span class="pill ok">ALL OK</span>`
+        : `<span class="pill ${ev.sev}">${ev.probs.filter(p => p.sev === ev.sev).length} ${ev.sev === "fail" ? "FAILING" : "WARNING"}</span>`;
+      return state + health;
+    }
+    function history(pc) {
+      const out = [];
+      for (const [l] of LAYERS) for (const i of S.src[`${pc}-${l}`]?.m.inc || [])
+        out.push({ t: i.t, text: `${OBS[l]} · ${esc(i.d)}${i.n > 1 ? ` <i>×${i.n}</i>` : ""}` });
+      for (const e of S.log) if (e.pc === pc)
+        out.push({ t: e.t, text: `${e.l ? OBS[e.l] + " · " : ""}${esc(e.text)} <i>(panel)</i>` });
+      return out.sort((a, b) => b.t - a.t).slice(0, 15);
+    }
+    function card(ev) {
+      const pc = ev.pc, fx = S.fixing[pc];
+      const cls = ev.live === "offline" && ev.sev === "off" ? "" : ev.sev;
+      const sub = ev.act?.at ? `Last press ${ago(ev.actAgo)} ago (${ev.act.how})` : "No presses on record";
+      const srcRows = LAYERS.map(([l, label]) => {
+        const r = ev.layers[l];
+        return `<div class="stsrc">${dot(r.sev)}<span class="nm">${label}</span><span class="st">${esc(r.text)}</span>` +
+          (ev.online ? `<button class="lnk" data-streload="${pc}:${l}" title="Remote refresh of the ${OBS[l]} source">Reload</button>` : "") +
+          `</div>`;
+      }).join("");
+
+      let box = "";
+      const plan = fixPlan(ev);
+      if (fx && fx.stage !== "done" && fx.stage !== "failed" && fx.stage !== "error") {
+        const label = { sending: "Sending the reload…", reloading: `Reloading ${fx.layers.map(l => OBS[l]).join(", ")}…`,
+                        checking: "Reloaded — checking it again…" }[fx.stage];
+        box = `<div class="stbox info">${label}</div>`;
+      } else if (ev.probs.length) {
+        const fails = ev.probs.filter(p => p.sev === "fail").length;
+        /* the same problem on several sources reads as ONE line naming them all */
+        const groups = new Map();
+        for (const p of ev.probs.slice().sort((a, b) => RANK[b.sev] - RANK[a.sev])) {
+          const lbl = p.layer ? LAYERS.find(([x]) => x === p.layer)[1] : null;
+          const rest = lbl && p.text.startsWith(lbl + ": ") ? p.text.slice(lbl.length + 2) : p.text;
+          const g = groups.get(rest) ?? { rest, labels: [], since: Infinity };
+          if (lbl) g.labels.push(lbl);
+          g.since = Math.min(g.since, p.since ?? Date.now());
+          groups.set(rest, g);
+        }
+        const list = [...groups.values()].map(g =>
+          `<li>${g.labels.length === 3 ? "All three sources" : esc(g.labels.join(", "))}${g.labels.length ? ": " : ""}${esc(g.rest)}` +
+          ` <span class="when">· noticed ${when(g.since)}</span></li>`).join("");
+        const failedFix = fx?.stage === "failed" && Date.now() - fx.doneAt < 15 * 60e3;
+        /* hand steps for anything a reload may not reach; the generic OBS refresh joins them once
+           a remote reload has actually been tried and failed */
+        let steps = ev.probs.filter(p => p.steps).flatMap(p => p.steps);
+        if (failedFix) steps = [...STEPS.refresh(pc, fx.layers), ...steps];
+        steps = [...new Set(steps)];
+        box = `<div class="stbox ${fails ? "" : "warn"}"><ul>${list}</ul>` +
+          (fx?.stage === "error" ? `<h4>Remote reload failed</h4>${esc(fx.err)}` : "") +
+          (failedFix ? `<h4>The remote reload did not fix it</h4>Do this on the PC:` : "") +
+          (plan.length && !failedFix ? `<h4>What to do</h4>Press <b>Fix</b> — it reloads ${plan.map(l => OBS[l]).join(", ")} from here and checks again.` : "") +
+          (steps.length ? `${plan.length && !failedFix ? "<h4>If that does not clear it, on the PC</h4>" : failedFix ? "" : "<h4>What to do on the PC</h4>"}<ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol>` : "") +
+          `<div class="row">` +
+          (plan.length ? `<button class="btn gold" data-stfix="${pc}">${failedFix ? "Try the remote fix again" : `Fix ${nm(pc)}`}</button>` : "") +
+          (ev.online ? `<button class="btn ghost" data-streloadall="${pc}">Reload all 3 sources</button>` : "") +
+          `</div></div>`;
+      } else if (fx?.stage === "done" && Date.now() - fx.doneAt < 5 * 60e3) {
+        box = `<div class="stbox okbox">Fixed — the remote reload cleared it ${ago(Date.now() - fx.doneAt)} ago.</div>`;
+      } else if (!ev.online) {
+        box = `<div class="stbox info">Nothing from ${nm(pc)} is running. <h4>If it should be streaming</h4><ol>${STEPS.offline(pc).slice(1).map(s => `<li>${s}</li>`).join("")}</ol></div>`;
+      }
+      const hist = history(pc);
+      const open = S.open.has(pc) ? " open" : "";
+      return `<div class="stcard ${cls}">
+        <div class="sthead"><b>${nm(pc)}</b>${pill(ev)}</div>
+        <div class="stsub">${sub}</div>
+        ${srcRows}${box}
+        <details class="sthist" data-sthist="${pc}"${open}><summary>Recent issues (${hist.length})</summary>
+          ${hist.length ? hist.map(h => `<div class="h">${when(h.t)} — ${h.text}</div>`).join("") : `<div class="h">Nothing recorded.</div>`}
+        </details></div>`;
+    }
+
+    function render() {
+      const evs = PCS.map(evaluate);
+      evs.forEach(track);
+      const failing = evs.filter(e => e.sev === "fail"), warning = evs.filter(e => e.sev === "warn");
+      const badge = $("#statusBadge");
+      badge.hidden = !(failing.length || warning.length);
+      badge.textContent = failing.length || warning.length;
+      badge.className = "badge" + (failing.length ? "" : " warn");
+      if (!$("#tab-status").classList.contains("on")) return;
+
+      const offline = evs.filter(e => e.live === "offline" && e.sev === "off").map(e => nm(e.pc));
+      const o = $("#stOverall");
+      if (failing.length) { o.className = "pill fail"; o.textContent = `Problems on ${failing.map(e => nm(e.pc)).join(", ")}`; }
+      else if (warning.length) { o.className = "pill warn"; o.textContent = `Warnings on ${warning.map(e => nm(e.pc)).join(", ")}`; }
+      else { o.className = "pill ok"; o.textContent = "All running PCs OK"; }
+      const last = Number(LS.getItem("acbz-status-lastcheck")) || 0;
+      $("#stChecked").textContent = (S.checking ? "Running health check… " : last ? `Last health check ${ago(Date.now() - last)} ago. ` : "No health check run yet. ") +
+        (offline.length ? `Offline: ${offline.join(", ")}.` : "");
+      $("#stCheck").disabled = S.checking;
+      $("#stCheck").textContent = S.checking ? "Checking…" : "Run health check";
+      $("#stFixAll").disabled = S.checking || !evs.some(e => e.online && fixPlan(e).length);
+
+      const c = S.cloud;
+      const items = [["Realtime", { ok: S.chan?.state === "joined", text: S.chan?.state === "joined" ? "connected" : "not connected" }],
+                     ["Overlay pages", { ok: S.pagesOk, text: S.pagesOk == null ? "not checked" : S.pagesOk ? "reachable" : "not loading" }]];
+      if (c) items.push(["Database", c.db], ["Panel function", c.fn]);
+      $("#stCloud").innerHTML = items.map(([k, v]) =>
+        `<span>${dot(v.ok == null ? "off" : v.ok ? "ok" : "fail")}${k}: ${esc(v.text)}</span>`).join("");
+
+      $("#stGrid").innerHTML = evs.map(card).join("");
+      $$("[data-sthist]").forEach(d => d.ontoggle = () => {
+        const pc = Number(d.dataset.sthist); d.open ? S.open.add(pc) : S.open.delete(pc); });
+      $$("[data-stfix]").forEach(b => b.onclick = () => {
+        const pc = Number(b.dataset.stfix); fix(pc, fixPlan(evaluate(pc))); });
+      $$("[data-streloadall]").forEach(b => b.onclick = () =>
+        fix(Number(b.dataset.streloadall), LAYERS.map(([l]) => l), { why: "reload all" }));
+      $$("[data-streload]").forEach(b => {
+        const [pc, l] = b.dataset.streload.split(":");
+        b.disabled = ["sending", "reloading", "checking"].includes(S.fixing[pc]?.stage);
+        b.onclick = () => fix(Number(pc), [l], { why: "reload " + l });
+      });
+    }
+
+    function report() {
+      const lines = [`ACBreakz status — ${new Date().toLocaleString()}`];
+      for (const pc of PCS) {
+        const ev = evaluate(pc);
+        lines.push("", `${nm(pc)}: ${ev.live.toUpperCase()}${ev.act?.at ? ` (last press ${ago(ev.actAgo)} ago)` : ""}`);
+        for (const [l, label] of LAYERS) {
+          const m = S.src[`${pc}-${l}`]?.m;
+          lines.push(`  ${label}: ${ev.layers[l].text}` + (m ? `  [build ${m.build} db ${m.db} rb ${m.rb ?? "?"} miss ${m.miss ?? "?"}]` : ""));
+        }
+        ev.probs.forEach(p => lines.push(`  ! ${p.sev.toUpperCase()} ${p.text}`));
+        history(pc).slice(0, 6).forEach(h => lines.push(`  - ${when(h.t)} ${h.text.replace(/<[^>]+>/g, "")}`));
+      }
+      return lines.join("\n");
+    }
+
+    function start(chan) {
+      S.chan = chan;
+      $("#stCheck").onclick = () => runCheck();
+      $("#stFixAll").onclick = fixAll;
+      $("#stCopy").onclick = async () => {
+        try { await navigator.clipboard.writeText(report()); toast("Status report copied"); }
+        catch (e) { toast("Could not copy — select the page text instead"); }
+      };
+      $("#statusTabBtn").addEventListener("click", render);
+      pollRows(); pollBuilds(); pollActivity();
+      setInterval(() => { pollRows(); pollActivity(); }, 60000);
+      setInterval(pollBuilds, 120000);
+      setInterval(render, 5000);
+      render();
+    }
+    return { start, presence, row, render, runCheck, fix, evaluate, report, _S: S };
+  })();
+
   /* ---------- settings ---------- */
   $("#signOut").onclick = () => signOut("Signed out.");
 
@@ -1807,6 +2387,7 @@
       sb.channel("db-ctl")
         .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
             p => {
+              Status.row(p.new.id, p.new.data?.updatedAt);
               if (p.new.id !== pcRow()) return;
               /* Suppress only OUR OWN echo, by identity. The old guard compared
                  updatedAt against our last push — a clock from another machine —
@@ -1830,7 +2411,9 @@
         Object.values(s).flat().forEach(m => pcs.add(m.pc));
         $("#presence").innerHTML = `cloud: <b>connected</b> · <b>${pcs.size}</b> PC${pcs.size===1?"":"s"} live`;
         $("#onlineList").textContent = [...pcs].sort().map(p=>pcName(String(p))).join(", ") || "none";
+        Status.presence(s);
       }).subscribe();
+      Status.start(pres);
     }
     await loadAssets();
     booted = true;
