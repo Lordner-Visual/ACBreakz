@@ -9,7 +9,7 @@
    2 and 3 are races, so they start the other side FIRST and repeat — a single run
    that happens to miss the window proves nothing.
 
-   Snapshots every PC (1-5 plus PC Test) and restores them. */
+   Snapshots every PC (1-5, PC Test and Dev) and restores them. */
 import { readFileSync } from "fs";
 /* refuses to run while a live PC looks busy — these suites mutate the production rows */
 import { assertIdle } from "./lib/live-guard.mjs";
@@ -33,7 +33,7 @@ const rest = (p) => fetch(`${env.SUPABASE_URL}/rest/v1/${p}`,
   { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } }).then(r => r.json());
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const PCS = [1, 2, 3, 4, 5, 6];   // 6 = PC Test: separate row, so it widens the race
+const PCS = [1, 2, 3, 4, 5, 6, 7];   // 6 = PC Test (live), 7 = Dev: separate rows widen the race
 const TEAM = { 1: "atl", 2: "phi", 3: "mia", 4: "dal", 5: "wsh" };
 const ROUNDS = Number(process.argv[2]) || 8;
 

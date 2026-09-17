@@ -51,8 +51,8 @@ await new Promise((resolve) => {
 const hrs = (s) => s == null ? "?" : s < 3600 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`;
 
 console.log("browser sources currently running, per PC:");
-for (const pc of [1, 2, 3, 4, 5, 6]) {
-  const name = `PC${pc === 6 ? " Test" : pc}`;
+for (const pc of [1, 2, 3, 4, 5, 6, 7]) {
+  const name = pc === 6 ? "PC Test" : pc === 7 ? "Dev" : `PC${pc}`;
   const s = found.get(pc);
   if (!s) { console.log(`  ${name}  — nothing online`); continue; }
   const want = ["bg", "hud", "fx"];

@@ -1,4 +1,4 @@
-/* Verify all six per-PC Stream Deck profiles (PC1-5 live, PC Test staging): layout, plugin wiring, PC scoping,
+/* Verify all seven per-PC Stream Deck profiles (PC1-5 + PC Test live, Dev test rig): layout, plugin wiring, PC scoping,
    and that the URLs baked into them actually work. */
 import { readFileSync } from "fs";
 import JSZip from "jszip";
@@ -10,8 +10,11 @@ const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").sp
 let fails = 0;
 const ok = (n, c) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}`); if (!c) fails++; };
 
-const pcLabel = (pc) => (pc === 6 ? "PC Test" : `PC${pc}`);
-for (let pc = 1; pc <= 6; pc++) {
+const pcLabel = (pc) => (pc === 6 ? "PC Test" : pc === 7 ? "Dev" : `PC${pc}`);
+/* which copy of the control page each profile's dashboard key must open */
+const dashDir = (pc) => (pc === 6 ? "/staging/" : pc === 7 ? "/dev/" : null);
+const dashOk = (pc, path) => ["/staging/", "/dev/"].every(d => path.includes(d) === (dashDir(pc) === d));
+for (let pc = 1; pc <= 7; pc++) {
   const file = `C:/ACBreakz-Cloud/streamdeck/ACBreakz Cloud ${pcLabel(pc)}.local.streamDeckProfile`;
   const zip = await JSZip.loadAsync(readFileSync(file));
   const names = Object.keys(zip.files);
@@ -101,8 +104,8 @@ for (let pc = 1; pc <= 6; pc++) {
       main["7,0"]?.UUID === "com.elgato.streamdeck.system.website" &&
       main["7,0"].Settings.openInBrowser === true &&
       main["7,0"].Settings.path.endsWith(`/control/pc.html?pc=${pc}`) &&
-      /* PC Test points at the staging copy; the live PCs must NOT */
-      (pc === 6) === main["7,0"].Settings.path.includes("/staging/"));
+      /* Dev opens dev/, PC Test its legacy staging/ copy, and the other live PCs neither */
+      dashOk(pc, main["7,0"].Settings.path));
     ok(`${head} TEAMS -> page 2, HIGHLIGHTS -> page 3 (1-based)`,
       main["0,2"]?.Settings.PageIndex === 2 && main["1,2"]?.Settings.PageIndex === 3);
     /* team + highlight keys deliberately STAY on their page — a second deck drives
@@ -137,9 +140,9 @@ for (let pc = 1; pc <= 6; pc++) {
   /* Checked for EVERY pc, not just pc 1: the whole point is that PC Test drives the staging
      copy of the control page while the live PCs drive the deployed one, and an assertion that
      only ever runs on pc 1 can prove exactly one half of that. */
-  ok(`${head} dashboard key points at the ${pc === 6 ? "STAGING" : "live"} control page`,
+  ok(`${head} dashboard key points at the ${dashDir(pc) ?? "live"} control page`,
     main["7,0"]?.Settings?.path?.endsWith(`/control/pc.html?pc=${pc}`) === true &&
-    (pc === 6) === main["7,0"].Settings.path.includes("/staging/"));
+    dashOk(pc, main["7,0"].Settings.path));
 }
 
 /* Live-fire a couple of PC-scoped URLs. Everything above is a static read of the built

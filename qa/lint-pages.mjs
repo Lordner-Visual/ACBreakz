@@ -10,10 +10,11 @@ import { readFileSync } from "fs";
 
 let fails = 0;
 const bad = (f, line, msg) => { console.log(`FAIL  ${f}:${line}  ${msg}`); fails++; };
-/* staging/ is where changes are written now, so it is where a syntax error would land first —
-   and PC Test would be the rig that discovers it. Lint both copies. */
+/* dev/ is where changes are written now, so it is where a syntax error would land first — and
+   the Dev rig would be the one that discovers it. staging/ is PC Test's (live) copy. Lint all. */
 const FILES = ["control/index.html", "control/pc.html", "overlay/index.html",
-               "staging/control/index.html", "staging/control/pc.html", "staging/overlay/index.html"];
+               "staging/control/index.html", "staging/control/pc.html", "staging/overlay/index.html",
+               "dev/control/index.html", "dev/control/pc.html", "dev/overlay/index.html"];
 
 for (const f of FILES) {
   const src = readFileSync(`C:/ACBreakz-Cloud/${f}`, "utf8");

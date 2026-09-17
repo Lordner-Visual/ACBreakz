@@ -1,0 +1,2429 @@
+<!DOCTYPE html>
+<html lang="en" class="locked">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ACBreakz Control</title>
+<!--
+  ACBreakz Control Panel v3 — open from ANY device.
+  Pick a PC in the header: board/banners/background/styles apply to that stream only.
+  Uploads, AI generations and deletions affect the shared library (all PCs).
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../overlay/config.js"></script>
+<script src="composer.js"></script>
+<style>
+  :root{--navy-deep:#071527;--navy:#0B1E33;--steel:#274A66;--teal:#0D3540;
+    --copper:#B87333;--gold:#D9A441;--bone:#EFE9DC;--volt:#35A7FF;--danger:#E5484D;--ok:#3FB68B}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:radial-gradient(140% 100% at 50% 0%,#0F2A44,var(--navy-deep) 70%);
+    color:var(--bone);min-height:100vh}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;
+    border-bottom:2px solid var(--copper);background:rgba(7,21,39,.7);backdrop-filter:blur(6px);
+    position:sticky;top:0;z-index:10}
+  header h1{font-size:20px;letter-spacing:2px;text-transform:uppercase}
+  header h1 b{color:var(--gold)}
+  select{background:#0E2436;border:1px solid #1E3A52;color:#fff;border-radius:10px;
+    padding:10px 12px;font-size:14px}
+  #pcSel{border-color:var(--volt);font-weight:700}
+  #presence{margin-left:auto;font-size:13px;color:#9FB6C9}
+  #presence b{color:var(--ok)}
+  nav{display:flex;gap:6px;padding:10px 18px;flex-wrap:wrap}
+  nav button{background:#0E2436;border:1px solid #1E3A52;color:#B9CBDB;padding:10px 16px;
+    border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+  nav button.on{background:linear-gradient(180deg,#1A4D74,#123650);border-color:var(--volt);color:#fff}
+  main{padding:12px 18px 60px;max-width:1150px}
+  section{display:none}section.on{display:block}
+  h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8FA8BC;margin:18px 0 10px}
+  h2:first-child{margin-top:6px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{background:linear-gradient(180deg,#1A4D74,#123650);border:1px solid var(--volt);
+    color:#fff;padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
+  .btn.ghost{background:#0E2436;border-color:#1E3A52;color:#B9CBDB}
+  .btn.warn{background:linear-gradient(180deg,#7A2C2F,#5A1E20);border-color:var(--danger)}
+  .btn.gold{background:linear-gradient(180deg,#8A6522,#6B4C15);border-color:var(--gold)}
+  .btn.danger{background:var(--danger);border-color:#ff8f92;color:#fff}
+  .btn:disabled{opacity:.55;cursor:default}
+  input[type=text],textarea,input[type=range]{background:#0A1C2C;border:1px solid #1E3A52;
+    color:var(--bone);border-radius:10px;padding:11px 12px;font-size:14px;width:100%}
+  /* AI generator strip at the bottom of every media tab */
+  .aibar{margin-top:22px;padding:12px;border:1px dashed #24455F;border-radius:12px;
+    background:rgba(10,28,44,.6)}
+  .aibar h3{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#8FA8BC;margin-bottom:8px}
+  /* board mirror — eliminate style */
+  #ctlBoard{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
+  @media(max-width:700px){#ctlBoard{grid-template-columns:repeat(4,1fr)}}
+  .team{position:relative;border-radius:12px;border:2px solid var(--copper);cursor:pointer;
+    background:linear-gradient(160deg,#12444F,var(--teal) 45%,#082228);
+    padding:8px 6px 6px;text-align:center;user-select:none;transition:filter .3s}
+  .team img{width:46px;height:46px;object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7))}
+  .team span{display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:#CFE0EE}
+  .team.on{filter:brightness(.4) saturate(.55)}
+  .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
+    background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
+  .team.hl{border-color:var(--volt);box-shadow:0 0 12px rgba(53,167,255,.55)}
+  /* ::before so the star can coexist with the OUT badge on an eliminated-but-highlighted team */
+  .team.hl::before{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
+  .gridcard .shape{width:34px;height:34px;background:linear-gradient(160deg,#12444F,#0D3540)}
+  /* asset grids */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:8px}
+  .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
+  .asset.active{border-color:var(--gold);box-shadow:0 0 10px rgba(217,164,65,.4)}
+  .asset .thumb{height:80px;background:#04101B;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;font-size:26px}
+  .asset .thumb img,.asset .thumb video{width:100%;height:100%;object-fit:cover}
+  .asset .meta{padding:8px;font-size:12px}
+  .asset .meta .name{font-weight:700;color:#DCE8F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .asset .meta .row{margin-top:6px;gap:6px}
+  .asset .btn{padding:6px 10px;font-size:12px}
+  .tag{font-size:10px;color:#7E97AB}
+  .gone{font-size:11px;color:var(--danger);padding:6px;text-align:center}
+  /* mini board button used by builtin-style swatches; fx-* animate the overlay's real effects */
+  .swatchwrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#04101B}
+  .minibtn{width:44px;height:44px;border-radius:7px;border:5px solid transparent;
+    background-image:radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
+      linear-gradient(145deg,#E8C07A 0%,#C08A45 17%,#8A5A26 52%,#6B3F17 76%,#B27A3E 100%);
+    background-origin:padding-box,border-box;background-clip:padding-box,border-box}
+  .fx-glow{animation:pvglow 2.6s ease-in-out infinite}
+  @keyframes pvglow{0%,100%{box-shadow:inset 0 0 0 2px rgba(217,164,65,.12),0 0 4px 0 rgba(217,164,65,.12)}
+    50%{box-shadow:inset 0 0 0 2px var(--gold),0 0 14px 3px var(--gold)}}
+  .fx-glitch{animation:pvglitch 3.2s steps(1,end) infinite}
+  @keyframes pvglitch{0%,90%{transform:none;filter:none}
+    91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
+    93%{transform:translateX(3px);filter:hue-rotate(-60deg)}
+    95%{transform:translateX(-1px)}97%{transform:none;filter:none}}
+  .fx-pop{animation:pvpop 2.4s cubic-bezier(.22,1.4,.3,1) infinite}
+  @keyframes pvpop{0%,50%,100%{transform:scale(1);filter:none}
+    58%{transform:scale(1.35);filter:brightness(1.6)}66%{transform:scale(1.22)}
+    80%{transform:scale(.92)}88%{transform:scale(1)}}
+  .link{font-size:10px;color:var(--gold)}
+  .banner-thumb{height:34px !important}
+  /* modals */
+  .modal{position:fixed;inset:0;background:rgba(4,10,18,.82);display:none;z-index:60;
+    align-items:center;justify-content:center;padding:16px}
+  .modal.on{display:flex}
+  .modal .box{background:#0B1E33;border:1px solid var(--volt);border-radius:14px;
+    padding:16px;max-width:600px;width:100%;max-height:86vh;overflow:auto}
+  #rfPreview{width:100%;border-radius:8px;overflow:hidden;background:#04101B;margin:10px 0}
+  #rfPreview img,#rfPreview video{width:100%;height:100%;object-fit:cover;display:block}
+  .sfxrow{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #1E3A52;
+    border-radius:10px;margin-bottom:7px;background:#0A1C2C}
+  .sfxrow .nm{flex:1;font-size:13px;font-weight:600;color:#DCE8F2;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sfxrow.cur{border-color:var(--gold)}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
+    border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
+  label.up{display:inline-block}
+  label.up input{display:none}
+  /* login gate — covers everything until a session token is in hand */
+  #lock{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;
+    padding:20px;background:radial-gradient(140% 100% at 50% 0%,#0F2A44,var(--navy-deep) 70%)}
+  #lock.on{display:flex}
+  #lock form{display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;text-align:center}
+  #lock h1{font-size:26px;letter-spacing:3px;text-transform:uppercase}
+  #lock h1 b{color:var(--gold)}
+  #lock p{font-size:13px;color:#9FB6C9}
+  #lock input{background:#0A1C2C;border:1px solid #1E3A52;color:var(--bone);border-radius:10px;
+    padding:13px 12px;font-size:16px;width:100%;text-align:center;letter-spacing:3px}
+  #lockMsg{min-height:18px;color:var(--danger)}
+  html.locked body{overflow:hidden}
+  /* status tab */
+  nav button .badge{display:inline-block;min-width:18px;margin-left:7px;padding:0 5px;border-radius:9px;
+    background:var(--danger);color:#fff;font-size:11px;line-height:18px;text-align:center}
+  nav button .badge.warn{background:#B7791F}
+  nav button .badge[hidden]{display:none}   /* display:inline-block above would otherwise beat [hidden] */
+  .stbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px solid #1E3A52;
+    border-radius:12px;background:#0A1C2C}
+  .stspace{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;
+    font-weight:800;letter-spacing:.4px;border:1px solid #2A4A63;background:#0E2436;color:#B9CBDB;white-space:nowrap}
+  .pill.ok{border-color:var(--ok);color:#8FE3C3;background:rgba(63,182,139,.12)}
+  .pill.warn{border-color:#C9892B;color:#F3C77A;background:rgba(201,137,43,.12)}
+  .pill.fail{border-color:var(--danger);color:#FF9EA1;background:rgba(229,72,77,.14)}
+  .pill.live{border-color:#FF6B70;color:#fff;background:#8E2328}
+  .stcloud{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:#9FB6C9}
+  .stcloud span{display:inline-flex;align-items:center;gap:6px}
+  .stgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;margin-top:12px}
+  @media(max-width:420px){.stgrid{grid-template-columns:1fr}}
+  .stcard{background:#0A1C2C;border:1px solid #1E3A52;border-left:5px solid #3A4E60;border-radius:14px;padding:12px}
+  .stcard.ok{border-left-color:var(--ok)}.stcard.warn{border-left-color:#C9892B}
+  .stcard.fail{border-left-color:var(--danger)}
+  .sthead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sthead b{font-size:17px;margin-right:2px}
+  .stsub{font-size:12px;color:#8FA8BC;margin:5px 0 6px}
+  .stsrc{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #15314A;font-size:13px}
+  .stsrc .nm{width:118px;flex:none;font-weight:700;color:#DCE8F2}
+  .stsrc .st{flex:1;min-width:0;color:#B9CBDB}
+  .dot{width:10px;height:10px;border-radius:50%;background:#4A5D6E;flex:none}
+  .dot.ok{background:var(--ok)}.dot.warn{background:#E0A43A}.dot.fail{background:var(--danger)}
+  .lnk{background:none;border:1px solid #24455F;color:#9FC3E0;border-radius:8px;padding:4px 8px;
+    font-size:11px;cursor:pointer;flex:none}
+  .lnk:disabled{opacity:.5;cursor:default}
+  .stbox{margin-top:9px;padding:9px 11px;border-radius:10px;font-size:13px;line-height:1.4;
+    background:rgba(229,72,77,.08);border:1px solid rgba(229,72,77,.35)}
+  .stbox.warn{background:rgba(201,137,43,.08);border-color:rgba(201,137,43,.35)}
+  .stbox.info{background:rgba(53,167,255,.07);border-color:rgba(53,167,255,.35)}
+  .stbox.okbox{background:rgba(63,182,139,.08);border-color:rgba(63,182,139,.35)}
+  .stbox ul,.stbox ol{margin:4px 0 2px 20px}
+  .stbox li{margin:3px 0}
+  .stbox .when{color:#8FA8BC;font-size:11px}
+  .stbox h4{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8FA8BC;margin:8px 0 2px}
+  .stbox .row{margin-top:8px}
+  .sthist{margin-top:9px;font-size:12px;color:#9FB6C9}
+  .sthist summary{cursor:pointer;color:#8FA8BC}
+  .sthist .h{padding:4px 0;border-top:1px dashed #15314A}
+  .sthist .h i{font-style:normal;color:#7E97AB}
+  .stnote{margin-top:14px;max-width:780px;line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+  <h1>AC <b>BREAKZ</b> · Control</h1>
+  <select id="pcSel">
+    <option value="1">PC 1</option><option value="2">PC 2</option><option value="3">PC 3</option>
+    <option value="4">PC 4</option><option value="5">PC 5</option>
+    <option value="6">PC Test</option><option value="7">Dev</option><option value="all">ALL PCs (1-6)</option>
+  </select>
+  <div id="presence">connecting…</div>
+</header>
+<nav>
+  <button data-tab="board" class="on">Team Board</button>
+  <button data-tab="anims">Animations</button>
+  <button data-tab="sfx">SoundFX</button>
+  <button data-tab="banners">Banners</button>
+  <button data-tab="bgs">Backgrounds</button>
+  <button data-tab="style">Board Style</button>
+  <button data-tab="ai">AI</button>
+  <button data-tab="status" id="statusTabBtn">Status<span class="badge" id="statusBadge" hidden></span></button>
+  <button data-tab="settings">Settings</button>
+</nav>
+<main>
+
+<section id="tab-board" class="on">
+  <div class="row">
+    <button class="btn ghost" id="hlModeBtn">Tap mode: ELIMINATE</button>
+    <button class="btn ghost" id="hlClearBtn">Clear highlights</button>
+    <button class="btn warn" id="resetBtn">Reset board</button>
+  </div>
+  <div class="row" style="margin-top:6px"><span class="tag" id="hlHint"></span></div>
+  <div id="ctlBoard"></div>
+</section>
+
+<section id="tab-anims">
+  <h2>NFL team animations — one style plays for every team (logo added automatically)</h2>
+  <div class="row">
+    <label class="up btn gold">Upload team animation set (32 files)
+      <input type="file" id="teamSetInput" accept="video/webm,video/mp4" multiple></label>
+    <span class="tag">One card holding a clip per team — name the files after the team
+      (Chiefs.webm, 49ers.webm). Which set a PC uses is per PC, like Classic Stingers.</span>
+  </div>
+  <div class="grid" id="styleGrid"></div>
+
+  <h2>Stream Deck event keys — which clip each key plays on THIS PC</h2>
+  <div class="grid" id="eventGrid"></div>
+
+  <h2>One-shot animations — play inside the animation box</h2>
+  <div class="row">
+    <label class="up btn gold">Upload animation (.webm)
+      <input type="file" accept="video/webm,video/mp4" data-kind="animation" data-group="oneshot"></label>
+    <button class="btn warn" id="loopStopBtn" style="display:none">■ Stop looping animation</button>
+    <span class="tag" id="loopNow"></span>
+  </div>
+  <div class="grid" id="oneshotGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <select id="animGenKind">
+        <option value="team_style">Team animation style</option>
+        <option value="oneshot">One-shot animation</option>
+      </select>
+      <input type="text" id="animGenPrompt" placeholder="Describe it — brand styling is applied automatically" style="flex:1;min-width:220px">
+      <button class="btn gold" id="animGenBtn">Generate</button>
+      <span class="tag">≈$0.03/image</span>
+    </div>
+  </div>
+</section>
+
+<section id="tab-sfx">
+  <h2>Sound effects — link them to any animation from its card</h2>
+  <div class="row">
+    <label class="up btn gold">Upload sound (.mp3/.wav)
+      <input type="file" accept="audio/*" data-kind="sfx"></label>
+  </div>
+  <div class="grid" id="sfxGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <input type="text" id="sfxGenPrompt" placeholder="Describe the sound — e.g. deep impact whoosh with metallic shimmer" style="flex:1;min-width:220px">
+      <button class="btn gold" id="sfxGenBtn">Generate sound</button>
+      <span class="tag">≈$0.05/sound · takes 1–4 min, leave this tab open</span>
+    </div>
+  </div>
+</section>
+
+<section id="tab-banners">
+  <h2>Upload banner</h2>
+  <div class="row">
+    <label class="up btn gold">Upload banner (1080×97)
+      <input type="file" accept="image/*,video/webm,video/mp4" data-kind="banner"></label>
+  </div>
+  <h2>Banner composer — live 1080×97 preview, baked to a PNG at save</h2>
+  <canvas id="compCanvas" width="1080" height="97"
+    style="width:100%;max-width:1080px;border:1px solid #1E3A52;border-radius:8px;background:#06111b"></canvas>
+  <div class="row" style="margin-top:8px;align-items:flex-start">
+    <textarea id="compText" rows="2" placeholder='Type the banner text — press Enter for a second line'
+      style="flex:1;min-width:260px;resize:vertical;font:inherit"></textarea>
+    <button class="btn gold" id="compSave">Save to library</button>
+    <span class="tag" id="compDur">7s on stream</span>
+  </div>
+  <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap">
+    <label class="tag">Font
+      <select id="compFont" style="margin-left:6px"></select></label>
+    <label class="tag">Style
+      <select id="compPreset" style="margin-left:6px"></select></label>
+    <label class="tag">Text <input type="color" id="compColor" value="#EFE9DC" style="margin-left:6px;width:34px;padding:0"></label>
+    <label class="tag">Accent <input type="color" id="compAccent" value="#35A7FF" style="margin-left:6px;width:34px;padding:0"></label>
+    <label class="tag"><input type="checkbox" id="compUpper" checked> UPPERCASE</label>
+    <label class="tag"><input type="checkbox" id="compScrim" checked> Darken behind</label>
+  </div>
+  <div class="row" style="margin-top:6px;gap:10px;flex-wrap:wrap">
+    <label class="tag"><input type="checkbox" id="compAuto" checked> Auto-fit size</label>
+    <label class="tag">Size <input type="range" id="compSize" min="10" max="140" value="44" style="width:120px;margin-left:6px">
+      <b id="compSizeV">44</b></label>
+    <label class="tag">Line spacing <input type="range" id="compLine" min="70" max="200" value="102" style="width:110px;margin-left:6px">
+      <b id="compLineV">1.02</b></label>
+    <label class="tag">Kerning <input type="range" id="compTrack" min="-6" max="24" value="1" style="width:110px;margin-left:6px">
+      <b id="compTrackV">1</b></label>
+    <label class="tag">Height <input type="range" id="compScaleY" min="60" max="180" value="100" style="width:110px;margin-left:6px">
+      <b id="compScaleYV">1.00</b></label>
+    <label class="tag">Shift up/down <input type="range" id="compShiftY" min="-40" max="40" value="0" style="width:110px;margin-left:6px">
+      <b id="compShiftYV">0</b></label>
+    <button class="btn" id="compReset">Reset styling</button>
+  </div>
+  <h2>Composer background — template, upload, or AI art</h2>
+  <div class="row" id="compBGs" style="gap:6px"></div>
+  <h2>Rotation — checked banners cycle on this PC (7–12s each)</h2>
+  <div class="grid" id="bannerGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <input type="text" id="banGenPrompt" placeholder="Describe the banner art — becomes a composer background" style="flex:1;min-width:220px">
+      <button class="btn gold" id="banGenBtn">Generate banner art</button>
+      <span class="tag">≈$0.03/image</span>
+    </div>
+  </div>
+</section>
+
+<section id="tab-bgs">
+  <h2>Streamer background (1080×480) — tap to set live on this PC</h2>
+  <div class="row">
+    <label class="up btn gold">Upload background (image or video)
+      <input type="file" accept="image/*,video/webm,video/mp4" data-kind="background"></label>
+  </div>
+  <div class="grid" id="bgGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <select id="bgGenKind">
+        <option value="background">Background image</option>
+        <option value="background_anim">Background animation</option>
+      </select>
+      <select id="bgGenQuality" title="Video model quality">
+        <option value="standard">Video: Standard (Kling 1.6)</option>
+        <option value="best">Video: Best (Kling 2 master)</option>
+      </select>
+      <input type="text" id="bgGenPrompt" placeholder="Describe the background" style="flex:1;min-width:220px">
+      <button class="btn gold" id="bgGenBtn">Generate</button>
+      <span class="tag">image ≈$0.03 (fast) · video ≈$0.25 standard / ≈$1.40 best (1–4 min)</span>
+    </div>
+  </div>
+</section>
+
+<section id="tab-style">
+  <h2>Grid style — the chosen button style applies to whichever grid you pick</h2>
+  <div class="grid" id="gridStyleGrid"></div>
+  <div class="row" style="margin-top:10px;max-width:560px">
+    <span class="tag" style="width:110px">Button size</span>
+    <input type="range" id="sizeRange" min="40" max="150" step="1" value="100" style="flex:1">
+    <span class="tag" id="sizeVal" style="width:52px">100%</span>
+  </div>
+  <div class="row" style="max-width:560px">
+    <span class="tag" style="width:110px">Button spacing</span>
+    <input type="range" id="gapRange" min="-20" max="20" step="1" value="0" style="flex:1">
+    <span class="tag" id="gapVal" style="width:52px">0px</span>
+  </div>
+  <div class="row" style="max-width:560px">
+    <span class="tag" style="width:110px">Logo size</span>
+    <input type="range" id="logoRange" min="60" max="200" step="1" value="100" style="flex:1">
+    <span class="tag" id="logoVal" style="width:52px">100%</span>
+  </div>
+  <div class="row" style="max-width:560px">
+    <span class="tag" style="width:110px">Effect intensity</span>
+    <input type="range" id="fxRange" min="30" max="250" step="5" value="100" style="flex:1">
+    <span class="tag" id="fxVal" style="width:52px">100%</span>
+  </div>
+  <div class="row">
+    <span class="tag" style="width:110px">Edge glow colour</span>
+    <input type="color" id="glowColor" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag" style="width:110px">Glow light</span>
+    <input type="color" id="glowLight" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag">The light that spills past the frame. Leave matching for a natural glow.</span>
+    <button class="btn ghost" id="glowReset">Reset to gold</button>
+    <span class="tag">Applies to the built-in Edge Glow effect.</span>
+  </div>
+  <div class="row"><span class="tag">100% button size is already the largest that fits inside the
+    WhatNot-safe width — the slider takes them down from there.</span></div>
+  <div class="row" style="margin-top:14px">
+    <label class="up btn gold">Upload style file
+      <input type="file" id="styleUpInput" accept="image/*,video/webm,video/mp4"></label>
+    <select id="styleUpKind">
+      <option value="board_button">→ Button style (image)</option>
+      <option value="button_frame">→ Button frame (image with a see-through middle)</option>
+      <option value="board_bg">→ Board background (image or video)</option>
+      <option value="button_anim">→ Button animation (video)</option>
+    </select>
+    <span class="tag" id="styleUpHint"></span>
+  </div>
+  <h2>Button frame — the border only; the middle stays see-through</h2>
+  <div class="grid" id="frameStyleGrid"></div>
+  <h2>Button style — the fill behind the frame</h2>
+  <div class="grid" id="btnStyleGrid"></div>
+  <h2>Board background</h2>
+  <div class="grid" id="bgStyleGrid"></div>
+  <h2>Button animation — highlights &amp; intense moments</h2>
+  <div class="grid" id="btnAnimGrid"></div>
+  <div class="aibar">
+    <h3>AI generate</h3>
+    <div class="row">
+      <select id="styleGenKind">
+        <option value="board_bg">Background image</option>
+        <option value="board_bg_anim">Background animation</option>
+        <option value="board_button">Button style</option>
+        <option value="button_anim">Button animation</option>
+      </select>
+      <select id="styleGenQuality" title="Video model quality">
+        <option value="standard">Video: Standard (Kling 1.6)</option>
+        <option value="best">Video: Best (Kling 2 master)</option>
+      </select>
+      <input type="text" id="styleGenPrompt" placeholder="Describe the look — e.g. brushed gunmetal with blue neon edge" style="flex:1;min-width:220px">
+      <button class="btn gold" id="styleGenBtn">Generate</button>
+      <span class="tag">image ≈$0.03 (fast) · video ≈$0.25 standard / ≈$1.40 best (1–4 min)</span>
+    </div>
+  </div>
+</section>
+
+<section id="tab-ai">
+  <h2>Generate — every category in one place. Prompts are used exactly as written.</h2>
+  <div class="row">
+    <select id="aiKind">
+      <option value="background">Background image</option>
+      <option value="background_anim">Background animation</option>
+      <option value="banner">Banner art</option>
+      <option value="board_bg">Board background image</option>
+      <option value="board_bg_anim">Board background animation</option>
+      <option value="board_button">Button style</option>
+      <option value="button_anim">Button animation</option>
+      <option value="oneshot">One-shot animation</option>
+      <option value="team_style">Team animation style</option>
+      <option value="sfx">Sound effect</option>
+    </select>
+    <select id="aiQuality" title="Video model quality">
+      <option value="standard">Video: Standard</option>
+      <option value="best">Video: Best</option>
+    </select>
+    <input type="text" id="aiPrompt" placeholder="Describe exactly what you want" style="flex:1;min-width:240px">
+    <button class="btn gold" id="aiGenBtn">Generate</button>
+  </div>
+  <div class="row"><span class="tag">image ≈$0.03 · sound ≈$0.05 · video ≈$0.25 standard / ≈$1.40 best.
+    Looping clips are 5s; one-shots may run to 10s.</span></div>
+
+  <h2>Everything AI has made — click one to build on it</h2>
+  <div class="grid" id="aiGrid"></div>
+</section>
+
+<div class="modal" id="aiRefine"><div class="box">
+  <h2 style="margin-top:0">Build on <span id="aiRefName" style="color:var(--gold)"></span></h2>
+  <div id="aiRefPreview" style="max-height:220px;overflow:hidden;border-radius:8px;background:#04101B"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn gold" id="aiAnimate">Animate — looping video of it</button>
+    <button class="btn" id="aiBrandify">Brandify — redo in AC Breakz style</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <input type="text" id="aiRefPrompt" placeholder="…or describe the new version you want" style="flex:1;min-width:240px">
+    <button class="btn" id="aiRefGo">Generate</button>
+  </div>
+  <h2>Add it to a section</h2>
+  <div class="row">
+    <select id="aiAddKind">
+      <option value="team_style">Team animation style</option>
+      <option value="oneshot">One-shot animation</option>
+      <option value="background">Streamer background</option>
+      <option value="banner">Banner art (composer)</option>
+      <option value="board_bg">Board background</option>
+      <option value="board_button">Button style</option>
+      <option value="button_anim">Button animation</option>
+    </select>
+    <select id="aiAddFit">
+      <option value="full">Fill the section (crop to fit)</option>
+      <option value="box">Keep inside the animation box</option>
+    </select>
+    <button class="btn gold" id="aiAddBtn">Add</button>
+  </div>
+  <div class="row" style="margin-top:10px"><button class="btn ghost" id="aiRefClose">Close</button>
+    <span class="tag" id="aiRefMsg"></span></div>
+</div></div>
+
+<section id="tab-status">
+  <div class="stbar">
+    <span class="pill" id="stOverall">Checking…</span>
+    <span class="tag" id="stChecked">Watching every PC live. A health check also sends a test signal down the stinger path.</span>
+    <span class="stspace"></span>
+    <button class="btn" id="stCheck">Run health check</button>
+    <button class="btn gold" id="stFixAll" disabled>Fix all problems</button>
+    <button class="btn ghost" id="stCopy">Copy report</button>
+  </div>
+  <div class="stcloud" id="stCloud"></div>
+  <div class="stgrid" id="stGrid"></div>
+  <p class="tag stnote">
+    <b>LIVE</b> means the PC's OBS overlays are running and it has had a press in the last 30 minutes —
+    nothing can see whether OBS is actually streaming. <b>Fix</b> reloads only the broken sources from here,
+    the same as “Refresh cache of current page” in OBS. The Stingers source reloads invisibly; reloading
+    Background or Board makes them blink for about a second. Anything a reload cannot reach — OBS closed,
+    a source deleted or hidden, a wrong clock — shows the steps to do on that PC.
+  </p>
+</section>
+
+<section id="tab-settings">
+  <h2>This device</h2>
+  <div class="row" style="flex-direction:column;max-width:640px;align-items:flex-start">
+    <div class="tag" id="signedInAs">Signed in — this device stays signed in for 30 days.</div>
+    <div class="row"><button class="btn warn" id="signOut">Sign out of this device</button>
+      <span class="tag">Use this if you lend the device out or the password changes.</span></div>
+  </div>
+  <h2>Overlays online</h2>
+  <div id="onlineList" class="tag">—</div>
+  <h2>Trash — deleted assets</h2>
+  <div class="row">
+    <button class="btn warn" id="emptyTrash">Empty trash</button>
+    <span class="tag">Restore puts an asset back in its library. Delete forever removes the files.</span>
+  </div>
+  <div class="grid" id="trashGrid"></div>
+</section>
+
+</main>
+
+<div class="modal" id="teamSet"><div class="box">
+  <h2 style="margin-top:0">New team animation set</h2>
+  <div class="row"><span class="tag" style="width:70px">Set name</span>
+    <input type="text" id="tsName" placeholder="e.g. 2026 Stingers" style="flex:1"></div>
+  <div class="row" style="margin-top:6px"><span class="tag" id="tsSummary"></span></div>
+  <div id="tsList" style="max-height:44vh;overflow:auto;margin:10px 0"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn gold" id="tsSave">Upload &amp; create card</button>
+    <button class="btn ghost" id="tsCancel">Cancel</button>
+    <span class="tag" id="tsMsg"></span></div>
+</div></div>
+
+<div class="modal" id="eventPick"><div class="box">
+  <h2 style="margin-top:0" id="epTitle">Event</h2>
+  <div class="row">
+    <label class="up btn gold">New animation (.webm)
+      <input type="file" id="epUpload" accept="video/webm,video/mp4"></label>
+    <span class="tag" id="epMsg"></span>
+  </div>
+  <div id="epList" style="max-height:48vh;overflow:auto;margin:10px 0"></div>
+  <div class="row"><button class="btn ghost" id="epClose">Close</button></div>
+</div></div>
+
+<div class="modal" id="reframe"><div class="box">
+  <h2 style="margin-top:0">Reframe — drag the sliders to choose the visible crop</h2>
+  <div id="rfPreview"></div>
+  <div class="row"><span class="tag" style="width:60px">Left–Right</span>
+    <input type="range" id="rfX" min="0" max="100" value="50" style="flex:1"></div>
+  <div class="row"><span class="tag" style="width:60px">Up–Down</span>
+    <input type="range" id="rfY" min="0" max="100" value="50" style="flex:1"></div>
+  <div class="row"><span class="tag" style="width:60px">Zoom</span>
+    <input type="range" id="rfZ" min="100" max="600" step="5" value="100" style="flex:1">
+    <span class="tag" id="rfZVal" style="width:44px">100%</span></div>
+  <div class="row"><span class="tag" style="width:60px">Fit</span>
+    <select id="rfFit" style="flex:1">
+      <option value="full">Fill the section (crop the overflow)</option>
+      <option value="box">Keep inside the animation box</option>
+    </select></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn gold" id="rfSave">Save crop</button>
+    <button class="btn ghost" id="rfCancel">Cancel</button>
+  </div>
+</div></div>
+
+<div class="modal" id="sfxPick"><div class="box">
+  <h2 style="margin-top:0">Link SoundFX — <span id="sfxTarget" style="color:var(--gold)"></span></h2>
+  <div id="sfxList"></div>
+  <div class="row" style="margin-top:6px"><button class="btn ghost" id="sfxClose">Close</button></div>
+</div></div>
+
+<div id="toast"></div>
+
+<div id="lock" class="on">
+  <form id="lockForm">
+    <h1>AC<b>Breakz</b></h1>
+    <p>Enter the panel password to use this control.</p>
+    <input type="password" id="lockPw" placeholder="Password" autocapitalize="off" autocorrect="off"
+           spellcheck="false" autocomplete="current-password" inputmode="numeric">
+    <button class="btn" id="lockGo" type="submit">Unlock</button>
+    <span class="tag" id="lockMsg"></span>
+  </form>
+</div>
+
+<script>
+(() => {
+  const C = window.ACBZ, $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+  const LS = localStorage;
+  /* PC 7 ("Dev") is the test rig and is shown by name everywhere. ALL PCs deliberately means
+     1-6 only — a broadcast that also hit Dev would stamp over whatever is being tried on it.
+     PC 6 keeps the name "PC Test" until it is renamed on its machine, but it is a live PC. */
+  const pcName = (p) => p === "all" ? "ALL PCs" : p === "6" ? "PC Test" : p === "7" ? "Dev" : "PC " + p;
+  const toast = (m) => { const t=$("#toast"); t.textContent=m; t.style.display="block";
+    clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",3000); };
+  const esc = (s) => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+
+  /* tabs */
+  $$("nav button").forEach(b => b.onclick = () => {
+    $$("nav button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+    $$("main section").forEach(s=>s.classList.remove("on"));
+    $("#tab-"+b.dataset.tab).classList.add("on");
+  });
+
+  /* ---------- transport ---------- */
+  /* URL + anon key ship in overlay/config.js — the anon key is read-only, so it is
+     safe in a public page. Writes need a session token, minted by /panel from the
+     password. PANEL_KEY itself never reaches the browser. */
+  const url = C.SUPABASE_URL;
+  const key = C.SUPABASE_ANON_KEY;
+  /* server-side scripts and the QA harness still seed a raw key in localStorage */
+  const LEGACY_KEY = LS.getItem("acbz-panel-key") || "";
+  let TOKEN = LS.getItem("acbz-token") || "";
+  const cloud = !!(url && key);
+  const sb = cloud ? window.supabase.createClient(url, key) : null;
+  const bus = cloud ? null : new BroadcastChannel("acbz-bus");
+  $("#presence").innerHTML = cloud ? "cloud: connecting…" : "<b>preview mode</b> — open overlay/?layer=all&debug=1 in another tab";
+
+  let PC = LS.getItem("acbz-pc") || "1";
+  $("#pcSel").value = PC;
+  $("#pcSel").onchange = async () => { PC = $("#pcSel").value; LS.setItem("acbz-pc", PC);
+    await loadState(); renderAll(); toast("Driving " + pcName(PC)); };
+  const pcRow = () => PC === "all" ? 1 : parseInt(PC, 10);
+
+  const auth = () => LEGACY_KEY ? { key: LEGACY_KEY } : { token: TOKEN };
+
+  async function panelCall(body){
+    if (!TOKEN && !LEGACY_KEY) { lock("Signed out — enter the password again."); return { error:{ message:"signed out" } }; }
+    const { data, error } = await sb.functions.invoke("panel", { body: { ...auth(), ...body } });
+    if (error) {
+      let message = error.message;
+      try { const errBody = await error.context?.json(); if (errBody?.error) message = errBody.error; } catch(e){}
+      if (message === "signed out") { signOut("Session expired — enter the password again."); }
+      return { error: { message } };
+    }
+    if (data?.error) return { error: { message: data.error } };
+    return { data };
+  }
+
+  /* ---------- login gate ---------- */
+  /* The page ships locked (see class="locked"/class="on" in the markup) so a JS
+     failure fails closed rather than exposing the panel. */
+  let booted = false, unlockResolve;
+  const unlocked = new Promise(r => unlockResolve = r);
+
+  function lock(msg){
+    document.documentElement.classList.add("locked");
+    $("#lock").classList.add("on");
+    $("#lockMsg").textContent = msg || "";
+    $("#lockPw").value = "";
+    setTimeout(() => $("#lockPw").focus(), 50);
+  }
+  function unlock(){
+    document.documentElement.classList.remove("locked");
+    $("#lock").classList.remove("on");
+    $("#lockMsg").textContent = "";
+    unlockResolve();
+  }
+  function signOut(msg){
+    TOKEN = ""; LS.removeItem("acbz-token");
+    lock(msg || "Signed out.");
+  }
+
+  $("#lockForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const pw = $("#lockPw").value;
+    if (!pw) return;
+    const btn = $("#lockGo");
+    btn.disabled = true; btn.textContent = "Checking…"; $("#lockMsg").textContent = "";
+    const { data, error } = await sb.functions.invoke("panel", { body: { action:"login", password: pw } });
+    btn.disabled = false; btn.textContent = "Unlock";
+    if (data?.token) {
+      TOKEN = data.token; LS.setItem("acbz-token", TOKEN);
+      if (booted) return location.reload();   // re-signed in mid-session — resync
+      return unlock();
+    }
+    let message = error?.message;
+    try { const b = await error?.context?.json(); if (b?.error) message = b.error; } catch(e){}
+    $("#lockMsg").textContent = message === "wrong password" ? "Wrong password." : (message || "Could not sign in.");
+    $("#lockPw").value = ""; $("#lockPw").focus();
+  };
+
+  /* preview mode and already-signed-in devices go straight in */
+  if (!cloud || TOKEN || LEGACY_KEY) unlock(); else lock();
+
+  let state = { background:null, banners:{rotation:[]}, board:{picked:{},highlighted:{}},
+                animStyle:null, boardButtons:null, boardBg:null, buttonAnim:null,
+                boardGrid:"buttons", boardGap:0 };
+  let assets = [];
+
+  async function loadState(){
+    if (cloud) {
+      const {data} = await sb.from("stream_state").select("data").eq("id", pcRow()).single();
+      if (data?.data) state = data.data;
+    } else {
+      try { const s = JSON.parse(LS.getItem("acbz-state")); if (s) state = s; } catch(e){}
+    }
+    state.board ??= {picked:{}}; state.board.picked ??= {}; state.board.highlighted ??= {};
+    state.banners ??= {rotation:[]};
+    state.boardGrid ??= "buttons"; state.boardGap ??= 0;
+  }
+  /* V11 — writes are field-scoped and atomic.
+     `patchState` sends ONLY the keys it changed, so a banner or slider change can
+     never ship a stale `board` and revert a Stream Deck press. Board taps go through
+     `boardCall`, the same locked SQL function the deck uses, so the two can never
+     race. CLIENT_ID replaces the old timestamp echo-guard: comparing clocks across
+     machines dropped legitimate concurrent writes. */
+  const CLIENT_ID = (crypto.randomUUID?.() ?? String(Math.random()).slice(2));
+  async function pushState(){                       // whole-doc write — preview mode only
+    state.updatedAt = Date.now();
+    LS.setItem("acbz-state", JSON.stringify(state)); bus.postMessage({kind:"state",data:state});
+    renderAll();
+  }
+  /* One write in flight at a time, with pending edits coalesced. Firing patches
+     concurrently lets two writes to the SAME key land out of order, so a rapid
+     series of adjustments could settle on an earlier value. Merging into `pending`
+     also collapses a burst into a single request. */
+  let inFlight = null, pending = null;
+  async function patchState(patch){
+    Object.assign(state, patch); renderAll();        // optimistic, so the UI stays snappy
+    if (!cloud) return pushState();
+    pending = { ...(pending ?? {}), ...patch };
+    if (inFlight) return inFlight;                   // the running drain will pick it up
+    return (inFlight = drainPatches().finally(() => { inFlight = null; }));
+  }
+  async function drainPatches(){
+    while (pending) {
+      const patch = pending; pending = null;
+      const {data, error} = await panelCall({action:"patch", pc:PC, clientId:CLIENT_ID, patch});
+      if (error) { toast("Save failed: "+error.message); return; }
+      const doc = data?.docs?.[String(pcRow())];
+      /* don't adopt if the operator has already queued a newer edit */
+      if (doc && !pending) { state = doc; renderAll(); }
+    }
+  }
+  async function boardCall(boardAction, team){
+    if (!cloud) return pushState();
+    const {data, error} = await panelCall({action:"board", pc:PC, clientId:CLIENT_ID,
+                                           boardAction, team});
+    if (error) return toast("Board action failed: "+error.message);
+    const r = (data?.results ?? []).find(x => Number(x.pc) === pcRow()) ?? data?.results?.[0];
+    if (r?.data) { state = r.data; renderAll(); }
+  }
+  async function fireEvent(type, payload){
+    const ev = { id: crypto.randomUUID(), type, payload, created_at:new Date().toISOString() };
+    if (cloud) { const {error} = await panelCall({action:"event", pc:PC, type, payload});
+      if (error) toast("Event failed: "+error.message); }
+    else bus.postMessage({kind:"event",data:ev});
+  }
+
+  /* ---------- assets ---------- */
+  let trash = [];
+  async function loadAssets(){
+    let all;
+    if (cloud) { const {data} = await sb.from("assets").select("*").order("created_at",{ascending:false});
+      all = data || []; }
+    else all = JSON.parse(LS.getItem("acbz-assets") || "[]");
+    /* deleted assets live in the trash until purged, so they stay out of every list */
+    assets = all.filter(a => !a.meta?.deleted);
+    trash  = all.filter(a => a.meta?.deleted);
+    renderAll();
+  }
+  async function saveAsset(a){
+    if (cloud) { const {data,error} = await panelCall({action:"asset", asset:a});
+      if (error) { toast("Save failed: "+error.message); return null; }
+      assets.unshift(data.asset); renderAll(); return data.asset; }
+    a.id = crypto.randomUUID(); a.created_at = new Date().toISOString();
+    assets.unshift(a); LS.setItem("acbz-assets", JSON.stringify(assets)); renderAll(); return a;
+  }
+  async function updateAsset(id, meta){
+    if (cloud) { const {data,error} = await panelCall({action:"update_asset", id, meta});
+      if (error) { toast("Update failed: "+error.message); return null; }
+      const i = assets.findIndex(a=>a.id===id); if (i>=0) assets[i] = data.asset;
+      return data.asset; }
+    const a = assets.find(x=>x.id===id); if (a) { a.meta = {...a.meta, ...meta};
+      LS.setItem("acbz-assets", JSON.stringify(assets)); } return a;
+  }
+  async function deleteAsset(id){
+    if (cloud) { const {error} = await panelCall({action:"delete_asset", id});
+      if (error) { toast("Delete failed: "+error.message); return false; } }
+    else { assets = assets.filter(a=>a.id!==id); LS.setItem("acbz-assets", JSON.stringify(assets)); }
+    await loadAssets(); await loadState(); renderAll();
+    toast("Deleted"); return true;
+  }
+  async function uploadToStorage(path, blob, contentType){
+    const {data:signed, error:sErr} = await panelCall({action:"sign_upload", path});
+    if (sErr) return { error: sErr };
+    const {error} = await sb.storage.from("media")
+      .uploadToSignedUrl(signed.path, signed.token, blob,
+        { contentType, cacheControl: "31536000" });
+    if (error) return { error };
+    return { url: sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl };
+  }
+  /* opts lets a style upload split the three things `kind` used to conflate: the
+     storage prefix, the asset kind, and the display name. */
+  async function uploadFile(file, kind, extraMeta, opts = {}){
+    const prefix = opts.pathPrefix ?? kind, assetKind = opts.assetKind ?? kind;
+    const name = opts.name ?? file.name;
+    if (cloud) {
+      const path = `${prefix}/${Date.now()}-${file.name.replace(/[^\w.\-]/g,"_")}`;
+      const {url, error} = await uploadToStorage(path, file, file.type || undefined);
+      if (error) return toast("Upload failed: "+error.message);
+      await saveAsset({ kind:assetKind, name, url, meta:{type:"upload", ...(extraMeta||{})} });
+      toast("Uploaded & saved to the shared library");
+    } else {
+      if (file.size > 4*1024*1024) return toast("Preview mode caps uploads at 4MB");
+      const r = new FileReader();
+      r.onload = () => saveAsset({ kind:assetKind, name, url:r.result, meta:{type:"upload", ...(extraMeta||{})} });
+      r.readAsDataURL(file);
+    }
+  }
+  /* [data-kind] only — the Board Style uploader is wired separately below */
+  $$("label.up input[data-kind]").forEach(inp => inp.onchange = e => {
+    const extra = e.target.dataset.group ? { group: e.target.dataset.group } : null;
+    [...e.target.files].forEach(f => uploadFile(f, e.target.dataset.kind, extra)); e.target.value="";
+  });
+
+  /* ---------- Board Style uploader: one button, the dropdown picks the section ----------
+     Each domain accepts what the OVERLAY can actually render — a video filed as a
+     button style, or a still filed as a button animation, would save happily and then
+     never appear on stream. */
+  const STYLE_UP = {
+    board_button: { name:"Buttons: ",  accept:"image/*", video:false,
+                    hint:"Image only — the fill behind the frame." },
+    button_frame: { name:"Frame: ",    accept:"image/png,image/webp", video:false,
+                    hint:"PNG/WebP with a transparent middle — drawn 9-sliced as the border." },
+    board_bg:     { name:"Board: ",    accept:"image/*,video/webm,video/mp4", video:null,
+                    hint:"Image or video — video loops behind the board." },
+    button_anim:  { name:"Btn anim: ", accept:"video/webm,video/mp4", video:true,
+                    meta:{ mode:"ambient" },
+                    hint:"Video only — loops over every highlighted team's button." },
+  };
+  /* live preview while dragging, one write when released — the same one-in-flight rule
+     the sliders follow, so a colour drag cannot flood the write path */
+  $("#glowColor").oninput  = (e) => document.documentElement.style.setProperty("--glowpv", e.target.value);
+  $("#glowColor").onchange = (e) => patchState({ glowColor: e.target.value });
+  $("#glowLight").onchange = (e) => patchState({ glowLight: e.target.value });
+  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; $("#glowLight").value = "#D9A441";
+    patchState({ glowColor: null, glowLight: null }); };
+
+  const styleSel = $("#styleUpKind");
+  const syncStyleUp = () => {
+    const c = STYLE_UP[styleSel.value];
+    $("#styleUpInput").accept = c.accept; $("#styleUpHint").textContent = c.hint;
+  };
+  styleSel.onchange = syncStyleUp; syncStyleUp();
+  /* A button FRAME is drawn 9-sliced, which needs two things the image itself has to
+     supply: a see-through middle (or it covers the fill and the logo), and a border
+     thickness. Both are measured here from the alpha channel, so an operator only has to
+     upload a PNG of the border. A solid button image cannot work as a frame — say so
+     rather than storing something that renders as garbage, which is how a raw button
+     upload ended up on a live board. */
+  async function measureFrameSlice(file) {
+    const img = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej;
+      i.src = URL.createObjectURL(file);
+    });
+    const N = 256;                                   // enough to measure, cheap to scan
+    const cv = Object.assign(document.createElement("canvas"), { width: N, height: N });
+    const cx = cv.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(img, 0, 0, N, N);
+    const d = cx.getImageData(0, 0, N, N).data;
+    const A = (x, y) => d[((y * N + x) << 2) + 3];
+    /* the artwork itself */
+    let x0 = N, y0 = N, x1 = -1, y1 = -1;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (A(x, y) > 200) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return { ok: false, why: "the image is fully transparent" };
+    const mx = (x0 + x1) >> 1, my = (y0 + y1) >> 1;
+    if (A(mx, my) > 40)
+      return { ok: false, why: "its middle is solid — a frame needs a see-through centre" };
+    /* walk out from the centre to the inner edge of the border */
+    const walk = (dx, dy) => { let x = mx, y = my, k = 0;
+      while (x > x0 && x < x1 && y > y0 && y < y1 && A(x, y) <= 40) { x += dx; y += dy; k++; }
+      return k; };
+    const l = mx - x0 - walk(-1, 0), r = x1 - mx - walk(1, 0);
+    const t = my - y0 - walk(0, -1), b = y1 - my - walk(0, 1);
+    const side = Math.min(x1 - x0 + 1, y1 - y0 + 1);
+    const frac = Math.min(l, r, t, b) / side;
+    if (!(frac > 0.01) || frac > 0.45)
+      return { ok: false, why: `measured border is ${(frac * 100).toFixed(0)}% — outside 1-45%` };
+    return { ok: true, sliceFrac: +frac.toFixed(4) };
+  }
+
+  $("#styleUpInput").onchange = async (e) => {
+    const domain = styleSel.value, c = STYLE_UP[domain];
+    for (const f of [...e.target.files]) {
+      const isVideo = /\.(webm|mp4)$/i.test(f.name) || /^video\//.test(f.type);
+      if (c.video === true && !isVideo) { toast(`${f.name}: button animations must be .webm or .mp4`); continue; }
+      if (c.video === false && isVideo)  { toast(`${f.name}: button styles must be an image`); continue; }
+      let extra = { domain, ...(c.meta ?? {}) };
+      if (domain === "button_frame") {
+        const m = await measureFrameSlice(f).catch(() => ({ ok: false, why: "could not be read" }));
+        if (!m.ok) { toast(`${f.name}: ${m.why}. Upload the border as a PNG with a transparent middle.`); continue; }
+        extra.sliceFrac = m.sliceFrac;
+        toast(`${f.name}: border measured at ${(m.sliceFrac * 100).toFixed(1)}%`);
+      }
+      await uploadFile(f, "style", extra,
+        { pathPrefix: domain, name: c.name + f.name.replace(/\.[^.]+$/, "") });
+    }
+    e.target.value = "";
+  };
+
+  /* ---------- two-step delete ("Are you sure?") ---------- */
+  function wireDeletes(){
+    $$("[data-del]").forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      if (b.dataset.armed !== "1") {                     // first click arms the button
+        b.dataset.armed = "1"; b._label = b.textContent;
+        b.textContent = "Are you sure?"; b.classList.add("danger");
+        clearTimeout(b._t); b._t = setTimeout(() => {
+          b.dataset.armed = "0"; b.textContent = b._label; b.classList.remove("danger");
+        }, 5000);
+        return;
+      }
+      clearTimeout(b._t); b.disabled = true; b.textContent = "Deleting…";
+      await deleteAsset(b.dataset.del);
+    });
+  }
+
+  /* ---------- per-list delete ----------
+     Composer backgrounds and the banner rotation are separate lists that can show the
+     same asset. Deleting in one hides it there only; once it is gone from every list it
+     still belongs to, the asset itself moves to the trash. */
+  /* THE composer-membership rule. control/pc.html must use the identical predicate, or
+     the operator dashboards list art the master panel cannot see — and therefore cannot
+     delete (streamer backgrounds lingered on every PC this way). Backgrounds are a
+     separate library with their own tab; the composer is banner art only. */
+  const inComposer = (a) => !!a.url && a.kind === "banner" && a.meta?.type !== "text";
+  const inRotation = (a) => a.kind === "banner" && !a.meta?.template;
+
+  function wireHides(){
+    $$("[data-hide]").forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      if (b.dataset.armed !== "1") {
+        b.dataset.armed = "1"; b._label = b.textContent;
+        b.textContent = "Are you sure?"; b.classList.add("danger");
+        clearTimeout(b._t); b._t = setTimeout(() => {
+          b.dataset.armed = "0"; b.textContent = b._label; b.classList.remove("danger");
+        }, 5000);
+        return;
+      }
+      clearTimeout(b._t);
+      const [ctx, id] = b.dataset.hide.split(":");
+      const a = assets.find(x => x.id === id); if (!a) return;
+      /* would it still be visible in the other list after this? */
+      const stillElsewhere = ctx === "composer"
+        ? (inRotation(a) && !a.meta?.hideRotation)
+        : (inComposer(a) && !a.meta?.hideComposer);
+      b.disabled = true; b.textContent = "Deleting…";
+      const { error } = stillElsewhere
+        ? await panelCall({ action:"update_asset", id,
+            meta: ctx === "composer" ? { hideComposer:true } : { hideRotation:true } })
+        : await panelCall({ action:"delete_asset", id });          // gone everywhere -> trash
+      if (error) return toast("Delete failed: " + error.message);
+      if (ctx === "rotation") {                                     // drop it from the rotation
+        await patchState({banners: {...state.banners,
+          rotation: (state.banners.rotation || []).filter(x => x.id !== id)}});
+      }
+      await loadAssets(); await loadState(); renderAll();
+      toast(stillElsewhere ? "Removed from this list" : "Moved to trash");
+    });
+  }
+
+  /* ---------- SoundFX link popup ---------- */
+  let sfxTargetId = null, previewAudio = null;
+  function openSfxPicker(asset){
+    sfxTargetId = asset.id;
+    $("#sfxTarget").textContent = asset.name;
+    const cur = asset.meta && "sfxUrl" in asset.meta ? asset.meta.sfxUrl : undefined;
+    const sounds = assets.filter(a => a.kind === "sfx");
+    $("#sfxList").innerHTML =
+      `<div class="sfxrow ${cur === null ? "cur" : ""}">
+         <div class="nm">No SoundFX</div>
+         <button class="btn ghost" data-link="none">${cur === null ? "Linked" : "Link"}</button>
+       </div>` +
+      sounds.map(s => `<div class="sfxrow ${cur === s.url ? "cur" : ""}">
+         <div class="nm">${esc(s.name)}</div>
+         <button class="btn ghost" data-prev="${s.url}">▶ Preview</button>
+         <button class="btn ${cur === s.url ? "ghost" : ""}" data-link="${s.id}">
+           ${cur === s.url ? "Linked" : "Link"}</button>
+       </div>`).join("") ||
+      `<div class="tag">No sounds yet — upload or generate one in the SoundFX tab.</div>`;
+    $$("#sfxList [data-prev]").forEach(b => b.onclick = () => {
+      try { previewAudio?.pause(); previewAudio = new Audio(b.dataset.prev); previewAudio.play(); } catch(e){}
+    });
+    $$("#sfxList [data-link]").forEach(b => b.onclick = async () => {
+      const target = assets.find(a => a.id === sfxTargetId);
+      let meta;
+      if (b.dataset.link === "none") meta = { sfxUrl: null, sfxName: "No SoundFX" };
+      else { const s = assets.find(a => a.id === b.dataset.link); meta = { sfxUrl: s.url, sfxName: s.name }; }
+      const updated = await updateAsset(sfxTargetId, meta);
+      if (!updated) return;
+      /* keep a live-selected team style in sync so picks use the new sound immediately */
+      if (state.animStyle?.id === sfxTargetId) await patchState({animStyle: updated});
+      renderAll(); openSfxPicker(assets.find(a => a.id === sfxTargetId) ?? target);
+      toast("Sound linked");
+    });
+    $("#sfxPick").classList.add("on");
+  }
+  $("#sfxClose").onclick = () => { previewAudio?.pause(); $("#sfxPick").classList.remove("on"); };
+
+  /* ---------- board tab ---------- */
+  const boardEl = $("#ctlBoard");
+  let hlMode = false;
+  $("#hlModeBtn").onclick = () => { hlMode = !hlMode;
+    $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
+    $("#hlModeBtn").classList.toggle("gold", hlMode); renderAll(); };
+  $("#hlClearBtn").onclick = () => boardCall("highlight_clear");
+  C.ORDER.forEach(abbr => {
+    const t = C.TEAMS[abbr];
+    const d = document.createElement("div");
+    d.className="team"; d.dataset.abbr=abbr;
+    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
+    d.onclick = () => {
+      if (hlMode) {                                   // highlight mode: scope button animations
+        /* highlight is independent of elimination: starring an eliminated team keeps it
+           OFF the board (only the elimination tap brings it back) but remembers the star,
+           so its animation reappears the moment the team is restored */
+        return boardCall("highlight_toggle", abbr);
+      }
+      /* board_action() resolves the stinger + sound and fires the event inside the
+         same transaction as the state change, so it can never play for an
+         elimination that did not record */
+      boardCall("team_toggle", abbr);
+    };
+    boardEl.appendChild(d);
+  });
+  $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
+    boardCall("board_reset"); };
+  $("#loopStopBtn").onclick = () => patchState({loopFx: null});
+
+  $("#emptyTrash").onclick = async () => {
+    if (!trash.length) return toast("Trash is already empty");
+    if (!confirm(`Permanently delete ${trash.length} asset(s)? This cannot be undone.`)) return;
+    const {data, error} = await panelCall({action:"empty_trash"});
+    if (error) return toast("Empty trash failed: "+error.message);
+    await loadAssets(); toast(`Deleted ${data?.purged ?? 0} asset(s) forever`);
+  };
+
+  /* ---------- grid styles + button spacing ---------- */
+  const GRIDS = [
+    { id:"buttons",     name:"Buttons",              hint:"rounded, bordered (classic)" },
+    { id:"checker",     name:"Checker board",        hint:"square, connected" },
+    { id:"checkerbare", name:"Checker · no edge",    hint:"square, no button edge" },
+    { id:"honeycomb",   name:"Honeycomb",            hint:"hex, edges touching" },
+    { id:"logos",       name:"NFL logos only",       hint:"no containers" },
+    { id:"rect84",      name:"8 × 4 rectangles",     hint:"wide buttons, 4 rows" },
+    { id:"slant",       name:"Slanted rectangles",   hint:"angled edges" },
+  ];
+  const GRID_PREVIEW = {
+    buttons:"border-radius:5px;border:2px solid var(--copper)",
+    checker:"border:1px solid var(--copper)",
+    checkerbare:"border:1px solid rgba(255,255,255,.12)",
+    honeycomb:"clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);background:var(--copper)",
+    logos:"border:none;background:" +
+      "radial-gradient(circle 5px at 28% 30%, var(--gold) 96%, transparent)," +
+      "radial-gradient(circle 5px at 72% 30%, var(--volt) 96%, transparent)," +
+      "radial-gradient(circle 5px at 28% 72%, var(--bone) 96%, transparent)," +
+      "radial-gradient(circle 5px at 72% 72%, var(--copper) 96%, transparent)",
+    rect84:"border-radius:3px;border:2px solid var(--copper)",
+    slant:"clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%);background:var(--copper)",
+  };
+  const slider = (id, label, key, unit) => {
+    $(id).oninput = () => $(label).textContent = $(id).value + unit;
+    $(id).onchange = () => patchState({[key]: +$(id).value});
+  };
+  slider("#gapRange",  "#gapVal",  "boardGap",    "px");
+  slider("#sizeRange", "#sizeVal", "boardSize",   "%");
+  slider("#logoRange", "#logoVal", "logoSize",    "%");
+  slider("#fxRange",   "#fxVal",   "fxIntensity", "%");
+
+  /* ---------- banner composer ----------
+     Rendering lives in control/composer.js so master and pc.html cannot drift; this is only
+     the wiring. Settings are saved onto the asset as meta.style, so a composed banner carries
+     the recipe that produced it. */
+  const CZ = window.ACBZ_COMPOSER;
+  const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {}, s: CZ.settingsFrom({}) };
+  function compImg(url){
+    if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin = "anonymous"; i.src = url;
+      i.onload = drawComposer; comp.imgs[url] = i; }
+    return comp.imgs[url];
+  }
+  const compFontSel   = $("#compFont"), compPresetSel = $("#compPreset");
+  compFontSel.innerHTML = Object.entries(CZ.FONTS)
+    .map(([k, f]) => `<option value="${k}">${esc(f.label)}</option>`).join("");
+  compPresetSel.innerHTML = Object.entries(CZ.PRESETS)
+    .map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
+
+  function readCompUI(){
+    comp.s = CZ.settingsFrom({
+      text: $("#compText").value,
+      font: compFontSel.value, preset: compPresetSel.value,
+      color: $("#compColor").value, accent: $("#compAccent").value,
+      upper: $("#compUpper").checked, scrim: $("#compScrim").checked,
+      autofit: $("#compAuto").checked,
+      size: +$("#compSize").value,
+      lineHeight: +$("#compLine").value / 100,
+      tracking: +$("#compTrack").value,
+      scaleY: +$("#compScaleY").value / 100,
+      offsetY: +$("#compShiftY").value,
+    });
+    $("#compSizeV").textContent   = comp.s.size;
+    $("#compLineV").textContent   = comp.s.lineHeight.toFixed(2);
+    $("#compTrackV").textContent  = comp.s.tracking;
+    $("#compScaleYV").textContent = comp.s.scaleY.toFixed(2);
+    $("#compShiftYV").textContent = (comp.s.offsetY > 0 ? "+" : "") + comp.s.offsetY;
+    $("#compSize").disabled = comp.s.autofit;
+    return comp.s;
+  }
+  async function drawComposer(){
+    const s = readCompUI();
+    /* a web font that has not arrived yet bakes the WRONG typeface into a PNG the operator
+       cannot tell is wrong — always await it before painting */
+    await CZ.ensureFont(s.font, s.autofit ? 140 : s.size);
+    const im = comp.bgUrl ? compImg(comp.bgUrl) : null;
+    const out = CZ.draw(comp.canvas.getContext("2d"),
+      { W: 1080, H: 97, bgImage: im && im.naturalWidth ? im : null, settings: s });
+    if (s.autofit) $("#compSizeV").textContent = out.size + " (auto)";
+    const t = $("#compText").value.trim();
+    $("#compDur").textContent = C.bannerSeconds({meta:{type:"text", text:t||"x"}}) + "s on stream";
+  }
+  function renderCompBGs(){
+    /* composer backgrounds = art you can put text ON: uploaded/AI banner art and
+       backgrounds. Composed text banners are finished pieces — rotation only. */
+    const arts = assets.filter(a => inComposer(a) && !a.meta?.hideComposer);
+    $("#compBGs").innerHTML =
+      `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:120px;cursor:pointer">
+         <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
+         <div class="meta"><div class="name">Brand gradient</div></div></div>` +
+      arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" style="width:120px">
+        <div class="thumb banner-thumb" data-cbg="${a.url}" style="cursor:pointer">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn warn" data-hide="composer:${a.id}">Delete</button></div>
+        </div></div>`).join("");
+    $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => {
+      comp.bgUrl = d.dataset.cbg || null; renderCompBGs(); drawComposer(); });
+    wireDeletes(); wireHides();
+  }
+  for (const id of ["#compText","#compFont","#compPreset","#compColor","#compAccent","#compUpper",
+                    "#compScrim","#compAuto","#compSize","#compLine","#compTrack","#compScaleY","#compShiftY"]) {
+    const el = $(id); el.oninput = drawComposer; el.onchange = drawComposer;
+  }
+  $("#compReset").onclick = () => {
+    const d = CZ.DEFAULTS;
+    compFontSel.value = d.font; compPresetSel.value = d.preset;
+    $("#compColor").value = d.color; $("#compAccent").value = d.accent;
+    $("#compUpper").checked = d.upper; $("#compScrim").checked = d.scrim;
+    $("#compAuto").checked = d.autofit; $("#compSize").value = d.size;
+    $("#compLine").value = Math.round(d.lineHeight*100); $("#compTrack").value = d.tracking;
+    $("#compScaleY").value = Math.round(d.scaleY*100); $("#compShiftY").value = d.offsetY;
+    drawComposer();
+  };
+  $("#compSave").onclick = () => {
+    const text = $("#compText").value.trim(); if (!text) return toast("Type the banner text first");
+    const style = Object.assign({}, comp.s, { text });      // the recipe, for re-editing later
+    comp.canvas.toBlob(async (blob) => {
+      if (cloud) {
+        const path = `banners/composed-${Date.now()}.png`;
+        const {url, error} = await uploadToStorage(path, blob, "image/png");
+        if (error) return toast("Upload failed: "+error.message);
+        await saveAsset({ kind:"banner", name:text.replace(/\n/g," ").slice(0,40), url,
+                          meta:{type:"text", text, style} });
+      } else {
+        const r = new FileReader();
+        r.onload = () => saveAsset({ kind:"banner", name:text.replace(/\n/g," ").slice(0,40),
+                                     url:r.result, meta:{type:"text", text, style} });
+        r.readAsDataURL(blob);
+      }
+      toast(`Saved — ${C.bannerSeconds({meta:{type:"text",text}})}s on stream`);
+    }, "image/png");
+  };
+  drawComposer();
+
+  /* ---------- AI generators (one per media tab) ---------- */
+  /* sound + video run on fal's queue: submit, then poll (they take 1-4 min) */
+  const SLOW = new Set(["sfx","board_bg_anim","button_anim","background_anim"]);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  async function call(body){
+    const {data, error} = await sb.functions.invoke("generate-asset", { body:{ ...auth(), ...body } });
+    if (error || data?.error) {
+      let message = error?.message || data?.error;
+      try { const errBody = await error?.context?.json(); if (errBody?.error) message = errBody.error; } catch(e){}
+      if (message === "signed out") signOut("Session expired — enter the password again.");
+      toast("Generate failed: "+message); return null;
+    }
+    return data;
+  }
+  async function gen(body, btn){
+    if (!cloud) { toast("AI generation needs the cloud connection (Settings tab)"); return null; }
+    if (!SLOW.has(body.kind)) return call(body);
+    const sub = await call({ ...body, mode:"submit" });
+    if (!sub?.request_id) return null;
+    const t0 = Date.now();
+    for (let i = 0; i < 120; i++) {                       // up to ~10 minutes
+      await sleep(5000);
+      if (btn) btn.textContent = `Generating… ${Math.round((Date.now()-t0)/1000)}s`;
+      const p = await call({ ...body, mode:"poll", request_id:sub.request_id, model:sub.model,
+        status_url:sub.status_url, response_url:sub.response_url });
+      if (!p) return null;
+      if (p.asset || p.url) return p;
+      if (/FAIL|ERROR/i.test(p.status ?? "")) { toast("Generation failed on the provider"); return null; }
+    }
+    toast("Still generating — check back in a minute and refresh");
+    return null;
+  }
+  function busy(btn, on){ if (on) { btn._l = btn.textContent; btn.textContent = "Generating…"; }
+    else btn.textContent = btn._l; btn.disabled = on; }
+
+  $("#animGenBtn").onclick = async () => {
+    const p = $("#animGenPrompt").value.trim(); if (!p) return toast("Describe it first");
+    const b = $("#animGenBtn"); busy(b, true);
+    if ($("#animGenKind").value === "team_style") {
+      const d = await gen({ kind:"animation_still", prompt:p, no_row:true }, b);
+      if (d) await saveAsset({ kind:"style", name:"Style: "+p.slice(0,36), url:null,
+        meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt:p } });
+      if (d) toast("Team-animation style created — Enable it on its card");
+    } else {
+      const d = await gen({ kind:"animation_still", prompt:p,
+        as:{ kind:"animation", name:"AI: "+p.slice(0,40), meta:{ group:"oneshot", image:true } } }, b);
+      if (d) { toast("One-shot saved"); loadAssets(); }
+    }
+    busy(b, false);
+  };
+  $("#sfxGenBtn").onclick = async () => {
+    const p = $("#sfxGenPrompt").value.trim(); if (!p) return toast("Describe the sound first");
+    const b = $("#sfxGenBtn"); busy(b, true);
+    const d = await gen({ kind:"sfx", prompt:p,
+      as:{ kind:"sfx", name:"AI: "+p.slice(0,40), meta:{} } }, b);
+    busy(b, false);
+    if (d) { toast("Sound generated"); loadAssets(); }
+  };
+  $("#banGenBtn").onclick = async () => {
+    const p = $("#banGenPrompt").value.trim(); if (!p) return toast("Describe the art first");
+    const b = $("#banGenBtn"); busy(b, true);
+    const d = await gen({ kind:"banner", prompt:p, as:{ meta:{ template:true } } }, b);
+    busy(b, false);
+    if (d) { await loadAssets();
+      if (d.asset?.url) { comp.bgUrl = d.asset.url; renderCompBGs(); drawComposer(); }
+      toast("Banner art added to the composer picker"); }
+  };
+  $("#bgGenBtn").onclick = async () => {
+    const p = $("#bgGenPrompt").value.trim(); if (!p) return toast("Describe the background first");
+    const b = $("#bgGenBtn"); busy(b, true);
+    const anim = $("#bgGenKind").value === "background_anim";
+    const d = anim
+      ? await gen({ kind:"background_anim", prompt:p + ", full-width streamer backdrop",
+          quality:$("#bgGenQuality").value,
+          as:{ kind:"background", name:"AI clip: "+p.slice(0,34), meta:{} } }, b)
+      : await gen({ kind:"background", prompt:p }, b);
+    busy(b, false);
+    if (d) { toast("Background saved"); loadAssets(); }
+  };
+  $("#styleGenBtn").onclick = async () => {
+    const p = $("#styleGenPrompt").value.trim(); if (!p) return toast("Describe the look first");
+    const b = $("#styleGenBtn"); busy(b, true);
+    const k = $("#styleGenKind").value;
+    let d = null;
+    if (k === "board_button")
+      /* this image BECOMES the whole button — it must carry its own edge/bezel */
+      d = await gen({ kind:"board_button", prompt:
+        "ONE single empty square button with its own decorative bezel and edge, made of " + p +
+        ", the button fills the frame edge to edge, hollow flat centre with nothing in it, " +
+        "no logo, no text, no icon, no hand, front-on product shot, plain black background",
+        as:{ kind:"style", name:"Buttons: "+p.slice(0,32), meta:{ domain:"board_button" } } }, b);
+    else if (k === "board_bg")
+      d = await gen({ kind:"board_bg", prompt:p + ", wide horizontal band, subtle, not distracting",
+        as:{ kind:"style", name:"Board: "+p.slice(0,32), meta:{ domain:"board_bg" } } }, b);
+    else if (k === "board_bg_anim")
+      d = await gen({ kind:"board_bg_anim", prompt:p + ", wide horizontal band, subtle looping motion",
+        quality:$("#styleGenQuality").value,
+        as:{ kind:"style", name:"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } }, b);
+    else
+      /* button effects run continuously, so they are always ambient */
+      d = await gen({ kind:"button_anim", prompt:p + ", effect over a small square button, glowing energy",
+        quality:$("#styleGenQuality").value,
+        as:{ kind:"style", name:"Btn anim: "+p.slice(0,30), meta:{ domain:"button_anim", mode:"ambient" } } }, b);
+    busy(b, false);
+    if (d) { toast("Style created — Apply it on its card"); loadAssets(); }
+  };
+
+  /* ---------- AI tab: every category, plus building on an existing generation ----- */
+  /* one description per category so the other tabs and this one stay in step */
+  const AI_KINDS = {
+    background:      { kind:"background" },
+    background_anim: { kind:"background_anim", video:true,
+                       as:{ kind:"background", name:(p)=>"AI clip: "+p.slice(0,34) } },
+    banner:          { kind:"banner", as:{ meta:{ template:true } } },
+    board_bg:        { kind:"board_bg",
+                       as:{ kind:"style", name:(p)=>"Board: "+p.slice(0,32), meta:{ domain:"board_bg" } } },
+    board_bg_anim:   { kind:"board_bg_anim", video:true,
+                       as:{ kind:"style", name:(p)=>"Board clip: "+p.slice(0,30), meta:{ domain:"board_bg" } } },
+    board_button:    { kind:"board_button",
+                       suffix:", one single empty square button with its own bezel, hollow centre, no logo or text",
+                       as:{ kind:"style", name:(p)=>"Buttons: "+p.slice(0,32), meta:{ domain:"board_button" } } },
+    button_anim:     { kind:"button_anim", video:true,
+                       as:{ kind:"style", name:(p)=>"Btn anim: "+p.slice(0,30),
+                            meta:{ domain:"button_anim", mode:"ambient" } } },
+    oneshot:         { kind:"animation_still",
+                       as:{ kind:"animation", name:(p)=>"AI: "+p.slice(0,40),
+                            meta:{ group:"oneshot", image:true } } },
+    team_style:      { kind:"animation_still", noRow:true, team:true },
+    sfx:             { kind:"sfx", as:{ kind:"sfx", name:(p)=>"AI: "+p.slice(0,40), meta:{} } },
+  };
+  const buildAs = (spec, p) => spec.as ? {
+    ...spec.as,
+    name: typeof spec.as.name === "function" ? spec.as.name(p) : spec.as.name,
+  } : null;
+
+  async function aiGenerate(kindKey, prompt, btn, extra = {}) {
+    const spec = AI_KINDS[kindKey]; if (!spec) return null;
+    const body = { kind: spec.kind, prompt: prompt + (spec.suffix ?? ""),
+      quality: $("#aiQuality")?.value ?? "standard", ...extra };
+    if (spec.video) body.longer = false;
+    if (spec.noRow) body.no_row = true; else body.as = buildAs(spec, prompt);
+    const d = await gen(body, btn);
+    if (d && spec.team)                    // team styles are a style row pointing at the art
+      await saveAsset({ kind:"style", name:"Style: "+prompt.slice(0,36), url:null,
+        meta:{ domain:"team_anim", base_url:d.url, image:true, per_team:false, prompt } });
+    return d;
+  }
+
+  $("#aiGenBtn").onclick = async () => {
+    const p = $("#aiPrompt").value.trim(); if (!p) return toast("Describe it first");
+    const b = $("#aiGenBtn"); busy(b, true);
+    const d = await aiGenerate($("#aiKind").value, p, b);
+    busy(b, false);
+    if (d) { toast("Generated"); await loadAssets(); }
+  };
+
+  /* refine an existing generation */
+  let aiRef = null;
+  function openRefine(a){
+    aiRef = a;
+    $("#aiRefName").textContent = a.name;
+    $("#aiRefMsg").textContent = "";
+    $("#aiRefPrompt").value = "";
+    const u = a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+    $("#aiRefPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(u ?? "")
+      ? `<video src="${u}" muted autoplay loop playsinline style="width:100%"></video>`
+      : `<img src="${u}" style="width:100%">`;
+    /* Animate only makes sense from a still */
+    $("#aiAnimate").disabled = /\.(webm|mp4)(\?|$)/i.test(u ?? "");
+    $("#aiRefine").classList.add("on");
+  }
+  const refUrlOf = (a) => a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+  async function refine(kindKey, prompt, btn, brand){
+    if (!aiRef) return;
+    $("#aiRefMsg").textContent = "working…";
+    const d = await aiGenerate(kindKey, prompt, btn, { ref_url: refUrlOf(aiRef), brand: !!brand });
+    $("#aiRefMsg").textContent = d ? "done — it is in the list below" : "failed";
+    if (d) await loadAssets();
+  }
+  $("#aiAnimate").onclick = () => refine("background_anim",
+    (aiRef?.meta?.prompt ?? aiRef?.name ?? "this image") + ", bring it to life with gentle motion",
+    $("#aiAnimate"), false);
+  $("#aiBrandify").onclick = () => refine(
+    aiRef?.kind === "style" ? "board_bg" : (aiRef?.kind ?? "background"),
+    aiRef?.meta?.prompt ?? aiRef?.name ?? "this image", $("#aiBrandify"), true);
+  $("#aiRefGo").onclick = () => {
+    const p = $("#aiRefPrompt").value.trim(); if (!p) return toast("Describe the new version");
+    refine(aiRef?.kind === "style" ? "board_bg" : (aiRef?.kind ?? "background"), p, $("#aiRefGo"), false);
+  };
+  $("#aiRefClose").onclick = () => { $("#aiRefine").classList.remove("on");
+    $("#aiRefPreview").innerHTML = ""; };
+
+  /* file an existing generation into any section — a new row pointing at the same file,
+     so the original stays where it is */
+  const ADD_TARGETS = {
+    team_style:   (u,n,fit) => ({ kind:"style", name:"Style: "+n, url:null,
+                    meta:{ domain:"team_anim", base_url:u, per_team:false, fit,
+                           image:!/\.(webm|mp4)(\?|$)/i.test(u) } }),
+    oneshot:      (u,n,fit) => ({ kind:"animation", name:n, url:u,
+                    meta:{ group:"oneshot", fit, image:!/\.(webm|mp4)(\?|$)/i.test(u) } }),
+    background:   (u,n,fit) => ({ kind:"background", name:n, url:u, meta:{ type:"ai", fit } }),
+    banner:       (u,n,fit) => ({ kind:"banner", name:n, url:u, meta:{ type:"ai", template:true, fit } }),
+    board_bg:     (u,n,fit) => ({ kind:"style", name:"Board: "+n, url:u, meta:{ domain:"board_bg", fit } }),
+    board_button: (u,n,fit) => ({ kind:"style", name:"Buttons: "+n, url:u, meta:{ domain:"board_button", fit } }),
+    button_anim:  (u,n,fit) => ({ kind:"style", name:"Btn anim: "+n, url:u,
+                    meta:{ domain:"button_anim", mode:"ambient", fit } }),
+  };
+  $("#aiAddBtn").onclick = async () => {
+    if (!aiRef) return;
+    const url = refUrlOf(aiRef); if (!url) return toast("That asset has no file");
+    const b = $("#aiAddBtn"); busy(b, true);
+    const make = ADD_TARGETS[$("#aiAddKind").value];
+    const saved = await saveAsset(make(url, aiRef.name.replace(/^AI:\s*/, ""), $("#aiAddFit").value));
+    busy(b, false);
+    if (saved) { await loadAssets();
+      $("#aiRefMsg").textContent = "added — find it in that tab";
+      toast("Added to " + $("#aiAddKind").selectedOptions[0].textContent); }
+  };
+
+  /* ---------- team animation sets ----------
+     A set is ONE style card plus 32 clips that all carry the same meta.set. The server
+     resolves "the clip for this team WITHIN the selected set", so a new upload can never
+     outrank Classic Stingers just by being newer. state.animStyle is already per-PC, so
+     which set a PC uses is per-PC for free. */
+  const normName = (x) => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const NICK_TO_ABBR = Object.fromEntries(
+    Object.entries(C.TEAMS).map(([abbr, t]) => [normName(t.name), abbr]));
+  function matchTeam(filename) {
+    const stem = normName(filename.replace(/\.[^.]+$/, ""));
+    if (NICK_TO_ABBR[stem]) return NICK_TO_ABBR[stem];
+    if (C.TEAMS[stem]) return stem;                       // named by abbreviation
+    let best = null;                                      // longest nickname inside the name
+    for (const [nick, abbr] of Object.entries(NICK_TO_ABBR))
+      if (stem.includes(nick) && (!best || nick.length > best.nick.length)) best = { nick, abbr };
+    return best ? best.abbr : null;
+  }
+  let tsFiles = [];
+  const TEAM_OPTS = C.ORDER.map(a => `<option value="${a}">${esc(C.TEAMS[a].name)}</option>`).join("");
+  function renderTeamSet(){
+    $("#tsList").innerHTML = tsFiles.map((f, i) => `
+      <div class="row" style="gap:8px;padding:3px 0">
+        <span class="tag" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis"
+          title="${esc(f.file.name)}">${esc(f.file.name)}</span>
+        <select data-ts="${i}" style="width:190px">
+          <option value="">— skip —</option>${TEAM_OPTS}</select>
+      </div>`).join("");
+    tsFiles.forEach((f, i) => { const sel = $(`[data-ts="${i}"]`); if (sel) sel.value = f.team ?? ""; });
+    $$("#tsList [data-ts]").forEach(sel => sel.onchange = () => {
+      tsFiles[+sel.dataset.ts].team = sel.value || null; summariseTeamSet(); });
+    summariseTeamSet();
+  }
+  function summariseTeamSet(){
+    const picked = tsFiles.filter(f => f.team).map(f => f.team);
+    const dupes = [...new Set(picked.filter((t, i) => picked.indexOf(t) !== i))];
+    const missing = C.ORDER.filter(a => !picked.includes(a));
+    $("#tsSummary").innerHTML =
+      `${picked.length}/32 matched` +
+      (dupes.length ? ` · <b style="color:var(--danger)">two files on ${dupes.map(d=>C.TEAMS[d].name).join(", ")}</b>` : "") +
+      (missing.length ? ` · no clip for ${missing.length} team${missing.length===1?"":"s"}: ${missing.slice(0,6).map(m=>C.TEAMS[m].name).join(", ")}${missing.length>6?"…":""}`
+                      : " · every team covered");
+    $("#tsSave").disabled = !picked.length || dupes.length > 0;
+  }
+  $("#teamSetInput").onchange = (e) => {
+    tsFiles = [...e.target.files].map(file => ({ file, team: matchTeam(file.name) }));
+    e.target.value = "";
+    if (!tsFiles.length) return;
+    $("#tsName").value = ""; $("#tsMsg").textContent = "";
+    renderTeamSet(); $("#teamSet").classList.add("on");
+  };
+  $("#tsCancel").onclick = () => { $("#teamSet").classList.remove("on"); tsFiles = []; };
+  $("#tsSave").onclick = async () => {
+    const setName = $("#tsName").value.trim();
+    if (!setName) return toast("Give the set a name first");
+    const chosen = tsFiles.filter(f => f.team);
+    if (!chosen.length) return toast("No files matched a team");
+    const btn = $("#tsSave"); busy(btn, true);
+    const setId = crypto.randomUUID();
+    let poster = null, done = 0;
+    /* clips first, card last — enabling a half-uploaded set would show blank stingers */
+    for (const f of chosen) {
+      $("#tsMsg").textContent = `uploading ${++done}/${chosen.length}…`;
+      const ext = (f.file.name.match(/\.[^.]+$/) || [".webm"])[0];
+      const path = `team_anim/${setId}/${f.team}${ext}`;
+      const { url, error } = await uploadToStorage(path, f.file, f.file.type || undefined);
+      if (error) { busy(btn, false); $("#tsMsg").textContent = "";
+        return toast("Upload failed: " + error.message); }
+      poster ??= url;
+      await saveAsset({ kind: "animation", name: `${C.TEAMS[f.team].name} — ${setName}`, url,
+        meta: { team: f.team, group: "team", set: setId, type: "upload" } });
+    }
+    await saveAsset({ kind: "style", name: setName, url: null,
+      meta: { domain: "team_anim", per_team: true, set: setId, type: "upload", poster } });
+    busy(btn, false); $("#tsMsg").textContent = "";
+    $("#teamSet").classList.remove("on"); tsFiles = [];
+    await loadAssets();
+    toast(`"${setName}" created — Enable it on its card`);
+  };
+
+  /* ---------- Stream Deck event keys ----------
+     The deck sends ?name=<event>; the per-PC map state.oneshots decides which asset that
+     name resolves to. Keeping the key equal to the deck's own name means no profile
+     rebuild and no re-import on the five PCs. */
+  const DECK_EVENTS = ["Stash or Pass", "Spin 2 Pick 1", "Spin 3 Pick 1", "PYT"];
+  const eventOf = (a) => a.meta?.event ??
+    DECK_EVENTS.find(ev => a.name.toLowerCase().includes(ev.toLowerCase())) ?? null;
+  const variantsFor = (ev) => assets
+    .filter(a => a.kind === "animation" && a.meta?.group !== "team" && eventOf(a) === ev);
+  /* what the deck plays with no explicit assignment: newest matching name */
+  const fallbackFor = (ev) => variantsFor(ev)[0] ?? null;
+  const assignedFor = (ev) => {
+    const id = state.oneshots?.[ev];
+    return (id && assets.find(a => a.id === id)) || fallbackFor(ev);
+  };
+  let epEvent = null;
+  function renderEventGrid(){
+    if (!$("#eventGrid")) return;
+    const evs = [...new Set([...DECK_EVENTS, ...assets.map(eventOf).filter(Boolean)])];
+    $("#eventGrid").innerHTML = evs.map(ev => {
+      const cur = assignedFor(ev), n = variantsFor(ev).length;
+      return `<div class="asset" data-ev="${esc(ev)}" style="cursor:pointer">
+        <div class="thumb">${cur ? thumb(cur) : "🎬"}</div>
+        <div class="meta"><div class="name">${esc(ev)}</div>
+          <div class="row"><span class="tag">${cur ? esc(cur.name) : "no clip yet"}</span></div>
+          <div class="row"><span class="tag">${n} option${n===1?"":"s"} · tap to change</span></div>
+        </div></div>`; }).join("");
+    $$("#eventGrid [data-ev]").forEach(d => d.onclick = () => openEvent(d.dataset.ev));
+  }
+  function openEvent(ev){
+    epEvent = ev; $("#epTitle").textContent = ev; $("#epMsg").textContent = "";
+    renderEventList(); $("#eventPick").classList.add("on");
+  }
+  function renderEventList(){
+    const cur = assignedFor(epEvent);
+    const list = variantsFor(epEvent);
+    $("#epList").innerHTML = list.length ? list.map(a => {
+      const on = cur && cur.id === a.id;
+      return `<div class="asset ${on?"active":""}" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <div class="thumb banner-thumb" style="width:120px;flex:none">${thumb(a)}</div>
+        <div class="meta" style="flex:1">
+          <div class="name">${esc(a.name)}</div>
+          <div class="row">
+            <button class="btn ${on?"ghost":""}" data-use="${a.id}">${on?"In use on "+pcName(PC):"Use on this PC"}</button>
+            <button class="btn ghost" data-useall="${a.id}">Use on live PCs (1-6)</button>
+          </div></div></div>`; }).join("")
+      : `<span class="tag">Nothing uploaded for this event yet.</span>`;
+    $$("#epList [data-use]").forEach(b => b.onclick = async () => {
+      await patchState({ oneshots: { ...(state.oneshots ?? {}), [epEvent]: b.dataset.use } });
+      renderEventList(); renderEventGrid(); toast("Assigned on " + pcName(PC));
+    });
+    $$("#epList [data-useall]").forEach(b => b.onclick = async () => {
+      busy(b, true); await assignEventEverywhere(epEvent, b.dataset.useall); busy(b, false);
+      renderEventList(); renderEventGrid(); toast("Assigned on live PCs 1-6");
+    });
+  }
+  /* each PC keeps its own map, so merge per PC rather than overwriting the whole key */
+  async function assignEventEverywhere(ev, id){
+    const { data: rows } = await sb.from("stream_state").select("id,data");
+    /* live PCs only: Dev (7) is the test rig and is left out of every "all PCs" write */
+    for (const r of (rows ?? []).filter(r => r.id !== 7)) {
+      const next = { ...(r.data?.oneshots ?? {}), [ev]: id };
+      await panelCall({ action:"patch", pc:String(r.id), clientId:CLIENT_ID, patch:{ oneshots: next } });
+    }
+    await loadState();
+  }
+  $("#epClose").onclick = () => { $("#eventPick").classList.remove("on"); epEvent = null; };
+  $("#epUpload").onchange = async (e) => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file || !epEvent) return;
+    /* Pin every PC to what it plays TODAY before adding a rival, so uploading can never
+       silently change what the deck keys already do. */
+    const before = fallbackFor(epEvent);
+    if (before) await assignEventEverywhere(epEvent, before.id);
+    $("#epMsg").textContent = "uploading…";
+    const path = `animation/${Date.now()}-${file.name.replace(/[^\w.\-]/g,"_")}`;
+    const { url, error } = await uploadToStorage(path, file, file.type || undefined);
+    if (error) { $("#epMsg").textContent = ""; return toast("Upload failed: " + error.message); }
+    await saveAsset({ kind:"animation", name:file.name.replace(/\.[^.]+$/,""), url,
+      meta:{ type:"upload", group:"oneshot", event: epEvent } });
+    $("#epMsg").textContent = "";
+    await loadAssets();
+    renderEventList(); renderEventGrid();
+    toast("Added — pick it above to use it");
+  };
+
+  /* ---------- reframe editor ---------- */
+  let rfAsset = null;
+  /* preview box matches the shape the asset is actually shown in */
+  const RF_RATIO = { banner: 97/1080, background: 480/1080, board_bg: 165/1080,
+                     board_button: 1, button_anim: 1, team_anim: 413/667, animation: 413/667 };
+  function rfShape(a){
+    if (a.kind === "banner") return RF_RATIO.banner;
+    if (a.kind === "background") return RF_RATIO.background;
+    if (a.kind === "style") return RF_RATIO[a.meta?.domain] ?? 1;
+    return RF_RATIO.animation;
+  }
+  function rfUrl(a){ return a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url ?? ""; }
+  function openReframe(a){
+    rfAsset = a;
+    const crop = a.meta?.crop ?? {x:50,y:50,z:100};
+    $("#rfX").value = crop.x ?? 50; $("#rfY").value = crop.y ?? 50; $("#rfZ").value = crop.z ?? 100;
+    $("#rfZVal").textContent = ($("#rfZ").value) + "%";
+    $("#rfFit").value = a.meta?.fit ?? "box";   // missing fit renders boxed — do not flip it on save
+    $("#rfPreview").style.height = Math.round(rfShape(a) * 520) + "px";
+    const u = rfUrl(a);
+    $("#rfPreview").innerHTML = /\.(webm|mp4)(\?|$)/i.test(u)
+      ? `<video src="${u}" muted autoplay loop playsinline></video>`
+      : `<img src="${u}">`;
+    rfApply(); $("#reframe").classList.add("on");
+  }
+  function rfApply(){
+    const n = $("#rfPreview").firstChild;
+    $("#rfZVal").textContent = $("#rfZ").value + "%";
+    if (n) { n.style.objectPosition = `${$("#rfX").value}% ${$("#rfY").value}%`;
+      n.style.transform = `scale(${$("#rfZ").value / 100})`; }
+  }
+  $("#rfX").oninput = rfApply; $("#rfY").oninput = rfApply; $("#rfZ").oninput = rfApply;
+  $("#rfCancel").onclick = () => { $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML=""; };
+  $("#rfSave").onclick = async () => {
+    if (!rfAsset) return;
+    const ok = await updateAsset(rfAsset.id,
+      { crop:{ x:+$("#rfX").value, y:+$("#rfY").value, z:+$("#rfZ").value },
+        fit: $("#rfFit").value });
+    if (!ok) return;
+    $("#reframe").classList.remove("on"); $("#rfPreview").innerHTML="";
+    await loadState(); renderAll();
+    toast("Crop saved — applies everywhere this asset is shown");
+  };
+
+  /* ---------- renderers ---------- */
+  /* a dead file (deleted from storage) shows a visible chip instead of silent black */
+  const MISSTHUMB = `onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'⚠ file missing',className:'gone'}))"`;
+  /* A 78px card does not need the 2 MB source PNG. Supabase resizes at the edge — the
+     biggest board_button texture went 1.95 MB -> 409 KB, and less again as WebP in a real
+     browser. Images only (there is no video transform), and only formats the resizer
+     accepts — an unsupported one would 4xx and trip the "file missing" chip on a healthy
+     file. Must stay identical to the copy in control/pc.html. */
+  const thumbSrc = (u) => {
+    if (!u || !/^https?:/i.test(u) || !/\.(png|jpe?g|webp)(\?|$)/i.test(u)) return u;
+    const marker = "/storage/v1/object/public/";
+    const i = u.indexOf(marker);
+    if (i < 0) return u;
+    return u.slice(0, i) + "/storage/v1/render/image/public/" + u.slice(i + marker.length) +
+      (u.includes("?") ? "&" : "?") + "width=240&quality=60";
+  };
+  function thumb(a){
+    /* a folder-style card (e.g. 32 team videos) carries a poster frame lifted from
+       one of its videos; otherwise seek video thumbs past the blank first frame */
+    const u = a.meta?.poster ?? a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+    if (a.meta?.type==="text" && !a.url)
+      return `<div style="font-size:11px;padding:6px;color:#DCE8F2">${esc(a.meta.text)}</div>`;
+    if (!u) {
+      /* the CSS-default builtins get a swatch of what they actually look like */
+      if (a.meta?.builtin && a.meta?.domain === "board_bg")
+        return `<div style="width:100%;height:100%;background:radial-gradient(120% 160% at 50% -20%, #123a5c 0%, #0B1E33 45%, #071527 100%)"></div>`;
+      if (a.meta?.builtin && (a.meta?.domain === "board_button" || a.meta?.domain === "button_frame"))
+        return `<div class="swatchwrap"><div class="minibtn"></div></div>`;
+      /* builtin button animations preview their actual effect on a mini button */
+      if (a.meta?.builtin && a.meta?.domain === "button_anim")
+        return `<div class="swatchwrap"><div class="minibtn${
+          a.meta.effect && a.meta.effect !== "none" ? " fx-" + a.meta.effect : ""}"></div></div>`;
+      return "";
+    }
+    if (/\.(wav|mp3|ogg|m4a)(\?|$)/i.test(u)) return `<div style="font-size:24px">🔊</div>`;
+    if (/\.(webm|mp4)(\?|$)/i.test(u) || u.startsWith("data:video"))
+      return `<video src="${u}#t=1.2" muted playsinline preload="metadata" ${MISSTHUMB}></video>`;
+    return `<img src="${thumbSrc(u)}" loading="lazy" ${MISSTHUMB}>`;
+  }
+  const delBtn = (a) => a.meta?.builtin ? "" : `<button class="btn warn" data-del="${a.id}">Delete</button>`;
+  const sfxLabel = (a) => a.meta && "sfxUrl" in a.meta
+    ? `<span class="link">🔊 ${esc(a.meta.sfxName ?? "linked")}</span>`
+    : `<span class="tag">default sound</span>`;
+
+  function renderAll(){
+    const hlMap = state.board.highlighted || {};
+    $$("#ctlBoard .team").forEach(d => {
+      d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]);
+      /* the star shows even on eliminated teams — the highlight is remembered */
+      d.classList.toggle("hl", !!hlMap[d.dataset.abbr]);
+    });
+    const hlCount = Object.keys(hlMap).length;
+    $("#hlHint").textContent = hlMode
+      ? "Highlight mode — tap teams to star them. Button animations play ONLY on starred teams."
+      : (hlCount
+          ? `Tap a team to eliminate it. ${hlCount} team${hlCount===1?"":"s"} highlighted — button animations play only on those.`
+          : "Tap a team to eliminate it (plays the animation + sound); tap again to bring it back.");
+
+    /* grid styles */
+    $("#gridStyleGrid").innerHTML = GRIDS.map(g => {
+      const active = (state.boardGrid ?? "buttons") === g.id;
+      return `<div class="asset gridcard ${active?"active":""}">
+        <div class="thumb"><div class="shape" style="${GRID_PREVIEW[g.id]}"></div></div>
+        <div class="meta"><div class="name">${g.name}</div>
+          <div class="row"><button class="btn ${active?"ghost":""}" data-grid="${g.id}">
+            ${active?"Applied":"Apply"}</button></div>
+          <div class="row"><span class="tag">${g.hint}</span></div>
+        </div></div>`; }).join("");
+    $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => {
+      patchState({boardGrid: b.dataset.grid}); });
+    $("#gapRange").value = state.boardGap ?? 0;
+    $("#gapVal").textContent = (state.boardGap ?? 0) + "px";
+
+    /* team-animation styles */
+    const styles = assets.filter(a => a.kind==="style" && a.meta?.domain==="team_anim");
+    $("#styleGrid").innerHTML = styles.map(s => {
+      const active = state.animStyle ? state.animStyle.id === s.id : s.meta?.builtin;
+      return `<div class="asset ${active?"active":""}">
+        <div class="thumb">${thumb(s) || "🏈"}</div>
+        <div class="meta"><div class="name">${esc(s.name)}</div>
+          <div class="row"><button class="btn ${active?"ghost":""}" data-style="${s.id}">
+            ${active?"Enabled":"Enable"}</button>
+            <button class="btn ghost" data-sfx="${s.id}">Link SoundFX</button>
+            ${(s.url || s.meta?.base_url) ? `<button class="btn ghost" data-rf="${s.id}">Reframe</button>` : ""}
+            ${delBtn(s)}</div>
+          <div class="row">${sfxLabel(s)}</div>
+        </div></div>`; }).join("");
+    $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
+      patchState({animStyle: assets.find(x=>x.id===b.dataset.style)}); });
+    renderEventGrid();
+
+    /* one-shot animations */
+    $("#oneshotGrid").innerHTML = assets
+      .filter(a => a.kind==="animation" && a.meta?.group!=="team").map(a=>`
+      <div class="asset"><div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-play="${a.id}">Play</button>
+            <button class="btn ghost" data-sfx="${a.id}">Link SoundFX</button>
+            ${a.url ? `<button class="btn ghost" data-rf="${a.id}">Reframe</button>` : ""}
+            ${delBtn(a)}</div>
+          <div class="row">${sfxLabel(a)}</div>
+        </div></div>`).join("");
+    $$("#oneshotGrid [data-play]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.play);
+      fireEvent("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
+        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null,
+        crop:a.meta?.crop ?? null});
+    });
+    /* a Stream Deck key can leave a clip looping forever — always give the panel a
+       way to stop it, so a lost or mis-pressed deck key can't strand an animation */
+    $("#loopStopBtn").style.display = state.loopFx?.url ? "" : "none";
+    $("#loopNow").textContent = state.loopFx?.url ? `Looping: ${state.loopFx.name ?? ""}` : "";
+
+    /* sound effects */
+    $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`
+      <div class="asset"><div class="thumb">🔊</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-prevsfx="${a.url}">▶ Preview</button>
+            <button class="btn ghost" data-playsfx="${a.id}">Play on stream</button>${delBtn(a)}</div>
+          ${a.meta?.default ? '<div class="row"><span class="link">default pick sound</span></div>' : ""}
+        </div></div>`).join("");
+    $$("#sfxGrid [data-prevsfx]").forEach(b => b.onclick = () => {
+      try { previewAudio?.pause(); previewAudio = new Audio(b.dataset.prevsfx); previewAudio.play(); } catch(e){} });
+    $$("#sfxGrid [data-playsfx]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.playsfx); fireEvent("play_sfx",{url:a.url}); });
+
+    /* banners (templates stay out of rotation) */
+    const rotIds = new Set((state.banners.rotation||[]).map(x=>x.id));
+    $("#bannerGrid").innerHTML = assets
+      .filter(a=>a.kind==="banner" && !a.meta?.template && !a.meta?.hideRotation).map(a=>`
+      <div class="asset ${rotIds.has(a.id)?"active":""}">
+        <div class="thumb banner-thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row">
+            <button class="btn ${rotIds.has(a.id)?"warn":""}" data-rot="${a.id}">
+              ${rotIds.has(a.id)?"Deselect":"Select"}</button>
+            ${a.url ? `<button class="btn ghost" data-rf="${a.id}">Reframe</button>` : ""}
+            <button class="btn warn" data-hide="rotation:${a.id}">Delete</button>
+            <span class="tag">${C.bannerSeconds(a)}s</span>
+          </div></div></div>`).join("");
+    $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.rot);
+      const rot = state.banners.rotation || [];
+      patchState({banners: {...state.banners,
+        rotation: rotIds.has(a.id) ? rot.filter(x=>x.id!==a.id) : [...rot, a]}});
+    });
+
+    /* backgrounds */
+    $("#bgGrid").innerHTML = assets.filter(a=>a.kind==="background").map(a=>`
+      <div class="asset ${state.background?.url===a.url?"active":""}">
+        <div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-bg="${a.id}">Set live</button>
+            <button class="btn ghost" data-rf="${a.id}">Reframe</button>${delBtn(a)}</div>
+        </div></div>`).join("");
+    $$("#bgGrid [data-bg]").forEach(d => d.onclick = () => {
+      const a = assets.find(x=>x.id===d.dataset.bg);
+      patchState({background: { url:a.url, name:a.name, crop:a.meta?.crop ?? null }});
+    });
+
+    /* board style: three independent pickers */
+    const part = (domain, gridSel, stateKey, extra) => {
+      const list = assets.filter(a => a.kind==="style" && a.meta?.domain===domain);
+      $(gridSel).innerHTML = list.map(s => {
+        const isDefault = s.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
+        const active = state[stateKey] ? state[stateKey].id === s.id : isDefault;
+        return `<div class="asset ${active?"active":""}">
+          <div class="thumb">${thumb(s) || (extra?.icon ?? "🎛")}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <div class="row"><button class="btn ${active?"ghost":""}" data-part="${stateKey}:${s.id}">
+              ${active?"Applied":"Apply"}</button>
+              ${s.url ? `<button class="btn ghost" data-rf="${s.id}">Reframe</button>` : ""}
+              ${delBtn(s)}</div>
+            ${s.meta?.mode && s.meta.mode !== "none"
+              ? `<div class="row"><span class="tag">${s.meta.mode === "ambient" ? "always on" : "on team hit"}</span></div>` : ""}
+          </div></div>`; }).join("");
+    };
+    part("button_frame", "#frameStyleGrid", "boardFrame",   {icon:"🖼"});
+    part("board_button", "#btnStyleGrid",   "boardButtons", {icon:"🟨"});
+    part("board_bg",     "#bgStyleGrid",  "boardBg",      {icon:"🎞"});
+
+    /* button animations are multi-select: any number can run at once */
+    const picked = (Array.isArray(state.buttonAnims) ? state.buttonAnims
+                   : state.buttonAnim ? [state.buttonAnim] : []).filter(Boolean);
+    const pickedIds = new Set(picked.map(x => x.id));
+    $("#btnAnimGrid").innerHTML = assets
+      .filter(a => a.kind==="style" && a.meta?.domain==="button_anim")
+      .map(s => {
+        const isNone = s.meta?.effect === "none";
+        const on = isNone ? pickedIds.size === 0 : pickedIds.has(s.id);
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "✨"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <div class="row"><button class="btn ${on?"ghost":""}" data-anim="${s.id}">
+              ${isNone ? (on?"Active":"Turn all off") : (on?"Selected":"Select")}</button>${delBtn(s)}</div>
+          </div></div>`; }).join("");
+    $$("#btnAnimGrid [data-anim]").forEach(b => b.onclick = () => {
+      const s = assets.find(x=>x.id===b.dataset.anim);
+      let next;
+      if (s?.meta?.effect === "none") next = [];
+      else { const list = picked.filter(x => x.id !== s.id);
+             next = pickedIds.has(s.id) ? list : [...list, s]; }
+      delete state.buttonAnim;                  // superseded by the list
+      patchState({buttonAnims: next, buttonAnim: null});
+    });
+
+    /* sliders reflect the live state */
+    const setS = (id, label, key, dflt, unit) => {
+      $(id).value = state[key] ?? dflt; $(label).textContent = ($(id).value) + unit; };
+    setS("#gapRange","#gapVal","boardGap",0,"px");
+    setS("#sizeRange","#sizeVal","boardSize",100,"%");
+    setS("#logoRange","#logoVal","logoSize",100,"%");
+    setS("#fxRange","#fxVal","fxIntensity",100,"%");
+    $$("[data-part]").forEach(b => b.onclick = async () => {
+      const [k, id] = b.dataset.part.split(":");
+      /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
+         page cached its list at load — so a panel left open across an asset re-upload
+         would write the STALE url back onto a board and silently undo the update. That
+         is exactly how an old frame came back after being replaced. */
+      const fresh = sb ? await sb.from("assets").select("*").eq("id", id).maybeSingle()
+                       : { data: null };            // sb is null in offline preview mode
+      const s = fresh.data || assets.find(x=>x.id===id);
+      /* "no effect" builtins (Gold Buttons, Navy Glass Board, No Button Animation)
+         mean "use the CSS default" and store as null; builtin EFFECTS still store. */
+      const isDefault = s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
+      patchState({[k]: isDefault ? null : s});
+    });
+
+    /* shared wiring */
+    $$("[data-rf]").forEach(b => b.onclick = (e) => {
+      e.stopPropagation(); openReframe(assets.find(x=>x.id===b.dataset.rf)); });
+    $$("[data-sfx]").forEach(b => b.onclick = (e) => {
+      e.stopPropagation(); openSfxPicker(assets.find(x=>x.id===b.dataset.sfx)); });
+    /* AI gallery — anything AI has produced, whatever library it landed in */
+    const made = assets.filter(a => a.meta?.type === "ai" || a.meta?.prompt);
+    $("#aiGrid").innerHTML = made.length ? made.map(a => `
+      <div class="asset"><div class="thumb" data-ai="${a.id}" style="cursor:pointer">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-ai="${a.id}">Build on it</button>${delBtn(a)}</div>
+          <div class="row"><span class="tag">${a.kind}${a.meta?.domain ? " · "+a.meta.domain : ""}</span></div>
+        </div></div>`).join("")
+      : `<span class="tag">Nothing generated yet.</span>`;
+    $$("#aiGrid [data-ai]").forEach(b => b.onclick = () =>
+      openRefine(assets.find(x => x.id === b.dataset.ai)));
+
+    wireDeletes(); wireHides();
+    /* trash */
+    $("#trashGrid").innerHTML = trash.length ? trash.map(a => `
+      <div class="asset"><div class="thumb">${thumb(a) || "🗑"}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn" data-restore="${a.id}">Restore</button>
+            <button class="btn warn" data-purge="${a.id}">Delete forever</button></div>
+          <div class="row"><span class="tag">${a.kind}${a.meta?.deletedAt ? " · " + a.meta.deletedAt.slice(0,10) : ""}</span></div>
+        </div></div>`).join("") : `<span class="tag">Trash is empty.</span>`;
+    $$("#trashGrid [data-restore]").forEach(b => b.onclick = async () => {
+      b.disabled = true; const {error} = await panelCall({action:"restore_asset", id:b.dataset.restore});
+      if (error) return toast("Restore failed: "+error.message);
+      await loadAssets(); toast("Restored");
+    });
+    $$("#trashGrid [data-purge]").forEach(b => b.onclick = async () => {
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b._l = b.textContent;
+        b.textContent = "Are you sure?"; b.classList.add("danger");
+        clearTimeout(b._t); b._t = setTimeout(() => { b.dataset.armed = "0";
+          b.textContent = b._l; b.classList.remove("danger"); }, 5000);
+        return; }
+      clearTimeout(b._t); b.disabled = true; b.textContent = "Deleting…";
+      const {error} = await panelCall({action:"purge_asset", id:b.dataset.purge});
+      if (error) return toast("Delete failed: "+error.message);
+      await loadAssets(); toast("Deleted forever");
+    });
+
+    renderCompBGs(); drawComposer();
+  }
+
+  /* ---------- status ----------
+     One page that answers "is every PC working, and if not, what do I do" without anyone
+     having to run a script or reset an OBS cache by hand.
+
+     LIVE view: every overlay source reports itself on presence:overlays every 30s — build,
+     data connection, reconnects, stingers missed and recovered, whether its background is
+     painting, which state it has applied, and its own incident log (kept in the PC's
+     localStorage, so it survives the reload that fixed it).
+     HEALTH CHECK: sends a health_ping EVENT to each PC through the panel function — the exact
+     route a stinger takes — and waits for every source to answer over presence, saying whether
+     it arrived live or only via the FX source's backup poll. It also checks the database, the
+     deployed pages, events a PC was sent but never heard, and that selected media files exist.
+     FIX: writes data.cmd = {reload} into that PC's state row. The row is the one path that
+     reaches a source even when its live connection is broken (the overlay re-reads it every
+     15s regardless), and the source then re-fetches its own files past the cache and reloads —
+     the remote equivalent of OBS's "Refresh cache of current page". Only broken sources are
+     reloaded, and it re-checks afterwards; what a reload cannot reach gets written steps. */
+  const Status = (() => {
+    const PCS = [1, 2, 3, 4, 5, 6, 7];
+    const LAYERS = [["bg", "Background"], ["hud", "Board & banners"], ["fx", "Stingers & sound"]];
+    const OBS = { bg: "BG", hud: "HUD", fx: "FX" };
+    const RANK = { ok: 0, info: 0, warn: 1, fail: 2 };
+    const ROOT = location.href.replace(/(staging\/|dev\/)?control\/[^]*$/, "");
+    const nm = (pc) => pc === 6 ? "PC Test" : pc === 7 ? "Dev" : "PC " + pc;
+    const scene = (pc) => `ACBreakz Cloud ${pc === 6 ? "PC Test" : pc === 7 ? "Dev" : pc}`;
+    /* PC Test's OBS still loads the legacy staging/ path (kept identical to live by promote.mjs);
+       Dev loads dev/, where every change is tried first */
+    const DIR = (pc) => pc === 6 ? "staging/" : pc === 7 ? "dev/" : "";
+    const srcUrl = (pc, l) => `${ROOT}${DIR(pc)}overlay/?layer=${l}&pc=${pc}`;
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const ago = (ms) => ms < 60e3 ? `${Math.max(0, Math.round(ms / 1000))}s`
+      : ms < 3600e3 ? `${Math.round(ms / 60e3)}m` : ms < 86400e3 ? `${(ms / 3600e3).toFixed(1)}h`
+      : `${Math.round(ms / 86400e3)}d`;
+    const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit" });
+
+    const S = {
+      chan: null,
+      src: {},        // "pc-layer" -> { m (newest meta), copies, seenAt, dupSince }
+      rows: {},       // pc -> { updatedAt, gotAt }
+      act: {},        // pc -> { at, how }
+      builds: {},     // live | staging | dev -> sampled hash of the deployed overlay
+      pagesOk: null,
+      cloud: null,    // last health check's cloud results
+      check: {},      // pc -> { at, pongs:{layer:{via,ms}}, missed:{layer:n}, files:[{what,ok}] }
+      checking: false,
+      fixing: {},     // pc -> { at, layers, stage, err, still }
+      since: {},      // "pc|key" -> { t, logged }
+      log: [],
+      open: new Set(),
+    };
+    try { S.log = JSON.parse(LS.getItem("acbz-status-log") || "[]"); } catch (e) {}
+    function note(pc, layer, sev, text) {
+      S.log.push({ t: Date.now(), pc, l: layer, sev, text });
+      S.log = S.log.slice(-300);
+      try { LS.setItem("acbz-status-log", JSON.stringify(S.log)); } catch (e) {}
+    }
+
+    /* ---- inputs ---- */
+    function presence(state) {
+      const now = Date.now(), next = {};
+      for (const metas of Object.values(state || {})) for (const m of metas) {
+        if (m?.pc == null || !m.layer) continue;
+        const k = `${m.pc}-${m.layer === "all" ? "fx" : m.layer}`;
+        const prev = S.src[k];
+        if (next[k]) { next[k].copies++; if ((m.at || 0) > (next[k].m.at || 0)) next[k].m = m; continue; }
+        next[k] = { m, copies: 1,
+          /* when the panel first saw THIS report — a source whose report stops changing has
+             stopped running its timers, which is what a frozen page looks like from outside */
+          seenAt: prev && prev.m.at === m.at ? prev.seenAt : now,
+          dupSince: prev?.dupSince ?? 0 };
+      }
+      for (const k in next) {
+        const n = next[k];
+        n.dupSince = n.copies > 1 ? (n.dupSince || now) : 0;
+        if (S.src[k] && S.src[k].m.at === n.m.at) n.seenAt = S.src[k].seenAt;
+      }
+      S.src = next;
+      soon();
+    }
+    function row(pc, updatedAt) {
+      const u = Number(updatedAt) || 0;
+      if (!S.rows[pc] || u > S.rows[pc].updatedAt) S.rows[pc] = { updatedAt: u, gotAt: Date.now() };
+    }
+    async function pollRows() {
+      const { data } = await sb.from("stream_state").select("id,updatedAt:data->updatedAt");
+      (data || []).forEach(r => row(r.id, r.updatedAt));
+    }
+    async function pollActivity() {
+      await Promise.all(PCS.map(async (pc) => {
+        const [d, e] = await Promise.all([
+          sb.from("deck_log").select("at").eq("pc", pc).order("at", { ascending: false }).limit(1),
+          sb.from("events").select("created_at").eq("pc", pc).neq("type", "health_ping")
+            .order("created_at", { ascending: false }).limit(1),
+        ]);
+        const dAt = Date.parse(d.data?.[0]?.at ?? "") || 0;
+        const eAt = Date.parse(e.data?.[0]?.created_at ?? "") || 0;
+        if (dAt || eAt) S.act[pc] = dAt >= eAt ? { at: dAt, how: "Stream Deck" } : { at: eAt, how: "panel or deck" };
+      }));
+    }
+    /* the same sampled hash the overlay reports as `build` */
+    const hashOf = (t) => { let h = 0; for (let i = 0; i < t.length; i += 101) h = (Math.imul(31, h) + t.charCodeAt(i)) | 0;
+      return (h >>> 0).toString(36).slice(0, 6); };
+    async function pollBuilds() {
+      let ok = true;
+      for (const [k, p] of [["live", "overlay/"], ["staging", "staging/overlay/"], ["dev", "dev/overlay/"]]) {
+        try {
+          const r = await fetch(`${ROOT}${p}index.html?cb=${Date.now()}`, { cache: "no-store" });
+          if (r.ok) S.builds[k] = hashOf(await r.text()); else ok = false;
+        } catch (e) { ok = false; }
+      }
+      S.pagesOk = ok;
+    }
+
+    /* ---- evaluation ---- */
+    const STEPS = {
+      refresh: (pc, ls) => [
+        `On ${nm(pc)}, in OBS scene “${scene(pc)}”, right-click ${ls.map(l => `“${OBS[l]}”`).join(" and ")} → Properties → <b>Refresh cache of current page</b>.`,
+        `Still red a minute later? Close OBS completely and open it again.`],
+      missing: (pc, l) => [
+        `On ${nm(pc)}, open OBS and select scene “${scene(pc)}”.`,
+        `Make sure the “${OBS[l]}” source exists and its eye icon is ON.`,
+        `Right-click “${OBS[l]}” → Properties. The URL must be <code>${esc(srcUrl(pc, l))}</code>.`,
+        `In the same window press <b>Refresh cache of current page</b>.`],
+      offline: (pc) => [
+        `Only matters if ${nm(pc)} should be streaming right now.`,
+        `Check the PC is on and online, then open OBS and select scene “${scene(pc)}”.`,
+        `Give it a minute. If it is still offline, right-click “BG”, “HUD” and “FX” → Properties → <b>Refresh cache of current page</b>.`],
+      clock: (pc) => [
+        `On ${nm(pc)}: Windows Settings → Time &amp; language → Date &amp; time → turn on <b>Set time automatically</b>, then press <b>Sync now</b>.`],
+      banner: (pc) => [`Open the <b>Banners</b> tab with ${nm(pc)} selected and remove or re-upload the banner that will not load.`],
+      file: (pc, what) => [`${esc(what)} points at a file that no longer exists — pick it again in its tab for ${nm(pc)}, or remove it.`],
+      dup: (pc, l) => [`Two “${OBS[l]}” sources are running for ${nm(pc)} — look in OBS for a copy in another scene or a second OBS window, and remove the extra.`],
+    };
+
+    function evaluate(pc) {
+      const now = Date.now();
+      const act = S.act[pc];
+      const actAgo = act?.at ? now - act.at : Infinity;
+      const online = LAYERS.filter(([l]) => S.src[`${pc}-${l}`]).length;
+      const live = !online ? "offline" : actAgo < 30 * 60e3 ? "live" : "idle";
+      const expected = pc === 6 ? S.builds.staging : pc === 7 ? S.builds.dev : S.builds.live;
+      const rowNow = S.rows[pc];
+      const chk = S.check[pc] && now - S.check[pc].at < 15 * 60e3 ? S.check[pc] : null;
+      const probs = [], layers = {};
+      const add = (sev, layer, text, fix, steps) =>
+        probs.push({ key: `${layer || "pc"}|${text.replace(/\d+/g, "#")}`, sev, layer, text, fix, steps });
+
+      if (!online) {
+        LAYERS.forEach(([l]) => layers[l] = { sev: "off", text: "not running" });
+        if (actAgo < 15 * 60e3)
+          add("fail", null, `nothing is running in OBS, but it had a press ${ago(actAgo)} ago`, "reload", STEPS.offline(pc));
+        return { pc, live, online, layers, probs, sev: probs.length ? "fail" : "off", act, actAgo };
+      }
+
+      let skew = null;
+      for (const [l, label] of LAYERS) {
+        const s = S.src[`${pc}-${l}`];
+        let sev = "ok";
+        const bad = (v, text, fix = "reload", steps) => {
+          if (RANK[v] > RANK[sev]) sev = v;
+          add(v, l, `${label}: ${text}`, fix, steps);
+        };
+        if (!s) {
+          layers[l] = { sev: "fail", text: "not running in OBS" };
+          add("fail", l, `${label}: not running in OBS`, "reload", STEPS.missing(pc, l));
+          continue;
+        }
+        const m = s.m;
+        if (typeof m.at === "number") {
+          const sk = m.at - s.seenAt;
+          if (skew === null || Math.abs(sk) < Math.abs(skew)) skew = sk;
+        }
+        /* `inc` arrived with health checks: a source without it cannot answer a ping, and saying it
+           "did not answer" would call a version gap a failure */
+        const canPing = Array.isArray(m.inc);
+        if (m.up == null || !canPing) bad("warn", "running an old version without health checks — Fix updates it");
+        else if (expected && m.build && m.build !== "?" && m.build !== expected && m.up > 180)
+          bad("warn", "running an old version — it did not update itself");
+        if (now - s.seenAt > 120e3) bad("fail", `stopped reporting ${ago(now - s.seenAt)} ago — the page looks frozen`);
+        if (m.db && m.db !== "joined")
+          bad(m.db === "joining" ? "warn" : "fail",
+              m.db === "joining" ? "reconnecting to live updates" : "not connected to live updates");
+        if (m.rb >= 5) bad("warn", `connection unstable — reconnected ${m.rb} times in the last hour`);
+        if (l === "fx" && m.miss) bad("warn", `live updates missed ${m.miss} stinger check(s) in the last hour — played late from the backup`);
+        if (l === "fx" && m.fx?.busy && m.fx.busyMs > 45000) bad("fail", "the stinger lane is stuck");
+        if (rowNow && m.up != null && typeof m.ua === "number" && m.ua < rowNow.updatedAt && now - rowNow.gotAt > 45000)
+          bad("fail", "is not showing the latest changes");
+        if (l === "bg" && m.bg?.ok === false) bad("fail", "the background is not showing");
+        if (l === "hud" && m.ban?.bad) bad("warn", `${m.ban.bad} banner file(s) will not load`, null, STEPS.banner(pc));
+        if (s.dupSince && now - s.dupSince > 90e3) bad("warn", `${s.copies} copies are running`, null, STEPS.dup(pc, l));
+        if (chk && canPing) {
+          const p = chk.pongs[l];
+          if (!p) bad("fail", "did not answer the health check");
+          else if (p.via === "backstop") bad("warn", "live updates are not reaching it — only the backup check answered");
+          if (chk.missed[l]) bad("fail", `was sent ${chk.missed[l]} stinger event(s) it never heard`);
+        }
+        let text;
+        if (sev === "ok") {
+          const bits = [];
+          if (l === "hud" && m.ban) bits.push(`${m.ban.n} banner${m.ban.n === 1 ? "" : "s"} rotating`);
+          if (l === "fx" && m.fx) bits.push(`${m.fx.played} played`);
+          if (l === "fx" && m.evAge != null) bits.push(`last event ${ago(m.evAge * 1000)} ago`);
+          if (chk?.pongs[l]) bits.push(`answered in ${(chk.pongs[l].ms / 1000).toFixed(1)}s`);
+          if (m.up != null) bits.push(`up ${ago(m.up * 1000)}`);
+          text = "OK" + (bits.length ? " · " + bits.join(" · ") : "");
+        } else {
+          text = probs.filter(p => p.layer === l).sort((a, b) => RANK[b.sev] - RANK[a.sev])[0].text.replace(`${label}: `, "");
+        }
+        layers[l] = { sev, text };
+      }
+      if (skew !== null && Math.abs(skew) > 90e3)
+        add("warn", null, `its clock is ${Math.round(Math.abs(skew) / 1000)}s ${skew > 0 ? "fast" : "slow"}`, null, STEPS.clock(pc));
+      for (const f of chk?.files || []) if (f.ok === false)
+        add("warn", null, `${f.what} is missing its file`, null, STEPS.file(pc, f.what));
+      const sev = probs.reduce((w, p) => RANK[p.sev] > RANK[w] ? p.sev : w, "ok");
+      return { pc, live, online, layers, probs, sev, act, actAgo };
+    }
+
+    /* problems get a first-noticed time, and land in the history once they have lasted 30s
+       (a reconnect that heals itself in 10s is not worth a line) */
+    function track(ev) {
+      const now = Date.now(), keys = new Set();
+      for (const p of ev.probs) {
+        const k = `${ev.pc}|${p.key}`; keys.add(k);
+        const s = S.since[k] ??= { t: now, logged: false, text: p.text, layer: p.layer };
+        p.since = s.t;
+        if (!s.logged && now - s.t > 30e3) { s.logged = true; note(ev.pc, p.layer, p.sev, p.text); }
+      }
+      for (const k of Object.keys(S.since)) if (k.startsWith(ev.pc + "|") && !keys.has(k)) {
+        if (S.since[k].logged) note(ev.pc, S.since[k].layer, "ok", "Resolved: " + S.since[k].text);
+        delete S.since[k];
+      }
+    }
+
+    /* ---- health check ---- */
+    async function runCheck(pcs = PCS) {
+      if (S.checking) return;
+      S.checking = true; render();
+      const cloud = { at: Date.now() };
+      try {
+        let rows = [];
+        try {
+          const t = Date.now();
+          const { data, error } = await sb.from("stream_state")
+            .select("id,updatedAt:data->updatedAt,background:data->background,banners:data->banners,loopFx:data->loopFx");
+          if (error) throw error;
+          rows = data || [];
+          rows.forEach(r => row(r.id, r.updatedAt));
+          cloud.db = { ok: true, text: `database answered in ${Date.now() - t}ms` };
+        } catch (e) { cloud.db = { ok: false, text: "database did not answer: " + (e.message || e) }; }
+        await Promise.all([pollBuilds(), pollActivity().catch(() => {})]);
+        cloud.pages = { ok: !!S.pagesOk, text: S.pagesOk ? "overlay pages reachable" : "overlay pages did not load" };
+        cloud.rt = { ok: S.chan?.state === "joined", text: S.chan?.state === "joined" ? "live channel connected" : "this panel's live channel is not connected" };
+
+        /* the ping: panel -> panel fn -> events insert -> realtime (or the FX backup poll) -> overlay -> presence */
+        const ids = {}, sentAt = {};
+        cloud.fn = { ok: true, text: "panel function answered" };
+        await Promise.all(pcs.filter(pc => LAYERS.some(([l]) => S.src[`${pc}-${l}`])).map(async (pc) => {
+          const id = crypto.randomUUID();
+          sentAt[pc] = Date.now();
+          const { error } = await panelCall({ action: "event", pc, type: "health_ping", payload: { id } });
+          if (error) cloud.fn = { ok: false, text: "panel function failed: " + error.message };
+          else ids[pc] = id;
+        }));
+        const pongs = {};
+        const deadline = Date.now() + 12000;
+        while (Date.now() < deadline) {
+          let waiting = false;
+          for (const pc of Object.keys(ids)) for (const [l] of LAYERS) {
+            const s = S.src[`${pc}-${l}`];
+            if (!s) continue;
+            pongs[pc] ??= {};
+            if (s.m.pong?.id === ids[pc]) pongs[pc][l] ??= { via: s.m.pong.via, ms: Date.now() - sentAt[pc] };
+            else waiting = true;
+          }
+          if (!waiting) break;
+          await sleep(300);
+        }
+
+        for (const pc of pcs) {
+          const res = { at: Date.now(), pongs: pongs[pc] || {}, missed: {}, files: [] };
+          /* stinger events the FX source was sent after it last heard one */
+          const fx = S.src[`${pc}-fx`]?.m;
+          const quiet = fx ? Math.min(fx.evAge ?? fx.up ?? 0, fx.up ?? 0) : 0;
+          if (fx && quiet > 15) {
+            const { count } = await sb.from("events").select("id", { count: "exact", head: true })
+              .in("pc", [0, pc]).neq("type", "health_ping")
+              .gt("created_at", new Date(Date.now() - quiet * 1000 + 10000).toISOString());
+            if (count) res.missed.fx = count;
+          }
+          /* selected media: a background, loop or banner whose file is gone renders as nothing */
+          const r = rows.find(x => x.id === pc);
+          const media = [];
+          if (r?.background?.url) media.push([`the background “${r.background.name ?? "?"}”`, r.background.url]);
+          if (r?.loopFx?.url) media.push([`the looping animation “${r.loopFx.name ?? "?"}”`, r.loopFx.url]);
+          for (const b of r?.banners?.rotation || []) if (b?.url) media.push([`banner “${b.name ?? "?"}”`, b.url]);
+          res.files = await Promise.all(media.map(async ([what, u]) => {
+            try {
+              const resp = await fetch(u, { headers: { Range: "bytes=0-0" }, cache: "no-store" });
+              return { what, ok: resp.ok };
+            } catch (e) { return { what, ok: null }; }       // network/CORS: unknown, not missing
+          }));
+          S.check[pc] = res;
+        }
+        S.cloud = cloud;
+        LS.setItem("acbz-status-lastcheck", String(Date.now()));
+      } finally { S.checking = false; render(); }
+    }
+
+    /* ---- fix ---- */
+    function fixPlan(ev) {
+      return [...new Set(ev.probs.filter(p => p.fix === "reload").map(p => p.layer || null)
+        .flatMap(l => l ? [l] : LAYERS.map(([x]) => x)))];
+    }
+    async function fix(pc, layers, { why = "fix", ask = true } = {}) {
+      if (!layers.length || S.fixing[pc]?.stage === "reloading" || S.fixing[pc]?.stage === "checking") return;
+      const ev = evaluate(pc);
+      const visible = layers.filter(l => l !== "fx");
+      if (ask && ev.live === "live" && visible.length &&
+          !confirm(`${nm(pc)} looks LIVE.\n\nReloading ${visible.map(l => OBS[l]).join(" and ")} makes it blink for about a second on stream` +
+                   `${layers.includes("fx") ? " (FX reloads invisibly)" : ""}.\n\nReload now?`)) return;
+      S.fixing[pc] = { at: Date.now(), layers, stage: "sending" }; render();
+      const cmd = { id: crypto.randomUUID(), action: "reload", layers, at: Date.now(), why };
+      const { error } = await panelCall({ action: "patch", pc, clientId: CLIENT_ID, patch: { cmd } });
+      if (error) { S.fixing[pc] = { ...S.fixing[pc], stage: "error", err: error.message }; render(); return; }
+      note(pc, null, "info", `Remote reload sent to ${layers.map(l => OBS[l]).join(", ")}`);
+      S.fixing[pc].stage = "reloading"; render();
+      const deadline = Date.now() + 45000;
+      while (Date.now() < deadline) {
+        const back = layers.every(l => {
+          const m = S.src[`${pc}-${l}`]?.m;
+          return m && m.rl && /^remote/.test(m.rl.why) && m.rl.ago < 180 && m.up != null && m.up < 180;
+        });
+        if (back) break;
+        await sleep(1000);
+      }
+      S.fixing[pc].stage = "checking"; render();
+      await sleep(4000);                       // let the fresh pages join before testing them
+      await runCheck([pc]);
+      const still = evaluate(pc).probs.filter(p => p.sev === "fail" && (!p.layer || layers.includes(p.layer)));
+      S.fixing[pc] = { ...S.fixing[pc], stage: still.length ? "failed" : "done", still, doneAt: Date.now() };
+      note(pc, null, still.length ? "fail" : "ok", still.length
+        ? `Remote reload did not fix: ${still.map(p => p.text).join("; ")}` : "Remote reload fixed it");
+      render();
+    }
+    async function fixAll() {
+      const plans = PCS.map(pc => [pc, evaluate(pc)]).filter(([, ev]) => ev.online && fixPlan(ev).length)
+        .map(([pc, ev]) => ({ pc, ev, layers: fixPlan(ev) }));
+      if (!plans.length) return toast("Nothing a remote reload can fix");
+      const liveVisible = plans.filter(p => p.ev.live === "live" && p.layers.some(l => l !== "fx"));
+      const msg = plans.map(p => `${nm(p.pc)}: reload ${p.layers.map(l => OBS[l]).join(", ")}`).join("\n") +
+        (liveVisible.length ? `\n\n${liveVisible.map(p => nm(p.pc)).join(", ")} look${liveVisible.length === 1 ? "s" : ""} LIVE — ` +
+          `a Background/Board reload blinks for about a second.` : "");
+      if (!confirm(msg + "\n\nGo?")) return;
+      await Promise.all(plans.map(p => fix(p.pc, p.layers, { why: "fix all", ask: false })));
+    }
+
+    /* ---- render ---- */
+    let renderTimer = null;
+    const soon = () => { clearTimeout(renderTimer); renderTimer = setTimeout(render, 250); };
+    const dot = (sev) => `<i class="dot ${sev === "off" ? "" : sev}"></i>`;
+    function pill(ev) {
+      if (ev.live === "offline") return `<span class="pill">OFFLINE</span>`;
+      const state = ev.live === "live" ? `<span class="pill live">● LIVE</span>` : `<span class="pill">ONLINE · IDLE</span>`;
+      const health = ev.sev === "ok" ? `<span class="pill ok">ALL OK</span>`
+        : `<span class="pill ${ev.sev}">${ev.probs.filter(p => p.sev === ev.sev).length} ${ev.sev === "fail" ? "FAILING" : "WARNING"}</span>`;
+      return state + health;
+    }
+    function history(pc) {
+      const out = [];
+      for (const [l] of LAYERS) for (const i of S.src[`${pc}-${l}`]?.m.inc || [])
+        out.push({ t: i.t, text: `${OBS[l]} · ${esc(i.d)}${i.n > 1 ? ` <i>×${i.n}</i>` : ""}` });
+      for (const e of S.log) if (e.pc === pc)
+        out.push({ t: e.t, text: `${e.l ? OBS[e.l] + " · " : ""}${esc(e.text)} <i>(panel)</i>` });
+      return out.sort((a, b) => b.t - a.t).slice(0, 15);
+    }
+    function card(ev) {
+      const pc = ev.pc, fx = S.fixing[pc];
+      const cls = ev.live === "offline" && ev.sev === "off" ? "" : ev.sev;
+      const sub = ev.act?.at ? `Last press ${ago(ev.actAgo)} ago (${ev.act.how})` : "No presses on record";
+      const srcRows = LAYERS.map(([l, label]) => {
+        const r = ev.layers[l];
+        return `<div class="stsrc">${dot(r.sev)}<span class="nm">${label}</span><span class="st">${esc(r.text)}</span>` +
+          (ev.online ? `<button class="lnk" data-streload="${pc}:${l}" title="Remote refresh of the ${OBS[l]} source">Reload</button>` : "") +
+          `</div>`;
+      }).join("");
+
+      let box = "";
+      const plan = fixPlan(ev);
+      if (fx && fx.stage !== "done" && fx.stage !== "failed" && fx.stage !== "error") {
+        const label = { sending: "Sending the reload…", reloading: `Reloading ${fx.layers.map(l => OBS[l]).join(", ")}…`,
+                        checking: "Reloaded — checking it again…" }[fx.stage];
+        box = `<div class="stbox info">${label}</div>`;
+      } else if (ev.probs.length) {
+        const fails = ev.probs.filter(p => p.sev === "fail").length;
+        /* the same problem on several sources reads as ONE line naming them all */
+        const groups = new Map();
+        for (const p of ev.probs.slice().sort((a, b) => RANK[b.sev] - RANK[a.sev])) {
+          const lbl = p.layer ? LAYERS.find(([x]) => x === p.layer)[1] : null;
+          const rest = lbl && p.text.startsWith(lbl + ": ") ? p.text.slice(lbl.length + 2) : p.text;
+          const g = groups.get(rest) ?? { rest, labels: [], since: Infinity };
+          if (lbl) g.labels.push(lbl);
+          g.since = Math.min(g.since, p.since ?? Date.now());
+          groups.set(rest, g);
+        }
+        const list = [...groups.values()].map(g =>
+          `<li>${g.labels.length === 3 ? "All three sources" : esc(g.labels.join(", "))}${g.labels.length ? ": " : ""}${esc(g.rest)}` +
+          ` <span class="when">· noticed ${when(g.since)}</span></li>`).join("");
+        const failedFix = fx?.stage === "failed" && Date.now() - fx.doneAt < 15 * 60e3;
+        /* hand steps for anything a reload may not reach; the generic OBS refresh joins them once
+           a remote reload has actually been tried and failed */
+        let steps = ev.probs.filter(p => p.steps).flatMap(p => p.steps);
+        if (failedFix) steps = [...STEPS.refresh(pc, fx.layers), ...steps];
+        steps = [...new Set(steps)];
+        box = `<div class="stbox ${fails ? "" : "warn"}"><ul>${list}</ul>` +
+          (fx?.stage === "error" ? `<h4>Remote reload failed</h4>${esc(fx.err)}` : "") +
+          (failedFix ? `<h4>The remote reload did not fix it</h4>Do this on the PC:` : "") +
+          (plan.length && !failedFix ? `<h4>What to do</h4>Press <b>Fix</b> — it reloads ${plan.map(l => OBS[l]).join(", ")} from here and checks again.` : "") +
+          (steps.length ? `${plan.length && !failedFix ? "<h4>If that does not clear it, on the PC</h4>" : failedFix ? "" : "<h4>What to do on the PC</h4>"}<ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol>` : "") +
+          `<div class="row">` +
+          (plan.length ? `<button class="btn gold" data-stfix="${pc}">${failedFix ? "Try the remote fix again" : `Fix ${nm(pc)}`}</button>` : "") +
+          (ev.online ? `<button class="btn ghost" data-streloadall="${pc}">Reload all 3 sources</button>` : "") +
+          `</div></div>`;
+      } else if (fx?.stage === "done" && Date.now() - fx.doneAt < 5 * 60e3) {
+        box = `<div class="stbox okbox">Fixed — the remote reload cleared it ${ago(Date.now() - fx.doneAt)} ago.</div>`;
+      } else if (!ev.online) {
+        box = `<div class="stbox info">Nothing from ${nm(pc)} is running. <h4>If it should be streaming</h4><ol>${STEPS.offline(pc).slice(1).map(s => `<li>${s}</li>`).join("")}</ol></div>`;
+      }
+      const hist = history(pc);
+      const open = S.open.has(pc) ? " open" : "";
+      return `<div class="stcard ${cls}">
+        <div class="sthead"><b>${nm(pc)}</b>${pill(ev)}</div>
+        <div class="stsub">${sub}</div>
+        ${srcRows}${box}
+        <details class="sthist" data-sthist="${pc}"${open}><summary>Recent issues (${hist.length})</summary>
+          ${hist.length ? hist.map(h => `<div class="h">${when(h.t)} — ${h.text}</div>`).join("") : `<div class="h">Nothing recorded.</div>`}
+        </details></div>`;
+    }
+
+    function render() {
+      const evs = PCS.map(evaluate);
+      evs.forEach(track);
+      const failing = evs.filter(e => e.sev === "fail"), warning = evs.filter(e => e.sev === "warn");
+      const badge = $("#statusBadge");
+      badge.hidden = !(failing.length || warning.length);
+      badge.textContent = failing.length || warning.length;
+      badge.className = "badge" + (failing.length ? "" : " warn");
+      if (!$("#tab-status").classList.contains("on")) return;
+
+      const offline = evs.filter(e => e.live === "offline" && e.sev === "off").map(e => nm(e.pc));
+      const o = $("#stOverall");
+      if (failing.length) { o.className = "pill fail"; o.textContent = `Problems on ${failing.map(e => nm(e.pc)).join(", ")}`; }
+      else if (warning.length) { o.className = "pill warn"; o.textContent = `Warnings on ${warning.map(e => nm(e.pc)).join(", ")}`; }
+      else { o.className = "pill ok"; o.textContent = "All running PCs OK"; }
+      const last = Number(LS.getItem("acbz-status-lastcheck")) || 0;
+      $("#stChecked").textContent = (S.checking ? "Running health check… " : last ? `Last health check ${ago(Date.now() - last)} ago. ` : "No health check run yet. ") +
+        (offline.length ? `Offline: ${offline.join(", ")}.` : "");
+      $("#stCheck").disabled = S.checking;
+      $("#stCheck").textContent = S.checking ? "Checking…" : "Run health check";
+      $("#stFixAll").disabled = S.checking || !evs.some(e => e.online && fixPlan(e).length);
+
+      const c = S.cloud;
+      const items = [["Realtime", { ok: S.chan?.state === "joined", text: S.chan?.state === "joined" ? "connected" : "not connected" }],
+                     ["Overlay pages", { ok: S.pagesOk, text: S.pagesOk == null ? "not checked" : S.pagesOk ? "reachable" : "not loading" }]];
+      if (c) items.push(["Database", c.db], ["Panel function", c.fn]);
+      $("#stCloud").innerHTML = items.map(([k, v]) =>
+        `<span>${dot(v.ok == null ? "off" : v.ok ? "ok" : "fail")}${k}: ${esc(v.text)}</span>`).join("");
+
+      $("#stGrid").innerHTML = evs.map(card).join("");
+      $$("[data-sthist]").forEach(d => d.ontoggle = () => {
+        const pc = Number(d.dataset.sthist); d.open ? S.open.add(pc) : S.open.delete(pc); });
+      $$("[data-stfix]").forEach(b => b.onclick = () => {
+        const pc = Number(b.dataset.stfix); fix(pc, fixPlan(evaluate(pc))); });
+      $$("[data-streloadall]").forEach(b => b.onclick = () =>
+        fix(Number(b.dataset.streloadall), LAYERS.map(([l]) => l), { why: "reload all" }));
+      $$("[data-streload]").forEach(b => {
+        const [pc, l] = b.dataset.streload.split(":");
+        b.disabled = ["sending", "reloading", "checking"].includes(S.fixing[pc]?.stage);
+        b.onclick = () => fix(Number(pc), [l], { why: "reload " + l });
+      });
+    }
+
+    function report() {
+      const lines = [`ACBreakz status — ${new Date().toLocaleString()}`];
+      for (const pc of PCS) {
+        const ev = evaluate(pc);
+        lines.push("", `${nm(pc)}: ${ev.live.toUpperCase()}${ev.act?.at ? ` (last press ${ago(ev.actAgo)} ago)` : ""}`);
+        for (const [l, label] of LAYERS) {
+          const m = S.src[`${pc}-${l}`]?.m;
+          lines.push(`  ${label}: ${ev.layers[l].text}` + (m ? `  [build ${m.build} db ${m.db} rb ${m.rb ?? "?"} miss ${m.miss ?? "?"}]` : ""));
+        }
+        ev.probs.forEach(p => lines.push(`  ! ${p.sev.toUpperCase()} ${p.text}`));
+        history(pc).slice(0, 6).forEach(h => lines.push(`  - ${when(h.t)} ${h.text.replace(/<[^>]+>/g, "")}`));
+      }
+      return lines.join("\n");
+    }
+
+    function start(chan) {
+      S.chan = chan;
+      $("#stCheck").onclick = () => runCheck();
+      $("#stFixAll").onclick = fixAll;
+      $("#stCopy").onclick = async () => {
+        try { await navigator.clipboard.writeText(report()); toast("Status report copied"); }
+        catch (e) { toast("Could not copy — select the page text instead"); }
+      };
+      $("#statusTabBtn").addEventListener("click", render);
+      pollRows(); pollBuilds(); pollActivity();
+      setInterval(() => { pollRows(); pollActivity(); }, 60000);
+      setInterval(pollBuilds, 120000);
+      setInterval(render, 5000);
+      render();
+    }
+    return { start, presence, row, render, runCheck, fix, evaluate, report, _S: S };
+  })();
+
+  /* ---------- settings ---------- */
+  $("#signOut").onclick = () => signOut("Signed out.");
+
+  /* ---------- boot ---------- */
+  (async () => {
+    await unlocked;                      // resolves immediately once signed in
+    await loadState();
+    if (cloud) {
+      $("#presence").innerHTML = "cloud: <b>connected</b>";
+      sb.channel("db-ctl")
+        .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
+            p => {
+              Status.row(p.new.id, p.new.data?.updatedAt);
+              if (p.new.id !== pcRow()) return;
+              /* Suppress only OUR OWN echo, by identity. The old guard compared
+                 updatedAt against our last push — a clock from another machine —
+                 so it silently dropped legitimate concurrent writes (a Stream Deck
+                 press landing mid-edit) and we then re-pushed our stale copy over
+                 the top. Writes are field-scoped patches now, so adopting a foreign
+                 update can no longer lose a local change. */
+              if (p.new.data?.lastWriter === CLIENT_ID) return;
+              /* Realtime can deliver an older document after a newer one. Every
+                 updatedAt now comes from ONE clock (Postgres clock_timestamp in
+                 state_stamp), so comparing them is a real causal order — which is
+                 exactly what the old browser-vs-edge comparison could never be. */
+              if (p.new.data?.updatedAt && state?.updatedAt
+                  && p.new.data.updatedAt < state.updatedAt) return;
+              state = p.new.data; renderAll();
+            })
+        .subscribe();
+      const pres = sb.channel("presence:overlays");
+      pres.on("presence",{event:"sync"},()=>{
+        const s = pres.presenceState(); const pcs = new Set();
+        Object.values(s).flat().forEach(m => pcs.add(m.pc));
+        $("#presence").innerHTML = `cloud: <b>connected</b> · <b>${pcs.size}</b> PC${pcs.size===1?"":"s"} live`;
+        $("#onlineList").textContent = [...pcs].sort().map(p=>pcName(String(p))).join(", ") || "none";
+        Status.presence(s);
+      }).subscribe();
+      Status.start(pres);
+    }
+    await loadAssets();
+    booted = true;
+  })();
+})();
+</script>
+</body>
+</html>

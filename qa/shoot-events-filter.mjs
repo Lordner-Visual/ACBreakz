@@ -16,7 +16,7 @@ import { createClient } from "@supabase/supabase-js";
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
   .filter(l => l.includes("=") && !l.startsWith("#"))
   .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
-const MINE = 6;                                  // subscribe as PC Test would
+const MINE = 7;                                  // subscribe as Dev would
 const TYPE = "__filtertest";
 let fails = 0;
 const ok = (n, c) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}`); if (!c) fails++; };

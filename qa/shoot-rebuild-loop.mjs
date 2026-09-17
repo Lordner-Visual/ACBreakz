@@ -10,14 +10,14 @@
    mostly missed while the state row, re-read on every join, kept the board looking fine.
    That is "the FX source stops working every day and a cache reset fixes it".
 
-   This drives the real page against the real project as PC Test (row 6, staging), drops
+   This drives the real page against the real project as Dev (row 7, dev/), drops
    the websocket the way a network blip would, and counts what follows.
 
      node qa/shoot-rebuild-loop.mjs [url]                                                   */
 import { chromium } from "playwright";
 
 const URL = process.argv[2] ||
-  "https://lordner-visual.github.io/ACBreakz/staging/overlay/?layer=fx&pc=6";
+  "https://lordner-visual.github.io/ACBreakz/dev/overlay/?layer=fx&pc=7";
 let fails = 0;
 const ok = (n, c) => { console.log(`${c ? "PASS" : "FAIL"}  ${n}`); if (!c) fails++; };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

@@ -2,7 +2,7 @@
 // /deck — the Stream Deck endpoint (v2: per-PC targeting).
 //
 //   GET /deck?key=SECRET&action=team_pick&team=sea[&pc=2]
-//   pc=1..6 targets one PC's stream (6 = PC Test); omit pc to hit PCs 1-5 only.
+//   pc=1..7 targets one PC's stream (6 = PC Test, a live PC; 7 = Dev); omit pc to hit PCs 1-6 only.
 //   Actions: team_toggle, team_pick, team_restore, board_reset, play,
 //            banner_skip, set_background, highlight*, highlight_clear.
 //            (board_mode / board_visible retired in v2.)
@@ -155,9 +155,10 @@ Deno.serve(async (req) => {
 
   const action = g("action");
   const pcRaw = parseInt(g("pc") ?? "", 10);
-  /* pc=6 is PC Test: addressable by name, but excluded from the no-pc broadcast so a
-     production press never lands on a staging rig mid-test (and vice versa). */
-  const pcs = pcRaw >= 1 && pcRaw <= 6 ? [pcRaw] : [1, 2, 3, 4, 5];
+  /* pc=7 is Dev, the test rig: addressable by name, but excluded from the no-pc broadcast so a
+     production press never lands on it mid-test (and vice versa). pc=6 still carries the name
+     "PC Test" but is a real streamer's PC now, so it IS part of the broadcast. */
+  const pcs = pcRaw >= 1 && pcRaw <= 7 ? [pcRaw] : [1, 2, 3, 4, 5, 6];
   const team = (g("team") ?? "").toLowerCase();
 
   /* Board actions all share one atomic path. `state` is the token a Stream Deck

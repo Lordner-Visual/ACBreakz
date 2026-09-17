@@ -1,20 +1,20 @@
-/* The master panel's Status tab — watch, health-check, break, fix — against PC Test only.
+/* The master panel's Status tab — watch, health-check, break, fix — against Dev only.
 
-   Runs the three PC Test sources (bg/hud/fx, pc=6) and the master panel in one browser
+   Runs the three Dev sources (bg/hud/fx, pc=7) and the master panel in one browser
    profile, the way OBS shares one profile across its sources. Then, using nothing but the
    Status tab's own buttons:
 
-     1. all three PC Test sources show OK from presence alone
-     2. a health check gets an answer from every PC Test source over the live connection
+     1. all three Dev sources show OK from presence alone
+     2. a health check gets an answer from every Dev source over the live connection
      3. make HUD deaf and FX deaf (live frames dropped at the socket): the check catches both —
         HUD does not answer, FX answers only through its backup poll
-     4. "Fix PC Test" reloads exactly those sources remotely, re-checks, and reports fixed
+     4. "Fix Dev" reloads exactly those sources remotely, re-checks, and reports fixed
      5. close the BG source outright: the tab says it is not running and shows the OBS steps;
         a remote fix cannot reach a closed page, and the tab says THAT too
      6. the history lists what happened
 
    Health checks ping every online PC. A ping is an event no overlay renders, so this is safe
-   while PCs 1-5 are live — but this suite only ever presses Fix on PC Test.
+   while PCs are live — but this suite only ever presses Fix on Dev.
 
      node qa/shoot-status.mjs [base]     base defaults to the deployed site root  */
 import { readFileSync, mkdirSync } from "fs";
@@ -58,7 +58,7 @@ async function source(layer) {
   if (layer === "fx") await page.route(/\/storage\/v1\/object\/.*\.(webm|mp4|mp3|wav|ogg)(\?|$)/i, r => r.abort());
   page.on("console", (m) => { const t = m.text();
     if (t.includes("[acbz]") && !t.includes("warming")) console.log(`    ${stamp()} ${layer.padEnd(3)} ${t.slice(0, 120)}`); });
-  await page.goto(`${BASE}staging/overlay/?layer=${layer}&pc=6`, { waitUntil: "load" });
+  await page.goto(`${BASE}dev/overlay/?layer=${layer}&pc=7`, { waitUntil: "load" });
   return page;
 }
 const src = { bg: await source("bg"), hud: await source("hud"), fx: await source("fx") };
@@ -66,14 +66,14 @@ const src = { bg: await source("bg"), hud: await source("hud"), fx: await source
 const panel = await ctx.newPage();
 panel.on("dialog", (d) => { console.log(`    ${stamp()} panel confirm: ${d.message().split("\n")[0]}`); d.accept(); });
 panel.on("pageerror", (e) => { console.log("    PANEL ERROR", e.message); fails++; });
-await panel.goto(`${BASE}staging/control/`, { waitUntil: "load" });
+await panel.goto(`${BASE}dev/control/`, { waitUntil: "load" });
 if (await panel.isVisible("#lock.on")) {
   await panel.fill("#lockPw", env.PANEL_PASSWORD);
   await panel.click("#lockGo");
   await panel.waitForFunction(() => !document.querySelector("#lock").classList.contains("on"), null, { timeout: 15000 });
 }
 await panel.click('nav button[data-tab="status"]');
-const card = () => panel.locator(".stcard", { has: panel.locator("b", { hasText: /^PC Test$/ }) });
+const card = () => panel.locator(".stcard", { has: panel.locator("b", { hasText: /^Dev$/ }) });
 const cardText = async () => (await card().innerText()).replace(/\s+/g, " ");
 const srcRow = (label) => card().locator(".stsrc", { hasText: label });
 async function waitCard(pred, ms, what) {
@@ -88,7 +88,7 @@ const rowOk = async (label) => (await srcRow(label).innerText()).includes("OK");
 /* ---------------- 1. watching ---------------- */
 console.log("\n1. presence alone");
 const allOk = await waitCard(t => (t.match(/ OK/g) || []).length >= 3 && !/FAILING|WARNING/.test(t), 60000, "three OK rows");
-ok("PC Test shows Background, Board & banners and Stingers all OK", !!allOk);
+ok("Dev shows Background, Board & banners and Stingers all OK", !!allOk);
 await panel.screenshot({ path: `${SHOTS}/1-watching.png`, fullPage: true });
 
 /* ---------------- 2. health check ---------------- */
@@ -96,8 +96,8 @@ console.log("\n2. health check");
 await panel.click("#stCheck");
 await panel.waitForFunction(() => !document.querySelector("#stCheck").disabled, null, { timeout: 60000 });
 let t = await cardText();
-ok("every PC Test source answered the health check", (t.match(/answered in/g) || []).length === 3, t.slice(0, 300));
-ok("no problems on PC Test after the check", !/FAILING|WARNING/.test(t));
+ok("every Dev source answered the health check", (t.match(/answered in/g) || []).length === 3, t.slice(0, 300));
+ok("no problems on Dev after the check", !/FAILING|WARNING/.test(t));
 const cloudTxt = await panel.innerText("#stCloud");
 ok("cloud checks shown (database, panel function, pages, realtime)",
    /Database: database answered/.test(cloudTxt) && /Panel function: panel function answered/.test(cloudTxt), cloudTxt.replace(/\s+/g, " "));
@@ -116,11 +116,11 @@ ok("FX flagged: live updates not reaching it, backup answered",
    /only the backup check answered/.test(await srcRow("Stingers").innerText()), (await srcRow("Stingers").innerText()).replace(/\s+/g, " "));
 ok("Background still OK (untouched)", await rowOk("Background"));
 ok("a Fix button is offered", await card().locator("[data-stfix]").count() === 1);
-ok("the tab badge counts PC Test", /\d/.test(await panel.innerText("#statusBadge")));
+ok("the tab badge counts Dev", /\d/.test(await panel.innerText("#statusBadge")));
 await panel.screenshot({ path: `${SHOTS}/3-broken.png`, fullPage: true });
 
 /* ---------------- 4. fix ---------------- */
-console.log("\n4. Fix PC Test");
+console.log("\n4. Fix Dev");
 const nav = { bg: 0, hud: 0, fx: 0 };
 for (const l of Object.keys(src)) src[l].on("framenavigated", (fr) => { if (fr === src[l].mainFrame()) nav[l]++; });
 await card().locator("[data-stfix]").click();
@@ -128,7 +128,7 @@ const fixed = await waitCard(t => /Fixed — the remote reload cleared it|The re
 ok("the fix reports success", !!fixed && /Fixed — the remote reload cleared it/.test(fixed), (fixed || "").slice(0, 300));
 ok("it reloaded exactly HUD and FX, not BG", nav.hud === 1 && nav.fx === 1 && nav.bg === 0, JSON.stringify(nav));
 ok("all three OK after the fix", await rowOk("Background") && await rowOk("Board & banners") && await rowOk("Stingers"));
-const why = await src.fx.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-6-fx"))?.why);
+const why = await src.fx.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-7-fx"))?.why);
 ok("the FX source recorded a remote reload", /^remote/.test(why ?? ""), why);
 await panel.screenshot({ path: `${SHOTS}/4-fixed.png`, fullPage: true });
 
@@ -138,7 +138,7 @@ await src.bg.close();
 const gone = await waitCard(t => /Background not running in OBS/.test(t), 60000, "BG missing");
 ok("Background shows not running in OBS", !!gone);
 t = await cardText();
-ok("OBS steps name the source and the scene", /“BG” source exists/.test(t) && /ACBreakz Cloud PC Test/.test(t), t.slice(0, 500));
+ok("OBS steps name the source and the scene", /“BG” source exists/.test(t) && /ACBreakz Cloud Dev/.test(t), t.slice(0, 500));
 await card().locator("[data-stfix]").click();
 const failed = await waitCard(t => /The remote reload did not fix it|Fixed —/i.test(t), 120000, "fix attempt on a closed page");
 ok("a remote fix on a closed page reports that it did not work, with steps",

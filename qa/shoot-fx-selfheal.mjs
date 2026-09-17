@@ -1,7 +1,7 @@
 /* The FX source must heal itself — every way it has been seen to go quiet, forced on purpose.
 
-   Runs the real page against the real project as PC Test (row 6). Every event it inserts is
-   addressed to pc 6, so no live rig can hear it (V17 filters pc=in.(0,N) server-side), and the
+   Runs the real page against the real project as Dev (row 7). Every event it inserts is
+   addressed to pc 7, so no live rig can hear it (V17 filters pc=in.(0,N) server-side), and the
    test types it invents are ignored by handleEvent. Clip bodies other than the one clip it
    plays are aborted, so a run does not pull the whole FX set.
 
@@ -14,11 +14,11 @@
         re-download the FX set afterwards
      6. circuit breaker: repeated drops trip a health reload
 
-     node qa/shoot-fx-selfheal.mjs [base-url]      base defaults to the deployed staging overlay */
+     node qa/shoot-fx-selfheal.mjs [base-url]      base defaults to the deployed dev overlay */
 import { readFileSync } from "fs";
 import { chromium } from "playwright";
 
-const BASE = process.argv[2] || "https://lordner-visual.github.io/ACBreakz/staging/overlay/";
+const BASE = process.argv[2] || "https://lordner-visual.github.io/ACBreakz/dev/overlay/";
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
   .filter(l => l.includes("=") && !l.startsWith("#"))
   .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
@@ -39,7 +39,7 @@ const stamp = () => ((Date.now() - T0) / 1000).toFixed(1).padStart(6);
 const inserted = [];
 async function send(type, payload) {
   const [row] = await sql(`insert into public.events(type, payload) values ('${type}',
-    '${JSON.stringify({ pc: 6, ...payload }).replace(/'/g, "''")}'::jsonb) returning id`);
+    '${JSON.stringify({ pc: 7, ...payload }).replace(/'/g, "''")}'::jsonb) returning id`);
   inserted.push(row.id);
   return row.id;
 }
@@ -86,7 +86,7 @@ async function open(query) {
   });
   page.on("console", (m) => { const t = m.text();
     if (t.includes("[acbz]") && !t.includes("warming")) console.log(`    ${stamp()}s  ${t.slice(0, 150)}`); });
-  await page.goto(`${BASE}?layer=fx&pc=6${query}`, { waitUntil: "load" });
+  await page.goto(`${BASE}?layer=fx&pc=7${query}`, { waitUntil: "load" });
   await until(page, () => window.__acbzDiag && window.__acbzDiag().db === "joined", null, 30000);
   return { page, media };
 }
@@ -187,7 +187,7 @@ try {
   ok("reloaded itself once up and quiet", reloaded, `after ${((Date.now() - m0) / 1000).toFixed(0)}s`);
   await until(page, () => window.__acbzDiag && window.__acbzDiag().db === "joined", null, 30000);
   await sleep(8000);
-  const rl = await page.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-6-fx")));
+  const rl = await page.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-7-fx")));
   ok("recorded why", /^maintenance/.test(rl?.why ?? ""), rl?.why);
   ok("the first load DID warm (so the check below means something)", warmBefore > 0);
   ok("did NOT re-download the FX set after the reload", opened.media.total === 0,
@@ -198,7 +198,7 @@ try {
   console.log("\n6. circuit breaker (repeated drops)");
   opened = await open("");
   page = opened.page;
-  await page.evaluate(() => localStorage.removeItem("acbz-selfreload-6-fx"));
+  await page.evaluate(() => localStorage.removeItem("acbz-selfreload-7-fx"));
   let tripped = false;
   page.on("framenavigated", (fr) => { if (fr === page.mainFrame()) tripped = true; });
   const b0 = Date.now();
@@ -210,9 +210,9 @@ try {
   ok("repeated rebuilds trip a health reload", tripped, `after ${((Date.now() - b0) / 1000).toFixed(0)}s`);
   if (tripped) {
     await sleep(3000);
-    const why = await page.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-6-fx"))?.why);
+    const why = await page.evaluate(() => JSON.parse(localStorage.getItem("acbz-selfreload-7-fx"))?.why);
     ok("recorded as a health reload", /^health/.test(why ?? ""), why);
-    await page.evaluate(() => localStorage.removeItem("acbz-selfreload-6-fx"));
+    await page.evaluate(() => localStorage.removeItem("acbz-selfreload-7-fx"));
   }
   await page.close();
 } finally {

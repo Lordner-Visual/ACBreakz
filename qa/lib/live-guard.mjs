@@ -15,14 +15,15 @@
        if (await isIdle()) { ...live fire... } else { console.log("skipped: a PC is live"); }
 
    Deliberate override:  ACBZ_ALLOW_LIVE=1 node qa/shoot-multipc.mjs
-   PC 6 (PC Test) never counts as live — that is the entire point of having it.
+   PC 7 (Dev) never counts as live — that is the entire point of having it. PC 6 still carries
+   the name "PC Test" but is a real streamer's PC since 2026-09-17, so it DOES count.
 
    No side effects on import: a module that exits the process merely for being imported cannot
    be used for the second form above.                                                        */
 import { readFileSync } from "fs";
 import { createClient } from "@supabase/supabase-js";
 
-const LIVE_PCS = [1, 2, 3, 4, 5];
+const LIVE_PCS = [1, 2, 3, 4, 5, 6];
 const IDLE_MINUTES = Number(process.env.ACBZ_IDLE_MINUTES ?? 20);
 
 let cached = null;
@@ -80,7 +81,7 @@ export async function assertIdle() {
   if (l.online.length || l.busy.length) {
     console.error(`\n[live-guard] REFUSING to run: this suite writes to the production rows.`);
     console.error(`  ${describe(l)}`);
-    console.error(`  Point it at PC Test where the suite takes a pc argument, wait for the rigs to`);
+    console.error(`  Point it at Dev (pc 7) where the suite takes a pc argument, wait for the rigs to`);
     console.error(`  go idle, or set ACBZ_ALLOW_LIVE=1 if you accept disturbing a show.\n`);
     process.exit(3);
   }

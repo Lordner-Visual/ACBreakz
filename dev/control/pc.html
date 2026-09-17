@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>ACBreakz · PC Control</title>
+<!--
+  Per-PC control dashboard. Opened by that PC's Stream Deck "CONTROL" key as
+  control/pc.html?pc=N. No login: it carries an operator key that can ONLY change
+  what THIS PC is showing, plus save a composed banner. It cannot upload files,
+  generate AI, delete anything, or touch another PC.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../overlay/config.js"></script>
+<script src="op.js"></script>
+<script src="composer.js"></script>
+<style>
+  :root{--navy-deep:#071527;--navy:#0B1E33;--steel:#274A66;--teal:#0D3540;
+    --copper:#B87333;--gold:#D9A441;--bone:#EFE9DC;--volt:#35A7FF;--danger:#E5484D;--ok:#3FB68B}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:radial-gradient(140% 100% at 50% 0%,#0F2A44,var(--navy-deep) 70%);
+    color:var(--bone);min-height:100vh}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;
+    border-bottom:2px solid var(--copper);background:rgba(7,21,39,.7);position:sticky;top:0;z-index:10}
+  header h1{font-size:19px;letter-spacing:2px;text-transform:uppercase}
+  header h1 b{color:var(--gold)}
+  #pcTag{background:var(--volt);color:#04101B;font-weight:800;border-radius:8px;padding:4px 10px;font-size:14px}
+  #status{margin-left:auto;font-size:13px;color:#9FB6C9}
+  #status b{color:var(--ok)}
+  nav{display:flex;gap:6px;padding:10px 18px;flex-wrap:wrap}
+  nav button{background:#0E2436;border:1px solid #1E3A52;color:#B9CBDB;padding:10px 16px;
+    border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+  nav button.on{background:linear-gradient(180deg,#1A4D74,#123650);border-color:var(--volt);color:#fff}
+  main{padding:12px 18px 60px;max-width:1150px}
+  section{display:none}section.on{display:block}
+  h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8FA8BC;margin:18px 0 10px}
+  h2:first-child{margin-top:6px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{background:linear-gradient(180deg,#1A4D74,#123650);border:1px solid var(--volt);
+    color:#fff;padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
+  .btn.ghost{background:#0E2436;border-color:#1E3A52;color:#B9CBDB}
+  .btn.warn{background:linear-gradient(180deg,#7A2C2F,#5A1E20);border-color:var(--danger)}
+  .btn.gold{background:linear-gradient(180deg,#8A6522,#6B4C15);border-color:var(--gold)}
+  input[type=text],input[type=range]{background:#0A1C2C;border:1px solid #1E3A52;
+    color:var(--bone);border-radius:10px;padding:11px 12px;font-size:14px;width:100%}
+  #ctlBoard{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
+  @media(max-width:700px){#ctlBoard{grid-template-columns:repeat(4,1fr)}}
+  .team{position:relative;border-radius:12px;border:2px solid var(--copper);cursor:pointer;
+    background:linear-gradient(160deg,#12444F,var(--teal) 45%,#082228);
+    padding:8px 6px 6px;text-align:center;user-select:none;transition:filter .3s}
+  .team img{width:46px;height:46px;object-fit:contain}
+  .team span{display:block;font-size:11px;font-weight:700;color:#CFE0EE}
+  .team.on{filter:brightness(.4) saturate(.55)}
+  .team.on::after{content:"OUT";position:absolute;top:4px;right:4px;font-size:8px;
+    background:#233240;color:#9FB6C9;font-weight:800;border-radius:4px;padding:1px 4px}
+  .team.hl{border-color:var(--volt);box-shadow:0 0 12px rgba(53,167,255,.55)}
+  /* ::before so the star can coexist with the OUT badge on an eliminated-but-highlighted team */
+  .team.hl::before{content:"★";position:absolute;top:2px;left:5px;font-size:12px;color:var(--volt)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:8px}
+  .asset{background:#0A1C2C;border:1px solid #1E3A52;border-radius:12px;overflow:hidden}
+  .asset.active{border-color:var(--gold);box-shadow:0 0 10px rgba(217,164,65,.4)}
+  .asset .thumb{height:78px;background:#04101B;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;font-size:24px}
+  .asset .thumb img,.asset .thumb video{width:100%;height:100%;object-fit:cover}
+  .asset .meta{padding:8px;font-size:12px}
+  .asset .meta .name{font-weight:700;color:#DCE8F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .asset .btn{padding:6px 10px;font-size:12px;margin-top:6px}
+  .tag{font-size:10px;color:#7E97AB}
+  .gone{font-size:11px;color:var(--danger);padding:6px;text-align:center}
+  .thumb .shape{width:34px;height:34px;background:linear-gradient(160deg,#12444F,#0D3540)}
+  /* mini board button used by builtin-style swatches; fx-* animate the overlay's real effects */
+  .swatchwrap{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#04101B}
+  .minibtn{width:44px;height:44px;border-radius:7px;border:5px solid transparent;
+    background-image:radial-gradient(120% 110% at 50% 32%, #14505A 0%, #0B3238 48%, #061C21 100%),
+      linear-gradient(145deg,#E8C07A 0%,#C08A45 17%,#8A5A26 52%,#6B3F17 76%,#B27A3E 100%);
+    background-origin:padding-box,border-box;background-clip:padding-box,border-box}
+  .fx-glow{animation:pvglow 2.6s ease-in-out infinite}
+  @keyframes pvglow{0%,100%{box-shadow:inset 0 0 0 2px rgba(217,164,65,.12),0 0 4px 0 rgba(217,164,65,.12)}
+    50%{box-shadow:inset 0 0 0 2px var(--gold),0 0 14px 3px var(--gold)}}
+  .fx-glitch{animation:pvglitch 3.2s steps(1,end) infinite}
+  @keyframes pvglitch{0%,90%{transform:none;filter:none}
+    91%{transform:translateX(-3px);filter:hue-rotate(80deg) saturate(2)}
+    93%{transform:translateX(3px);filter:hue-rotate(-60deg)}
+    95%{transform:translateX(-1px)}97%{transform:none;filter:none}}
+  .fx-pop{animation:pvpop 2.4s cubic-bezier(.22,1.4,.3,1) infinite}
+  @keyframes pvpop{0%,50%,100%{transform:scale(1);filter:none}
+    58%{transform:scale(1.35);filter:brightness(1.6)}66%{transform:scale(1.22)}
+    80%{transform:scale(.92)}88%{transform:scale(1)}}
+  .banner-thumb{height:34px !important}
+  .modal{position:fixed;inset:0;background:rgba(4,10,18,.82);display:none;z-index:60;
+    align-items:center;justify-content:center;padding:20px}
+  .modal.on{display:flex}
+  .modal .box{background:#0B1E33;border:1px solid var(--volt);border-radius:14px;
+    padding:18px;max-width:640px;width:100%;max-height:88vh;overflow:auto}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#123650;
+    border:1px solid var(--volt);padding:10px 18px;border-radius:10px;display:none;z-index:70}
+</style>
+</head>
+<body>
+<header>
+  <h1>AC <b>BREAKZ</b></h1><span id="pcTag">PC 1</span>
+  <div id="status">connecting…</div>
+</header>
+<nav>
+  <button data-tab="board" class="on">Team Board</button>
+  <button data-tab="anims">Animations</button>
+  <button data-tab="sfx">SoundFX</button>
+  <button data-tab="banners">Banners</button>
+  <button data-tab="bgs">Backgrounds</button>
+  <button data-tab="style">Board Style</button>
+</nav>
+<main>
+
+<section id="tab-board" class="on">
+  <div class="row">
+    <button class="btn ghost" id="hlModeBtn">Tap mode: ELIMINATE</button>
+    <button class="btn ghost" id="hlClearBtn">Clear highlights</button>
+    <button class="btn warn" id="resetBtn">Reset board</button>
+  </div>
+  <div class="row" style="margin-top:6px"><span class="tag" id="hlHint"></span></div>
+  <div id="ctlBoard"></div>
+</section>
+
+<section id="tab-anims">
+  <h2>NFL team animation style — one style plays for every team on this PC</h2>
+  <div class="grid" id="styleGrid"></div>
+  <h2>Stream Deck event keys — which clip each key plays on this PC</h2>
+  <div class="grid" id="eventGrid"></div>
+  <h2>One-shot animations — play one on this stream</h2>
+  <div class="row">
+    <button class="btn warn" id="loopStopBtn" style="display:none">■ Stop looping animation</button>
+    <span class="tag" id="loopNow"></span>
+  </div>
+  <div class="grid" id="oneshotGrid"></div>
+</section>
+
+<div class="modal" id="eventPick"><div class="box">
+  <h2 style="margin-top:0" id="epTitle">Event</h2>
+  <div id="epList" style="max-height:56vh;overflow:auto;margin:10px 0"></div>
+  <div class="row"><button class="btn ghost" id="epClose">Close</button></div>
+</div></div>
+
+<section id="tab-sfx">
+  <h2>Sound effects — preview, or play one on this stream</h2>
+  <div class="grid" id="sfxGrid"></div>
+</section>
+
+<section id="tab-banners">
+  <h2>Banner composer — type it, style it, add it to this PC’s rotation</h2>
+  <canvas id="compCanvas" width="1080" height="97"
+    style="width:100%;max-width:1080px;border:1px solid #1E3A52;border-radius:8px;background:#06111b"></canvas>
+  <div class="row" style="margin-top:8px;align-items:flex-start">
+    <textarea id="compText" rows="2" placeholder='Type the banner text — press Enter for a second line'
+      style="flex:1;min-width:260px;resize:vertical;font:inherit"></textarea>
+    <button class="btn gold" id="compSave">Save to library</button>
+    <span class="tag" id="compDur">7s on stream</span>
+  </div>
+  <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap">
+    <label class="tag">Font
+      <select id="compFont" style="margin-left:6px"></select></label>
+    <label class="tag">Style
+      <select id="compPreset" style="margin-left:6px"></select></label>
+    <label class="tag">Text <input type="color" id="compColor" value="#EFE9DC" style="margin-left:6px;width:34px;padding:0"></label>
+    <label class="tag">Accent <input type="color" id="compAccent" value="#35A7FF" style="margin-left:6px;width:34px;padding:0"></label>
+    <label class="tag"><input type="checkbox" id="compUpper" checked> UPPERCASE</label>
+    <label class="tag"><input type="checkbox" id="compScrim" checked> Darken behind</label>
+  </div>
+  <div class="row" style="margin-top:6px;gap:10px;flex-wrap:wrap">
+    <label class="tag"><input type="checkbox" id="compAuto" checked> Auto-fit size</label>
+    <label class="tag">Size <input type="range" id="compSize" min="10" max="140" value="44" style="width:120px;margin-left:6px">
+      <b id="compSizeV">44</b></label>
+    <label class="tag">Line spacing <input type="range" id="compLine" min="70" max="200" value="102" style="width:110px;margin-left:6px">
+      <b id="compLineV">1.02</b></label>
+    <label class="tag">Kerning <input type="range" id="compTrack" min="-6" max="24" value="1" style="width:110px;margin-left:6px">
+      <b id="compTrackV">1</b></label>
+    <label class="tag">Height <input type="range" id="compScaleY" min="60" max="180" value="100" style="width:110px;margin-left:6px">
+      <b id="compScaleYV">1.00</b></label>
+    <label class="tag">Shift up/down <input type="range" id="compShiftY" min="-40" max="40" value="0" style="width:110px;margin-left:6px">
+      <b id="compShiftYV">0</b></label>
+    <button class="btn" id="compReset">Reset styling</button>
+  </div>
+  <h2>Composer background</h2>
+  <div class="row" id="compBGs" style="gap:6px"></div>
+  <h2>Rotation on this PC</h2>
+  <div class="grid" id="bannerGrid"></div>
+</section>
+
+<section id="tab-bgs">
+  <h2>Streamer background — tap to set live on this PC</h2>
+  <div class="grid" id="bgGrid"></div>
+</section>
+
+<section id="tab-style">
+  <h2>Grid style</h2>
+  <div class="grid" id="gridStyleGrid"></div>
+  <div class="row" style="margin-top:10px;max-width:520px">
+    <span class="tag" style="width:110px">Button size</span>
+    <input type="range" id="sizeRange" min="40" max="150" step="1" value="100" style="flex:1">
+    <span class="tag" id="sizeVal" style="width:44px">100%</span>
+  </div>
+  <div class="row" style="max-width:520px">
+    <span class="tag" style="width:110px">Button spacing</span>
+    <input type="range" id="gapRange" min="-20" max="20" step="1" value="0" style="flex:1">
+    <span class="tag" id="gapVal" style="width:44px">0px</span>
+  </div>
+  <div class="row" style="max-width:520px">
+    <span class="tag" style="width:110px">Logo size</span>
+    <input type="range" id="logoRange" min="60" max="200" step="1" value="100" style="flex:1">
+    <span class="tag" id="logoVal" style="width:44px">100%</span>
+  </div>
+  <div class="row" style="max-width:520px">
+    <span class="tag" style="width:110px">Effect intensity</span>
+    <input type="range" id="fxRange" min="30" max="250" step="5" value="100" style="flex:1">
+    <span class="tag" id="fxVal" style="width:44px">100%</span>
+  </div>
+  <div class="row" style="margin-bottom:10px">
+    <span class="tag" style="width:110px">Edge glow colour</span>
+    <input type="color" id="glowColor" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag" style="width:110px">Glow light</span>
+    <input type="color" id="glowLight" value="#D9A441" style="width:56px;height:38px;padding:2px">
+    <span class="tag">The light that spills past the frame. Leave matching for a natural glow.</span>
+    <button class="btn ghost" id="glowReset">Reset to gold</button>
+  </div>
+  <h2>Button frame</h2><div class="grid" id="frameStyleGrid"></div>
+  <h2>Button style</h2><div class="grid" id="btnStyleGrid"></div>
+  <h2>Board background</h2><div class="grid" id="bgStyleGrid"></div>
+  <h2>Button animation</h2><div class="grid" id="btnAnimGrid"></div>
+</section>
+
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const C = window.ACBZ, $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+  const esc = (s) => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+  const toast = (m) => { const t=$("#toast"); t.textContent=m; t.style.display="block";
+    clearTimeout(t._x); t._x=setTimeout(()=>t.style.display="none",2600); };
+
+  const PC = String(Math.min(7, Math.max(1, parseInt(new URLSearchParams(location.search).get("pc"), 10) || 1)));
+  $("#pcTag").textContent = PC === "6" ? "PC TEST" : PC === "7" ? "DEV" : "PC " + PC;
+  document.title = `ACBreakz · PC ${PC}`;
+
+  const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+  const OP = window.ACBZ_OP;                       // operator key, scoped to this PC
+
+  $$("nav button").forEach(b => b.onclick = () => {
+    $$("nav button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+    $$("main section").forEach(s=>s.classList.remove("on"));
+    $("#tab-"+b.dataset.tab).classList.add("on");
+  });
+
+  let state = { board:{picked:{},highlighted:{}}, banners:{rotation:[]} };
+  let assets = [];
+
+  async function call(body){
+    const { data, error } = await sb.functions.invoke("panel", { body: { op: OP, pc: PC, ...body } });
+    if (error) return { error };
+    if (data?.error) return { error: { message: data.error } };
+    return { data };
+  }
+  async function loadState(){
+    const {data} = await sb.from("stream_state").select("data").eq("id", +PC).single();
+    if (data?.data) state = data.data;
+    state.board ??= {}; state.board.picked ??= {}; state.board.highlighted ??= {};
+    state.banners ??= {rotation:[]}; state.boardGrid ??= "buttons"; state.boardGap ??= 0;
+  }
+  /* V11 — field-scoped atomic writes. A slider change must never ship a stale
+     `board` and revert a Stream Deck press, and board taps go through the same
+     locked SQL action the deck uses, so the two can never race. */
+  const CLIENT_ID = (crypto.randomUUID?.() ?? String(Math.random()).slice(2));
+  /* One write in flight at a time, with pending edits coalesced — concurrent
+     patches to the SAME key can land out of order, so a rapid series of
+     adjustments could settle on an earlier value. */
+  let inFlight = null, pending = null;
+  async function patchState(patch){
+    Object.assign(state, patch); render();          // optimistic
+    pending = { ...(pending ?? {}), ...patch };
+    if (inFlight) return inFlight;
+    return (inFlight = drainPatches().finally(() => { inFlight = null; }));
+  }
+  async function drainPatches(){
+    while (pending) {
+      const patch = pending; pending = null;
+      const {data, error} = await call({ action:"patch", clientId:CLIENT_ID, patch });
+      if (error) { toast("Save failed: " + error.message); return; }
+      const doc = data?.docs?.[PC];
+      if (doc && !pending) { state = doc; render(); }   // don't clobber a queued edit
+    }
+  }
+  async function boardCall(boardAction, team){
+    const {data, error} = await call({ action:"board", clientId:CLIENT_ID, boardAction, team });
+    if (error) return toast("Board action failed: " + error.message);
+    const r = (data?.results ?? [])[0];
+    if (r?.data) { state = r.data; render(); }
+  }
+  async function loadAssets(){
+    const {data} = await sb.from("assets").select("*").order("created_at",{ascending:false});
+    assets = (data || []).filter(a => !a.meta?.deleted);
+    render();
+  }
+
+  /* ---------- board ---------- */
+  let hlMode = false;
+  $("#hlModeBtn").onclick = () => { hlMode = !hlMode;
+    $("#hlModeBtn").textContent = "Tap mode: " + (hlMode ? "HIGHLIGHT" : "ELIMINATE");
+    $("#hlModeBtn").classList.toggle("gold", hlMode); render(); };
+  $("#hlClearBtn").onclick = () => boardCall("highlight_clear");
+  $("#loopStopBtn").onclick = () => patchState({loopFx: null});
+  $("#resetBtn").onclick = () => { if(!confirm("Bring every team back?"))return;
+    boardCall("board_reset"); };
+
+  async function fire(type, payload){
+    /* events are per-PC too; the deck endpoint owns event writes, so mirror it in state */
+    await call({ action:"event", type, payload });
+  }
+
+  C.ORDER.forEach(abbr => {
+    const t = C.TEAMS[abbr];
+    const d = document.createElement("div");
+    d.className = "team"; d.dataset.abbr = abbr;
+    d.innerHTML = `<img src="${C.LOGO_URL(abbr)}"><span>${t.name}</span>`;
+    d.onclick = () => {
+      if (hlMode) {
+        /* highlight is independent of elimination: starring an eliminated team keeps it
+           OFF the board (only the elimination tap brings it back) but remembers the star */
+        return boardCall("highlight_toggle", abbr);
+      }
+      /* board_action() resolves the stinger + sound and fires the event in the
+         same transaction as the state change */
+      boardCall("team_toggle", abbr);
+    };
+    $("#ctlBoard").appendChild(d);
+  });
+
+  /* ---------- banner composer ----------
+     Rendering lives in control/composer.js, shared with the master panel so the two cannot
+     drift. The function stays named draw() because render() and the BG picker already call it.
+     Only the SAVE path differs here: an operator uploads through a signed url from the panel
+     fn rather than holding a write key. */
+  const CZ = window.ACBZ_COMPOSER;
+  const comp = { canvas: $("#compCanvas"), bgUrl: null, imgs: {}, s: CZ.settingsFrom({}) };
+  const cimg = (url) => { if (!comp.imgs[url]) { const i = new Image(); i.crossOrigin="anonymous";
+    i.src = url; i.onload = draw; comp.imgs[url] = i; } return comp.imgs[url]; };
+
+  const compFontSel = $("#compFont"), compPresetSel = $("#compPreset");
+  compFontSel.innerHTML = Object.entries(CZ.FONTS)
+    .map(([k, f]) => `<option value="${k}">${esc(f.label)}</option>`).join("");
+  compPresetSel.innerHTML = Object.entries(CZ.PRESETS)
+    .map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
+
+  function readCompUI(){
+    comp.s = CZ.settingsFrom({
+      text: $("#compText").value,
+      font: compFontSel.value, preset: compPresetSel.value,
+      color: $("#compColor").value, accent: $("#compAccent").value,
+      upper: $("#compUpper").checked, scrim: $("#compScrim").checked,
+      autofit: $("#compAuto").checked,
+      size: +$("#compSize").value,
+      lineHeight: +$("#compLine").value / 100,
+      tracking: +$("#compTrack").value,
+      scaleY: +$("#compScaleY").value / 100,
+      offsetY: +$("#compShiftY").value,
+    });
+    $("#compSizeV").textContent   = comp.s.size;
+    $("#compLineV").textContent   = comp.s.lineHeight.toFixed(2);
+    $("#compTrackV").textContent  = comp.s.tracking;
+    $("#compScaleYV").textContent = comp.s.scaleY.toFixed(2);
+    $("#compShiftYV").textContent = (comp.s.offsetY > 0 ? "+" : "") + comp.s.offsetY;
+    $("#compSize").disabled = comp.s.autofit;
+    return comp.s;
+  }
+  async function draw(){
+    const s = readCompUI();
+    /* a web font that has not arrived yet bakes the WRONG typeface into a PNG the operator
+       cannot tell is wrong — always await it before painting */
+    await CZ.ensureFont(s.font, s.autofit ? 140 : s.size);
+    const im = comp.bgUrl ? cimg(comp.bgUrl) : null;
+    const out = CZ.draw(comp.canvas.getContext("2d"),
+      { W: 1080, H: 97, bgImage: im && im.naturalWidth ? im : null, settings: s });
+    if (s.autofit) $("#compSizeV").textContent = out.size + " (auto)";
+    const t = $("#compText").value.trim();
+    $("#compDur").textContent = C.bannerSeconds({meta:{type:"text",text:t||"x"}}) + "s on stream";
+  }
+  for (const id of ["#compText","#compFont","#compPreset","#compColor","#compAccent","#compUpper",
+                    "#compScrim","#compAuto","#compSize","#compLine","#compTrack","#compScaleY","#compShiftY"]) {
+    const el = $(id); el.oninput = draw; el.onchange = draw;
+  }
+  $("#compReset").onclick = () => {
+    const d = CZ.DEFAULTS;
+    compFontSel.value = d.font; compPresetSel.value = d.preset;
+    $("#compColor").value = d.color; $("#compAccent").value = d.accent;
+    $("#compUpper").checked = d.upper; $("#compScrim").checked = d.scrim;
+    $("#compAuto").checked = d.autofit; $("#compSize").value = d.size;
+    $("#compLine").value = Math.round(d.lineHeight*100); $("#compTrack").value = d.tracking;
+    $("#compScaleY").value = Math.round(d.scaleY*100); $("#compShiftY").value = d.offsetY;
+    draw();
+  };
+  $("#compSave").onclick = () => {
+    const text = $("#compText").value.trim(); if (!text) return toast("Type the banner text first");
+    const style = Object.assign({}, comp.s, { text });      // the recipe, for re-editing later
+    comp.canvas.toBlob(async (blob) => {
+      const path = `banners/composed-${Date.now()}.png`;
+      const {data:signed, error:sErr} = await call({ action:"sign_upload", path });
+      if (sErr) return toast("Save failed: " + sErr.message);
+      const {error} = await sb.storage.from("media")
+        .uploadToSignedUrl(signed.path, signed.token, blob,
+          { contentType:"image/png", cacheControl: "31536000" });
+      if (error) return toast("Upload failed: " + error.message);
+      const url = sb.storage.from("media").getPublicUrl(signed.path).data.publicUrl;
+      const {error:aErr} = await call({ action:"asset",
+        asset:{ kind:"banner", name:text.replace(/\n/g," ").slice(0,40), url,
+                meta:{type:"text", text, style} } });
+      if (aErr) return toast("Save failed: " + aErr.message);
+      await loadAssets(); toast("Saved — add it to the rotation below");
+    }, "image/png");
+  };
+
+  /* ---------- render ---------- */
+  /* a dead file (deleted from storage) shows a visible chip instead of silent black */
+  const MISS = `onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'⚠ file missing',className:'gone'}))"`;
+  /* A 78px card does not need the 2 MB source PNG. Supabase resizes at the edge — the
+     biggest board_button texture went 1.95 MB -> 409 KB, and less again as WebP in a real
+     browser. Opening this page used to cost 15.8 MB of egress, nearly all of it thumbnails.
+     Images only (there is no video transform), and only formats the resizer accepts — an
+     unsupported one would 4xx and trip the "file missing" chip on a healthy file. */
+  const thumbSrc = (u) => {
+    if (!u || !/^https?:/i.test(u) || !/\.(png|jpe?g|webp)(\?|$)/i.test(u)) return u;
+    const marker = "/storage/v1/object/public/";
+    const i = u.indexOf(marker);
+    if (i < 0) return u;
+    return u.slice(0, i) + "/storage/v1/render/image/public/" + u.slice(i + marker.length) +
+      (u.includes("?") ? "&" : "?") + "width=240&quality=60";
+  };
+  const thumb = (a) => {
+    const u = a.meta?.poster ?? a.url ?? a.meta?.base_url ?? a.meta?.button_url ?? a.meta?.bg_url;
+    if (a.meta?.type==="text" && !a.url) return `<div style="font-size:11px;padding:6px">${esc(a.meta.text)}</div>`;
+    if (!u) {
+      /* the CSS-default builtins get a swatch of what they actually look like */
+      if (a.meta?.builtin && a.meta?.domain === "board_bg")
+        return `<div style="width:100%;height:100%;background:radial-gradient(120% 160% at 50% -20%, #123a5c 0%, #0B1E33 45%, #071527 100%)"></div>`;
+      if (a.meta?.builtin && (a.meta?.domain === "board_button" || a.meta?.domain === "button_frame"))
+        return `<div class="swatchwrap"><div class="minibtn"></div></div>`;
+      /* builtin button animations preview their actual effect on a mini button */
+      if (a.meta?.builtin && a.meta?.domain === "button_anim")
+        return `<div class="swatchwrap"><div class="minibtn${
+          a.meta.effect && a.meta.effect !== "none" ? " fx-" + a.meta.effect : ""}"></div></div>`;
+      return "";
+    }
+    if (/\.(wav|mp3|ogg|m4a)(\?|$)/i.test(u)) return `<div style="font-size:24px">🔊</div>`;
+    return /\.(webm|mp4)(\?|$)/i.test(u)
+      ? `<video src="${u}#t=1.2" muted playsinline preload="metadata" ${MISS}></video>`
+      : `<img src="${thumbSrc(u)}" loading="lazy" ${MISS}>`;
+  };
+  const GRIDS = [["buttons","Buttons"],["checker","Checker board"],["checkerbare","Checker · no edge"],
+    ["honeycomb","Honeycomb"],["logos","NFL logos only"],["rect84","8 × 4 rectangles"],["slant","Slanted"]];
+  /* same shape previews as the master panel */
+  const GRID_PREVIEW = {
+    buttons:"border-radius:5px;border:2px solid var(--copper)",
+    checker:"border:1px solid var(--copper)",
+    checkerbare:"border:1px solid rgba(255,255,255,.12)",
+    honeycomb:"clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);background:var(--copper)",
+    logos:"border:none;background:" +
+      "radial-gradient(circle 5px at 28% 30%, var(--gold) 96%, transparent)," +
+      "radial-gradient(circle 5px at 72% 30%, var(--volt) 96%, transparent)," +
+      "radial-gradient(circle 5px at 28% 72%, var(--bone) 96%, transparent)," +
+      "radial-gradient(circle 5px at 72% 72%, var(--copper) 96%, transparent)",
+    rect84:"border-radius:3px;border:2px solid var(--copper)",
+    slant:"clip-path:polygon(16% 0%,100% 0%,84% 100%,0% 100%);background:var(--copper)",
+  };
+
+  function render(){
+    const hl = state.board.highlighted || {};
+    $$("#ctlBoard .team").forEach(d => {
+      d.classList.toggle("on", !!state.board.picked[d.dataset.abbr]);
+      /* the star shows even on eliminated teams — the highlight is remembered */
+      d.classList.toggle("hl", !!hl[d.dataset.abbr]);
+    });
+    const n = Object.keys(hl).length;
+    $("#hlHint").textContent = hlMode
+      ? "Highlight mode — tap teams to star them. Button animations play only on starred teams."
+      : (n ? `${n} team${n===1?"":"s"} highlighted.` : "Tap a team to eliminate it; tap again to bring it back.");
+
+    /* team animation styles: choosing one is a per-PC selection */
+    $("#styleGrid").innerHTML = assets.filter(a=>a.kind==="style" && a.meta?.domain==="team_anim")
+      .map(s => {
+        const on = state.animStyle ? state.animStyle.id === s.id : s.meta?.builtin;
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "🏈"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <button class="btn ${on?"ghost":""}" data-style="${s.id}">${on?"Enabled":"Enable"}</button>
+            <div class="tag">${s.meta && "sfxName" in s.meta ? "🔊 "+esc(s.meta.sfxName) : "default sound"}</div>
+          </div></div>`; }).join("");
+    $$("#styleGrid [data-style]").forEach(b => b.onclick = () => {
+      patchState({animStyle: assets.find(x=>x.id===b.dataset.style)}); });
+
+    /* one-shots: play on this stream */
+    $("#oneshotGrid").innerHTML = assets
+      .filter(a=>a.kind==="animation" && a.meta?.group!=="team").map(a=>`
+      <div class="asset"><div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <button class="btn" data-anim="${a.id}">Play</button></div></div>`).join("");
+    $$("#oneshotGrid [data-anim]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.anim);
+      fire("play_animation",{url:a.url, boxed:a.meta?.fit !== "full",
+        fit:a.meta?.fit, image:a.meta?.image===true, sfxUrl:a.meta?.sfxUrl ?? null,
+        crop:a.meta?.crop ?? null});
+      toast("Playing " + a.name);
+    });
+    /* a Stream Deck key can leave a clip looping forever — the operator must be able
+       to stop it without the deck */
+    renderEventGrid();
+    $("#loopStopBtn").style.display = state.loopFx?.url ? "" : "none";
+    $("#loopNow").textContent = state.loopFx?.url ? `Looping: ${state.loopFx.name ?? ""}` : "";
+
+    $("#sfxGrid").innerHTML = assets.filter(a=>a.kind==="sfx").map(a=>`
+      <div class="asset"><div class="thumb">🔊</div><div class="meta"><div class="name">${esc(a.name)}</div>
+        <div class="row"><button class="btn" data-prev="${a.url}">▶ Preview</button>
+        <button class="btn ghost" data-play="${a.url}">Play on stream</button></div></div></div>`).join("");
+    $$("#sfxGrid [data-prev]").forEach(b => b.onclick = () => { try{ new Audio(b.dataset.prev).play(); }catch(e){} });
+    $$("#sfxGrid [data-play]").forEach(b => b.onclick = () => fire("play_sfx",{url:b.dataset.play}));
+
+    const rot = new Set((state.banners.rotation||[]).map(x=>x.id));
+    $("#bannerGrid").innerHTML = assets
+      .filter(a=>a.kind==="banner" && !a.meta?.template && !a.meta?.hideRotation).map(a=>`
+      <div class="asset ${rot.has(a.id)?"active":""}"><div class="thumb banner-thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <button class="btn ${rot.has(a.id)?"warn":""}" data-rot="${a.id}">${rot.has(a.id)?"Deselect":"Select"}</button>
+        </div></div>`).join("");
+    $$("#bannerGrid [data-rot]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.rot); const list = state.banners.rotation || [];
+      patchState({banners: {...state.banners,
+        rotation: rot.has(a.id) ? list.filter(x=>x.id!==a.id) : [...list, a]}});
+    });
+
+    $("#bgGrid").innerHTML = assets.filter(a=>a.kind==="background").map(a=>`
+      <div class="asset ${state.background?.url===a.url?"active":""}"><div class="thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div>
+          <button class="btn" data-bg="${a.id}">Set live</button></div></div>`).join("");
+    $$("#bgGrid [data-bg]").forEach(b => b.onclick = () => {
+      const a = assets.find(x=>x.id===b.dataset.bg);
+      patchState({background: { url:a.url, name:a.name, crop:a.meta?.crop ?? null }});
+    });
+
+    $("#gridStyleGrid").innerHTML = GRIDS.map(([id,label]) => {
+      const on = (state.boardGrid ?? "buttons") === id;
+      return `<div class="asset ${on?"active":""}"><div class="thumb"><div class="shape" style="${GRID_PREVIEW[id]}"></div></div>
+        <div class="meta"><div class="name">${label}</div>
+        <button class="btn ${on?"ghost":""}" data-grid="${id}">${on?"Applied":"Apply"}</button></div></div>`;
+    }).join("");
+    $$("#gridStyleGrid [data-grid]").forEach(b => b.onclick = () => patchState({boardGrid: b.dataset.grid}));
+    $("#gapRange").value = state.boardGap ?? 0; $("#gapVal").textContent = (state.boardGap ?? 0) + "px";
+
+    const part = (domain, sel, key) => {
+      $(sel).innerHTML = assets.filter(a=>a.kind==="style" && a.meta?.domain===domain).map(s => {
+        const def = s.meta?.builtin && (!s.meta.effect || s.meta.effect === "none");
+        const on = state[key] ? state[key].id === s.id : def;
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "🎛"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+          <button class="btn ${on?"ghost":""}" data-part="${key}:${s.id}">${on?"Applied":"Apply"}</button>
+          </div></div>`; }).join("");
+    };
+    part("button_frame","#frameStyleGrid","boardFrame");
+    part("board_button","#btnStyleGrid","boardButtons");
+    part("board_bg","#bgStyleGrid","boardBg");
+    $("#glowColor").value = state.glowColor || "#D9A441";
+    $("#glowLight").value = state.glowLight || state.glowColor || "#D9A441";
+    $$("[data-part]").forEach(b => b.onclick = async () => {
+      const [k,id] = b.dataset.part.split(":");
+      /* Re-read the row at click time. Per-PC state stores a COPY of the asset, and this
+         page cached its list at load — so a panel left open across an asset re-upload
+         would write the STALE url back onto a board and silently undo the update. That
+         is exactly how an old frame came back after being replaced. */
+      const fresh = await sb.from("assets").select("*").eq("id", id).maybeSingle();
+      const s = fresh.data || assets.find(x=>x.id===id);
+      patchState({[k]: (s?.meta?.builtin && (!s.meta.effect || s.meta.effect === "none")) ? null : s});
+    });
+
+    /* button animations are multi-select: any number can run at once (mirrors master) */
+    const picked = (Array.isArray(state.buttonAnims) ? state.buttonAnims
+                   : state.buttonAnim ? [state.buttonAnim] : []).filter(Boolean);
+    const pickedIds = new Set(picked.map(x => x.id));
+    $("#btnAnimGrid").innerHTML = assets
+      .filter(a => a.kind==="style" && a.meta?.domain==="button_anim")
+      .map(s => {
+        const isNone = s.meta?.effect === "none";
+        const on = isNone ? pickedIds.size === 0 : pickedIds.has(s.id);
+        return `<div class="asset ${on?"active":""}"><div class="thumb">${thumb(s) || "✨"}</div>
+          <div class="meta"><div class="name">${esc(s.name)}</div>
+            <button class="btn ${on?"ghost":""}" data-anim="${s.id}">
+              ${isNone ? (on?"Active":"Turn all off") : (on?"Selected":"Select")}</button>
+          </div></div>`; }).join("");
+    $$("#btnAnimGrid [data-anim]").forEach(b => b.onclick = () => {
+      const s = assets.find(x=>x.id===b.dataset.anim);
+      let next;
+      if (s?.meta?.effect === "none") next = [];
+      else { const list = picked.filter(x => x.id !== s.id);
+             next = pickedIds.has(s.id) ? list : [...list, s]; }
+      delete state.buttonAnim;                  // superseded by the list
+      patchState({buttonAnims: next, buttonAnim: null});
+    });
+
+    /* sliders reflect the live state */
+    const setS = (id, label, key, dflt, unit) => {
+      $(id).value = state[key] ?? dflt; $(label).textContent = $(id).value + unit; };
+    setS("#sizeRange","#sizeVal","boardSize",100,"%");
+    setS("#logoRange","#logoVal","logoSize",100,"%");
+    setS("#fxRange","#fxVal","fxIntensity",100,"%");
+
+    /* Composer backgrounds: banner art only, never finished text banners and never
+       streamer backgrounds. MUST match inComposer() in control/index.html — anything
+       listed here that the master panel does not list is undeletable, because these
+       dashboards have no delete. A master delete sets hideComposer on the shared asset
+       row, so it takes effect here automatically. */
+    const arts = assets.filter(a => a.url && !a.meta?.hideComposer &&
+      a.kind === "banner" && a.meta?.type !== "text");
+    $("#compBGs").innerHTML =
+      `<div class="asset ${comp.bgUrl?"":"active"}" data-cbg="" style="width:118px;cursor:pointer">
+        <div class="thumb banner-thumb" style="background:linear-gradient(90deg,#071527,#274A66,#071527)"></div>
+        <div class="meta"><div class="name">Brand gradient</div></div></div>` +
+      arts.map(a => `<div class="asset ${comp.bgUrl===a.url?"active":""}" data-cbg="${a.url}"
+        style="width:118px;cursor:pointer"><div class="thumb banner-thumb">${thumb(a)}</div>
+        <div class="meta"><div class="name">${esc(a.name)}</div></div></div>`).join("");
+    $$("#compBGs [data-cbg]").forEach(d => d.onclick = () => { comp.bgUrl = d.dataset.cbg || null; render(); draw(); });
+    draw();
+  }
+  const slider = (id, label, key, unit) => {
+    $(id).oninput = () => $(label).textContent = $(id).value + unit;
+    $(id).onchange = () => patchState({[key]: +$(id).value});
+  };
+  slider("#gapRange",  "#gapVal",  "boardGap",    "px");
+  slider("#sizeRange", "#sizeVal", "boardSize",   "%");
+  slider("#logoRange", "#logoVal", "logoSize",    "%");
+  slider("#fxRange",   "#fxVal",   "fxIntensity", "%");
+  /* one write on release, like the sliders — a colour drag would otherwise flood it */
+  $("#glowColor").onchange = (e) => patchState({ glowColor: e.target.value });
+  $("#glowLight").onchange = (e) => patchState({ glowLight: e.target.value });
+  $("#glowReset").onclick  = () => { $("#glowColor").value = "#D9A441"; $("#glowLight").value = "#D9A441";
+    patchState({ glowColor: null, glowLight: null }); };
+
+  /* ---------- Stream Deck event keys ----------
+     The deck sends ?name=<event>; state.oneshots decides which clip that resolves to on
+     THIS PC. Operators may switch between clips the master panel has uploaded, but not
+     add or delete any — the operator key is refused for uploads server-side. */
+  const DECK_EVENTS = ["Stash or Pass", "Spin 2 Pick 1", "Spin 3 Pick 1", "PYT"];
+  const eventOf = (a) => a.meta?.event ??
+    DECK_EVENTS.find(ev => a.name.toLowerCase().includes(ev.toLowerCase())) ?? null;
+  const variantsFor = (ev) => assets
+    .filter(a => a.kind === "animation" && a.meta?.group !== "team" && eventOf(a) === ev);
+  const assignedFor = (ev) => {
+    const id = state.oneshots?.[ev];
+    return (id && assets.find(a => a.id === id)) || variantsFor(ev)[0] || null;
+  };
+  let epEvent = null;
+  function renderEventGrid(){
+    if (!$("#eventGrid")) return;
+    const evs = [...new Set([...DECK_EVENTS, ...assets.map(eventOf).filter(Boolean)])];
+    $("#eventGrid").innerHTML = evs.map(ev => {
+      const cur = assignedFor(ev), n = variantsFor(ev).length;
+      return `<div class="asset" data-ev="${esc(ev)}" style="cursor:pointer">
+        <div class="thumb">${cur ? thumb(cur) : "🎬"}</div>
+        <div class="meta"><div class="name">${esc(ev)}</div>
+          <div class="row"><span class="tag">${cur ? esc(cur.name) : "no clip yet"}</span></div>
+          <div class="row"><span class="tag">${n} option${n===1?"":"s"} · tap to change</span></div>
+        </div></div>`; }).join("");
+    $$("#eventGrid [data-ev]").forEach(d => d.onclick = () => {
+      epEvent = d.dataset.ev; $("#epTitle").textContent = epEvent;
+      renderEventList(); $("#eventPick").classList.add("on"); });
+  }
+  function renderEventList(){
+    const cur = assignedFor(epEvent), list = variantsFor(epEvent);
+    $("#epList").innerHTML = list.length ? list.map(a => {
+      const on = cur && cur.id === a.id;
+      return `<div class="asset ${on?"active":""}" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <div class="thumb banner-thumb" style="width:120px;flex:none">${thumb(a)}</div>
+        <div class="meta" style="flex:1"><div class="name">${esc(a.name)}</div>
+          <div class="row"><button class="btn ${on?"ghost":""}" data-use="${a.id}">
+            ${on?"In use":"Use on this PC"}</button></div>
+        </div></div>`; }).join("")
+      : `<span class="tag">Nothing uploaded for this event yet — add it from the master control.</span>`;
+    $$("#epList [data-use]").forEach(b => b.onclick = async () => {
+      await patchState({ oneshots: { ...(state.oneshots ?? {}), [epEvent]: b.dataset.use } });
+      renderEventList(); renderEventGrid(); toast("Switched");
+    });
+  }
+  $("#epClose").onclick = () => { $("#eventPick").classList.remove("on"); epEvent = null; };
+
+  /* ---------- boot + live sync ---------- */
+  (async () => {
+    await loadState(); await loadAssets();
+    $("#status").innerHTML = "<b>connected</b>";
+    sb.channel("pc-"+PC)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"stream_state"},
+          p => { if (p.new.id !== +PC) return;
+                 if (p.new.data?.lastWriter === CLIENT_ID) return;   // our own echo
+                 /* Realtime can deliver an older document after a newer one. Every
+                    updatedAt now comes from ONE clock (Postgres clock_timestamp in
+                    state_stamp), so comparing them is a real causal order — which is
+                    exactly what the old browser-vs-edge comparison could never be. */
+                 if (p.new.data?.updatedAt && state?.updatedAt
+                     && p.new.data.updatedAt < state.updatedAt) return;
+                 state = p.new.data; render(); })
+      .subscribe();
+  })();
+
+  /* same self-update trick as the overlay, so operators never see a stale page */
+  (function selfUpdate(){
+    const hash = (s)=>{let h=0;for(let i=0;i<s.length;i++)h=(Math.imul(31,h)+s.charCodeAt(i))|0;return h;};
+    let base = null;
+    const tick = async () => { try {
+      const r = await fetch(`pc.html?cb=${Date.now()}`, { cache:"no-store" });
+      const h = hash(await r.text());
+      if (base === null) base = h; else if (h !== base) location.reload();
+    } catch(e){} };
+    tick(); setInterval(tick, 60000);
+  })();
+})();
+</script>
+</body>
+</html>

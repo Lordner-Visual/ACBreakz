@@ -16,7 +16,7 @@ import { createClient } from "@supabase/supabase-js";
 const env = Object.fromEntries(readFileSync("C:/ACBreakz-Cloud/.env", "utf8").split(/\r?\n/)
   .filter(l => l.includes("=") && !l.startsWith("#"))
   .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
-const PC = 6;                                   // the staging rig; never a live show
+const PC = 7;                                   // Dev, the test rig; never a live show
 const B = `${env.SUPABASE_URL}/functions/v1/deck?key=${env.DECK_KEY}`;
 const deck = (q) => fetch(`${B}&${q}&pc=${PC}`).then(r => r.status);
 

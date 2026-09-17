@@ -1,14 +1,21 @@
-/* Promote staging/ over the live overlay + control pages.
+/* Promote dev/ over the live overlay + control pages.
 
    Why this exists: overlay/ and control/ are single static files that EVERY PC loads, and each
    overlay polls its own hash every 45s and reloads when it changes. So a push is not a gentle
-   rollout — within ~45s all five live streams reload the new code, mid-show if that is when you
-   pushed. staging/ is a second deployed copy that only PC Test points at, so changes can be
-   proved on air-gapped-in-practice hardware first, and promotion is one deliberate step.
+   rollout — within ~45s every live stream reloads the new code, mid-show if that is when you
+   pushed. dev/ is a second deployed copy that only the Dev rig (pc 7) points at, so changes are
+   proved there first, and promotion is one deliberate step.
+
+   staging/ is NOT a test copy any more. It was, while row 6 was the "PC Test" rig; then that
+   profile was installed on a real streamer's OBS (PC6), whose sources still load
+   /staging/overlay/. So every promotion writes the same files to BOTH overlay/ and staging/,
+   keeping PC6 on production code until his URLs are switched to /overlay/ — after which
+   staging/ can be deleted. Never edit staging/ by hand: it is overwritten on every promotion.
 
      node scripts/promote.mjs --check            what would change, and is it safe right now
      node scripts/promote.mjs                    promote if nothing looks live
      node scripts/promote.mjs --force            promote regardless (say why in the commit)
+     node scripts/promote.mjs --only control     panels only — nothing on air reloads
      node scripts/promote.mjs --at 2026-08-24T07:00:00Z    write the schedule marker instead
 
    Liveness is a JUDGEMENT, not a fact we can read: nothing here knows whether OBS is streaming.
@@ -22,16 +29,20 @@ import { createHash } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const ROOT = process.env.ACBZ_ROOT ?? "C:/ACBreakz-Cloud";
-const ALL_PAIRS = [["staging/overlay", "overlay"], ["staging/control", "control"]];
-/* --only control ships a panel change WITHOUT touching a live stream: OBS loads overlay/, not
-   control/, so a control-only promotion cannot reload anything on air. That distinction is the
-   difference between "wait for the show to end" and "ship it now". */
+const ALL_PAIRS = [["dev/overlay", "overlay"], ["dev/overlay", "staging/overlay"],
+                   ["dev/control", "control"], ["dev/control", "staging/control"]];
+/* --only control ships a panel change WITHOUT touching a live stream: OBS loads overlay/ (and
+   PC6 staging/overlay/), never a control page, so a control-only promotion cannot reload
+   anything on air. That distinction is the difference between "wait for the show to end" and
+   "ship it now". */
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i >= 0 ? process.argv[i + 1] : null; })();
-const PAIRS = ONLY ? ALL_PAIRS.filter(([, to]) => to === ONLY) : ALL_PAIRS;
+const PAIRS = ONLY ? ALL_PAIRS.filter(([from]) => from === `dev/${ONLY}`) : ALL_PAIRS;
 if (ONLY && !PAIRS.length) { console.log(`--only ${ONLY}: expected "overlay" or "control"`); process.exit(1); }
-const LIVE_PCS = [1, 2, 3, 4, 5];          // PC 6 is the staging rig; it is never "live"
+const LIVE_PCS = [1, 2, 3, 4, 5, 6];       // 6 = PC Test, a live streamer's PC now
+const DEV_PC = 7;                          // the test rig — never "live"
+const pcName = (p) => p === 6 ? "PC Test" : p === DEV_PC ? "Dev" : `PC${p}`;
 const IDLE_MINUTES = Number(process.env.ACBZ_IDLE_MINUTES ?? 30);
-const MARKER = `${ROOT}/staging/PROMOTE_AT`;
+const MARKER = `${ROOT}/dev/PROMOTE_AT`;
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -66,17 +77,17 @@ for (const [from, to] of PAIRS) {
       : sha(f.path) !== sha(dst) ? "changed" : "same";
     if (state !== "same") changes.push({ from: `${from}/${f.rel}`, to: `${to}/${f.rel}`, state, size: f.size });
   }
-  /* a file deleted in staging is NOT removed from live — deleting a deployed asset is a
-     different, riskier decision than updating one, and it should be explicit */
+  /* a file deleted in dev is NOT removed from live — deleting a deployed asset is a different,
+     riskier decision than updating one, and it should be explicit */
   for (const f of walk(`${ROOT}/${to}`))
     if (!existsSync(`${ROOT}/${from}/${f.rel}`))
-      console.log(`note: ${to}/${f.rel} exists live but not in staging — left alone, remove by hand if intended`);
+      console.log(`note: ${to}/${f.rel} exists live but not in dev — left alone, remove by hand if intended`);
 }
 
 console.log(changes.length
   ? `${changes.length} file(s) would be promoted:\n` +
     changes.map(c => `  ${c.state.padEnd(7)} ${c.from}  ->  ${c.to}`).join("\n")
-  : "staging and live are identical — nothing to promote.");
+  : "dev and live are identical — nothing to promote.");
 
 /* ---------- 2. schedule instead of promoting ---------- */
 const at = valOf("--at");
@@ -84,7 +95,7 @@ if (at) {
   const t = Date.parse(at);
   if (!Number.isFinite(t)) { console.log(`\nFATAL: could not parse --at "${at}"`); process.exit(1); }
   writeFileSync(MARKER, `${new Date(t).toISOString()}\n`);
-  console.log(`\nscheduled: staging/PROMOTE_AT = ${new Date(t).toISOString()}`);
+  console.log(`\nscheduled: dev/PROMOTE_AT = ${new Date(t).toISOString()}`);
   console.log("commit and push that file; the promote workflow checks it every 15 minutes.");
   process.exit(0);
 }
@@ -113,12 +124,12 @@ const recent = (rows ?? []).filter(r => (now - Date.parse(r.updated_at)) / 60000
 
 const onlineLive = [...seen].filter(p => LIVE_PCS.includes(p)).sort();
 console.log(`\nliveness:`);
-console.log(`  overlay sources present: ${onlineLive.length ? onlineLive.map(p => "PC" + p).join(", ") : "none"}` +
-  `${seen.has(6) ? "  (PC Test also present)" : ""}`);
+console.log(`  overlay sources present: ${onlineLive.length ? onlineLive.map(pcName).join(", ") : "none"}` +
+  `${seen.has(DEV_PC) ? "  (Dev also present)" : ""}`);
 console.log(`  boards touched in the last ${IDLE_MINUTES}m: ` +
-  (recent.length ? recent.map(r => `PC${r.id} ${Math.round((now - Date.parse(r.updated_at)) / 60000)}m ago`).join(", ") : "none"));
+  (recent.length ? recent.map(r => `${pcName(r.id)} ${Math.round((now - Date.parse(r.updated_at)) / 60000)}m ago`).join(", ") : "none"));
 
-const touchesOverlay = changes.some(c => c.to.startsWith("overlay/"));
+const touchesOverlay = changes.some(c => /^(staging\/)?overlay\//.test(c.to));
 /* Refuse only when a reload is actually possible. A control-only promotion changes pages that
    no OBS source has open, so blocking it on "a PC looks live" would be superstition. */
 const busy = touchesOverlay && (onlineLive.length > 0 || recent.length > 0);
